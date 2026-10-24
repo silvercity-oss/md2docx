@@ -1,6 +1,6 @@
 # ReqMech Companion
 
-A pure-Rust library (plus a small `reqmech` CLI) that converts Markdown into
+A pure-Rust library (plus the `md2docx` CLI) that converts Markdown into
 high-fidelity Word `.docx` files, including **LaTeX math** and **Mermaid /
 Dolphin diagrams** that `docx-rs` cannot express natively.
 
@@ -80,22 +80,70 @@ dropped except `<br>`; a missing local image is an `Io` error.
 ## CLI
 
 ```
-reqmech notes.md -o notes.docx --math omml
-reqmech notes.md --mmdc /opt/bin/mmdc --latex latex --dvipng dvipng
+md2docx notes.md                                  # -> notes.docx, native equations
+md2docx notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
+md2docx notes.md --dolphin-command 'dolphin -i {input} -o {output}'
+md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppeteer.json'
 ```
+
+| Flag | Meaning |
+| --- | --- |
+| `<input>` | Markdown file (relative image paths resolve against its directory) |
+| `-o, --output` | Output path (default: `<input>.docx`; refuses to overwrite the input) |
+| `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
+| `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
+| `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
+| `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
+
+Note the CLI defaults to `native` math while the library's `Config::default()`
+uses `ImageFallback`; use `Config::native_math()` for the safe mode. On Windows,
+npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly.
+
+## Security
+
+> **Security Advisory Notice: Image Mode runs a local TeX engine on document content.**
+>
+> `MathMode::ImageFallback` (CLI: `--math-mode image`) invokes `latex` on a
+> document generated from the formulas in the Markdown. The crate passes
+> `-no-shell-escape`, which blocks `\write18` command execution, but that flag
+> does **not** make TeX safe to feed untrusted text: active TeX macros such as
+> `\input{...}`, `\include`, or `\openin`/`\read` can read files on the host
+> (for example `\input{/etc/passwd}`), and their contents are typeset into the
+> rendered formula image, which then ends up in the generated `.docx`. Mermaid
+> rendering (`mmdc`) likewise drives a headless browser with the diagram text.
+>
+> **Native OMML Mode must be mandated whenever the Markdown comes from an
+> untrusted source** (user uploads, web forms, third-party feeds, multi-tenant
+> servers). It converts LaTeX to OMML in-process, never spawns `latex`, and
+> cannot read host files. With `md2docx` it is already the default; in library
+> code use `Config::native_math()`. If diagrams must also be handled for
+> untrusted input, run `mmdc`/`dolphin` inside a sandbox (container, no
+> network, no access to sensitive paths) and keep `tool_timeout` low.
+
+Other hardening in the crate: external tools run with no shell (arguments are
+passed as an argv list, never interpolated into a command line), are killed on
+timeout, and all scratch files are removed when a conversion ends; image
+dimensions are bounds-checked (header size limit, checked arithmetic) so a
+hostile PNG header cannot cause a panic or overflow; percent-encoded image paths
+are decoded with `percent-encoding` and invalid UTF-8 is replaced rather than
+sliced. Local image references in Markdown (`![x](/etc/shadow.png)`) are read
+from disk and embedded if they decode as images, so treat that as file access
+too when converting untrusted Markdown.
 
 ## Tests
 
-`cargo test`. The integration tests (`tests/pipeline.rs`) install tiny stand-in
-`mmdc`/`latex`/`dvipng` shell scripts, so they run without those tools and
-verify what was passed to them, that the PNGs end up in the package, that the
-OMML ends up in `document.xml` (well-formed), the error variants, timeouts, and
-that temp files are gone afterwards. The produced documents were also opened
-and rendered with LibreOffice during development; Word itself was not available.
+`cargo test` (CI also runs `cargo fmt --check` and `cargo clippy -- -D warnings`
+on Linux, macOS and Windows).
 
-## Security note
+* `src/**` unit tests: LaTeX to OMML, namespace injection, image sizing, path
+  decoding, command parsing.
+* `tests/pipeline.rs`: tool-free end-to-end tests (native OMML, Markdown
+  structure, errors, local images). Run on every OS.
+* `tests/pipeline_mock_tools.rs` (Unix only): installs tiny stand-in
+  `mmdc`/`latex`/`dvipng` shell scripts and verifies what was passed to them,
+  that the PNGs end up in the package, error variants, timeouts, caching, and that
+  temp files are gone afterwards.
+* `tests/cli.rs`: runs the real `md2docx` binary (flags, exit codes, messages).
 
-Image mode feeds Markdown content to `latex`/`mmdc`. `latex` runs with
-`-no-shell-escape`, but TeX can still `\input` local files, so don't render
-untrusted input with the image engine on a host with sensitive files; native
-OMML mode runs no subprocess.
+The produced documents were also opened and rendered with LibreOffice during
+development; Word itself was not available.

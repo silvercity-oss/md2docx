@@ -86,6 +86,19 @@ fn substitute(arg: &str, input: &Path, output: &Path, dpi: u32, display: bool) -
         .replace("{display}", if display { "1" } else { "0" })
 }
 
+/// `ETXTBSY`: the executable is still open for writing somewhere (typically a
+/// tool that was written or installed a moment ago while another thread forked
+/// and briefly inherited the descriptor). It clears within milliseconds.
+#[cfg(unix)]
+fn is_text_file_busy(e: &std::io::Error) -> bool {
+    e.raw_os_error() == Some(26)
+}
+
+#[cfg(not(unix))]
+fn is_text_file_busy(_: &std::io::Error) -> bool {
+    false
+}
+
 /// Run `program args...` in `cwd`, killing it after `timeout`. stdout and
 /// stderr are captured into an anonymous temp file (no pipe deadlocks) and
 /// surfaced in the error on failure.
@@ -96,22 +109,35 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration) -
     };
 
     let mut log = tempfile::tempfile_in(cwd).map_err(|e| CrateError::io(cwd, e))?;
-    let out = log.try_clone().map_err(|e| CrateError::io(cwd, e))?;
-    let err = log.try_clone().map_err(|e| CrateError::io(cwd, e))?;
 
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(out))
-        .stderr(Stdio::from(err))
-        .spawn()
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => CrateError::MissingExternalCLI {
-                program: program.to_string(),
-            },
-            _ => tool_err(format!("could not start: {e}")),
-        })?;
+    let mut attempt = 0u32;
+    let mut child = loop {
+        // Stdio handles are consumed by `spawn`, so clone them per attempt.
+        let (out, err) = (
+            log.try_clone().map_err(|e| CrateError::io(cwd, e))?,
+            log.try_clone().map_err(|e| CrateError::io(cwd, e))?,
+        );
+        let spawned = Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(out))
+            .stderr(Stdio::from(err))
+            .spawn();
+        match spawned {
+            Ok(child) => break child,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(CrateError::MissingExternalCLI {
+                    program: program.to_string(),
+                });
+            }
+            Err(e) if is_text_file_busy(&e) && attempt < 5 => {
+                attempt += 1;
+                sleep(Duration::from_millis(20 * u64::from(attempt)));
+            }
+            Err(e) => return Err(tool_err(format!("could not start: {e}"))),
+        }
+    };
 
     let deadline = Instant::now() + timeout;
     let status = loop {

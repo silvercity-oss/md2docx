@@ -89,6 +89,65 @@ enum Node {
     },
 }
 
+/// The OOXML math namespace bound to the `m:` prefix.
+pub(crate) const OMML_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+
+/// Make sure the `<w:document>` root binds `m:` to [`OMML_NS`], touching
+/// nothing else. Tolerates any attribute layout (line breaks, single quotes,
+/// a bare `<w:document>`), is idempotent, and refuses to continue when `m:` is
+/// already bound to a different namespace, since silently overriding it would
+/// corrupt the document.
+pub(crate) fn ensure_math_namespace(xml: &str) -> std::result::Result<String, OmmlError> {
+    const ROOT: &str = "<w:document";
+    let mut from = 0;
+    let start = loop {
+        let Some(rel) = xml[from..].find(ROOT) else {
+            return err("document.xml has no <w:document> root element");
+        };
+        let at = from + rel;
+        match xml[at + ROOT.len()..].chars().next() {
+            Some(c) if c.is_whitespace() || c == '>' || c == '/' => break at,
+            _ => from = at + ROOT.len(), // e.g. <w:documentProtection
+        }
+    };
+    // End of the start tag, skipping '>' inside quoted attribute values.
+    let name_end = start + ROOT.len();
+    let mut quote: Option<char> = None;
+    let mut tag_end = None;
+    for (i, c) in xml[name_end..].char_indices() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '>') => {
+                tag_end = Some(name_end + i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let Some(tag_end) = tag_end else {
+        return err("unterminated <w:document> start tag");
+    };
+    let attrs = &xml[name_end..tag_end];
+    if let Some(pos) = attrs.find("xmlns:m=") {
+        let value = attrs[pos + "xmlns:m=".len()..].trim_start_matches(['"', '\'']);
+        let value = value.split(['"', '\'']).next().unwrap_or("");
+        return if value == OMML_NS {
+            Ok(xml.to_string())
+        } else {
+            err(format!("`m:` is already bound to `{value}` on the document root"))
+        };
+    }
+    let mut out = String::with_capacity(xml.len() + OMML_NS.len() + 16);
+    out.push_str(&xml[..name_end]);
+    out.push_str(" xmlns:m=\"");
+    out.push_str(OMML_NS);
+    out.push('"');
+    out.push_str(&xml[name_end..]);
+    Ok(out)
+}
+
 /// Convert LaTeX math (without `$` delimiters) to the inner XML of `<m:oMath>`.
 pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
     let mut p = Parser {
@@ -1029,6 +1088,45 @@ mod tests {
 
     fn conv(s: &str) -> String {
         latex_to_omml(s).unwrap()
+    }
+
+    const NS: &str = "xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"";
+
+    #[test]
+    fn namespace_is_added_to_the_root_only() {
+        let xml = "<?xml version=\"1.0\"?>\n<w:document xmlns:w=\"urn:w\"\n   mc:Ignorable=\"w14\"><w:body><w:p/></w:body></w:document>";
+        let out = ensure_math_namespace(xml).unwrap();
+        assert_eq!(out.matches(NS).count(), 1);
+        assert!(out.contains(&format!("<w:document {NS} xmlns:w=")));
+        assert!(out.ends_with("<w:body><w:p/></w:body></w:document>"));
+    }
+
+    #[test]
+    fn namespace_helper_handles_layout_variants_and_is_idempotent() {
+        // Bare root, and a root whose attribute value contains '>'.
+        assert!(ensure_math_namespace("<w:document><w:body/></w:document>")
+            .unwrap()
+            .contains(&format!("<w:document {NS}>")));
+        let tricky = ensure_math_namespace("<w:document a=\"x>y\" b='z>'>body</w:document>").unwrap();
+        assert!(tricky.contains(&format!("<w:document {NS} a=\"x>y\"")) && tricky.ends_with(">body</w:document>"));
+        // Already declared (either quote style): unchanged. Never duplicated.
+        let once = ensure_math_namespace("<w:document x=\"1\">t</w:document>").unwrap();
+        assert_eq!(ensure_math_namespace(&once).unwrap(), once);
+        let single = "<w:document xmlns:m='http://schemas.openxmlformats.org/officeDocument/2006/math'>t</w:document>";
+        assert_eq!(ensure_math_namespace(single).unwrap(), single);
+        // A sibling element sharing the prefix of the root name is not the root.
+        let out = ensure_math_namespace("<w:documentProtection/><w:document>t</w:document>").unwrap();
+        assert!(out.starts_with("<w:documentProtection/>") && out.contains(&format!("<w:document {NS}>")));
+    }
+
+    #[test]
+    fn namespace_helper_rejects_conflicts_and_garbage() {
+        assert!(ensure_math_namespace("<w:document xmlns:m=\"http://openxmlformats.org\"></w:document>").is_err());
+        assert!(ensure_math_namespace("<w:body/>").is_err());
+        assert!(ensure_math_namespace("<w:document a=\"unterminated").is_err());
+        // A declaration elsewhere in the document does not count for the root.
+        let out = ensure_math_namespace("<w:document><x xmlns:m=\"urn:other\"/></w:document>").unwrap();
+        assert!(out.contains(&format!("<w:document {NS}>")));
     }
 
     #[test]

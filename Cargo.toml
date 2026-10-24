@@ -11,7 +11,7 @@ name = "reqmech_companion"
 path = "src/lib.rs"
 
 [[bin]]
-name = "reqmech"
+name = "md2docx"
 path = "src/main.rs"
 
 [dependencies]
@@ -21,6 +21,9 @@ sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+clap = { version = "4", features = ["derive"] }
+percent-encoding = "2.3.2"
+shlex = "2.0.1"
 
 [dev-dependencies]
 quick-xml = "0.41"

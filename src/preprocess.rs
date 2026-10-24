@@ -54,6 +54,8 @@ fn line_of(text: &str, offset: usize) -> usize {
     text[..offset.min(text.len())].bytes().filter(|&b| b == b'\n').count() + 1
 }
 
+/// Escape a destination for `![..](<dest>)`. The asset map is keyed by the
+/// *unescaped* string, which is what the Markdown parser hands back.
 fn escape_dest(path: &str) -> String {
     path.replace('\\', "\\\\")
 }
@@ -125,7 +127,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
         let (dest, alt, asset) = match item {
             Found::Graph(kind, source) => {
                 let png = render_graph(&workspace, kind, &source, cfg)?;
-                let dest = escape_dest(&png.to_string_lossy());
+                let dest = png.to_string_lossy().into_owned();
                 (
                     dest,
                     "Rendered Graph",
@@ -151,7 +153,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 match cfg.math.mode {
                     MathMode::ImageFallback => {
                         let png = render_math_image(&workspace, &latex, display, cfg)?;
-                        let dest = escape_dest(&png.to_string_lossy());
+                        let dest = png.to_string_lossy().into_owned();
                         (
                             dest,
                             "Rendered Math",
@@ -184,7 +186,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 }
             }
         };
-        replacements.push((range, format!("![{alt}](<{dest}>)")));
+        replacements.push((range, format!("![{alt}](<{}>)", escape_dest(&dest))));
         assets.insert(dest, asset);
     }
 
@@ -199,4 +201,33 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
         assets,
         _workspace: workspace,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pulldown_cmark::Tag;
+
+    /// What the parser reports as the image destination for an escaped path.
+    fn parsed_dest(escaped: &str) -> String {
+        let md = format!("![x](<{escaped}>)");
+        Parser::new(&md)
+            .find_map(|e| match e {
+                Event::Start(Tag::Image { dest_url, .. }) => Some(dest_url.to_string()),
+                _ => None,
+            })
+            .expect("an image")
+    }
+
+    #[test]
+    fn escaped_destinations_round_trip_through_the_parser() {
+        for path in [
+            r"/tmp/reqmech-abc/graph_1.png",
+            r"C:\Users\me\AppData\Local\Temp\reqmech-.x\graph_1.png",
+            r"C:\temp\.hidden\_under\(paren)\graph.png",
+            "/tmp/with space/graph.png",
+        ] {
+            assert_eq!(parsed_dest(&escape_dest(path)), path);
+        }
+    }
 }

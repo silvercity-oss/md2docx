@@ -1,82 +1,184 @@
-//! `reqmech`: command-line front end for the Markdown -> .docx converter.
+//! `md2docx`: command-line front end for the Markdown -> .docx converter.
 
-use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
-use reqmech_companion::{markdown_file_to_docx, markdown_to_docx, Config, CrateError, MathImageEngine, MathMode};
+use clap::{Parser, ValueEnum};
+use reqmech_companion::{markdown_file_to_docx, CommandSpec, Config, MathImageEngine, MathMode as LibMathMode};
 
-const USAGE: &str = "\
-Usage: reqmech <input.md | -> [-o output.docx] [options]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MathMode {
+    /// Editable Word equations (OMML), converted in-process. Runs no subprocess.
+    Native,
+    /// Transparent PNGs rendered with a local TeX install (`latex` + `dvipng`).
+    Image,
+}
 
-Options:
-  -o, --output <file>   Output path (default: input with .docx extension; required for stdin)
-      --math <mode>     `image` (default, needs latex+dvipng) or `omml` (native, editable)
-      --mmdc <program>  Mermaid CLI to use (default: mmdc)
-      --dolphin <prog>  Dolphin CLI to use (default: dolphin)
-      --latex <prog>    latex binary for image math (default: latex)
-      --dvipng <prog>   dvipng binary for image math (default: dvipng)
-  -h, --help            Show this help
-";
+#[derive(Parser, Debug)]
+#[command(
+    name = "md2docx",
+    version,
+    about = "High-fidelity Markdown to DOCX compiler with native Math and Graph preprocessing",
+    after_help = "Command templates may use {input} and {output} (and {dpi}); both of the first two are required.\n\
+                  Example: --dolphin-command 'dolphin -i {input} -o {output}'\n\n\
+                  SECURITY: `--math-mode image` runs a local TeX engine on document content. Use the default \
+                  `native` mode for untrusted input."
+)]
+pub struct Args {
+    #[arg(help = "Path to the input markdown file")]
+    pub input: PathBuf,
 
-fn run() -> Result<(), String> {
-    let mut args = std::env::args().skip(1);
-    let mut input: Option<String> = None;
-    let mut output: Option<PathBuf> = None;
-    let mut cfg = Config::default();
-    let (mut latex, mut dvipng) = ("latex".to_string(), "dvipng".to_string());
+    #[arg(
+        short,
+        long,
+        help = "Output path for the generated .docx file [default: <input>.docx]"
+    )]
+    pub output: Option<PathBuf>,
 
-    while let Some(arg) = args.next() {
-        let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
-        match arg.as_str() {
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                return Ok(());
-            }
-            "-o" | "--output" => output = Some(PathBuf::from(value("--output")?)),
-            "--math" => {
-                cfg.math.mode = match value("--math")?.as_str() {
-                    "image" => MathMode::ImageFallback,
-                    "omml" => MathMode::NativeOmml,
-                    other => return Err(format!("unknown math mode `{other}` (expected `image` or `omml`)")),
-                }
-            }
-            "--mmdc" => cfg.graphs.mermaid.program = value("--mmdc")?,
-            "--dolphin" => cfg.graphs.dolphin.program = value("--dolphin")?,
-            "--latex" => latex = value("--latex")?,
-            "--dvipng" => dvipng = value("--dvipng")?,
-            s if s.starts_with('-') && s != "-" => return Err(format!("unknown option `{s}`\n\n{USAGE}")),
-            _ if input.is_none() => input = Some(arg),
-            _ => return Err(format!("unexpected argument `{arg}`")),
-        }
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = MathMode::Native,
+        help = "Math rendering strategy (Native OMML or Image fallback)"
+    )]
+    pub math_mode: MathMode,
+
+    #[arg(
+        long,
+        value_parser = parse_command,
+        help = "Custom CLI command layout for Dolphin graphs (e.g., 'dolphin -i {input} -o {output}')"
+    )]
+    pub dolphin_command: Option<CommandSpec>,
+
+    #[arg(
+        long,
+        value_parser = parse_command,
+        help = "Custom CLI command layout for Mermaid graphs [default: mmdc -i {input} -o {output} -s 3 -b transparent]"
+    )]
+    pub mermaid_command: Option<CommandSpec>,
+
+    #[arg(long, default_value = "latex", help = "`latex` executable (image math mode only)")]
+    pub latex: String,
+
+    #[arg(long, default_value = "dvipng", help = "`dvipng` executable (image math mode only)")]
+    pub dvipng: String,
+
+    #[arg(
+        long,
+        default_value_t = 60,
+        value_name = "SECONDS",
+        help = "Kill an external renderer after this long"
+    )]
+    pub timeout: u64,
+}
+
+/// Split a command template with POSIX shell rules (via `shlex`) and check it
+/// can actually produce an image.
+fn parse_command(template: &str) -> Result<CommandSpec, String> {
+    let mut words = shlex::split(template)
+        .ok_or("unbalanced quotes in command")?
+        .into_iter();
+    let program = words.next().ok_or("command is empty")?;
+    let args: Vec<String> = words.collect();
+    let mentions = |p: &str| program.contains(p) || args.iter().any(|a| a.contains(p));
+    if !mentions("{input}") || !mentions("{output}") {
+        return Err("command must contain both {input} and {output} placeholders".into());
     }
-    cfg.math.engine = MathImageEngine::LatexDvipng { latex, dvipng };
+    Ok(CommandSpec { program, args })
+}
 
-    let input = input.ok_or_else(|| format!("missing input file\n\n{USAGE}"))?;
-    let describe = |e: CrateError| e.to_string();
-    let (bytes, out_path) = if input == "-" {
-        let out = output.ok_or("`-o` is required when reading from stdin")?;
-        let mut text = String::new();
-        std::io::stdin()
-            .read_to_string(&mut text)
-            .map_err(|e| format!("cannot read stdin: {e}"))?;
-        (markdown_to_docx(&text, &cfg).map_err(describe)?, out)
-    } else {
-        let path = PathBuf::from(&input);
-        let out = output.unwrap_or_else(|| path.with_extension("docx"));
-        (markdown_file_to_docx(&path, &cfg).map_err(describe)?, out)
+fn config(args: &Args) -> Config {
+    let mut cfg = Config::default();
+    cfg.math.mode = match args.math_mode {
+        MathMode::Native => LibMathMode::NativeOmml,
+        MathMode::Image => LibMathMode::ImageFallback,
     };
-    std::fs::write(&out_path, bytes).map_err(|e| format!("cannot write {}: {e}", out_path.display()))?;
-    eprintln!("wrote {}", out_path.display());
-    Ok(())
+    cfg.math.engine = MathImageEngine::LatexDvipng {
+        latex: args.latex.clone(),
+        dvipng: args.dvipng.clone(),
+    };
+    if let Some(spec) = &args.mermaid_command {
+        cfg.graphs.mermaid = spec.clone();
+    }
+    if let Some(spec) = &args.dolphin_command {
+        cfg.graphs.dolphin = spec.clone();
+    }
+    cfg.tool_timeout = Duration::from_secs(args.timeout);
+    cfg
+}
+
+fn run(args: &Args) -> Result<PathBuf, String> {
+    let out = args.output.clone().unwrap_or_else(|| args.input.with_extension("docx"));
+    if out == args.input {
+        return Err(format!("refusing to overwrite the input file {}", out.display()));
+    }
+    let bytes = markdown_file_to_docx(&args.input, &config(args)).map_err(|e| e.to_string())?;
+    std::fs::write(&out, bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    Ok(out)
 }
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
+    let args = Args::parse();
+    match run(&args) {
+        Ok(out) => {
+            eprintln!("wrote {}", out.display());
+            ExitCode::SUCCESS
+        }
         Err(msg) => {
             eprintln!("error: {msg}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_templates_are_split_like_a_shell() {
+        let c = parse_command(r#"dolphin --title "my graph" -i {input} -o {output}"#).unwrap();
+        assert_eq!(c.program, "dolphin");
+        assert_eq!(c.args, ["--title", "my graph", "-i", "{input}", "-o", "{output}"]);
+    }
+
+    #[test]
+    fn bad_command_templates_are_rejected() {
+        assert!(parse_command("").is_err());
+        assert!(parse_command("dolphin 'unterminated -i {input} -o {output}").is_err());
+        assert!(parse_command("dolphin -i {input}").is_err());
+        assert!(parse_command("dolphin -o {output}").is_err());
+    }
+
+    #[test]
+    fn clap_definition_is_consistent() {
+        use clap::CommandFactory;
+        Args::command().debug_assert();
+    }
+
+    #[test]
+    fn flags_map_onto_the_library_config() {
+        let a = Args::try_parse_from([
+            "md2docx",
+            "in.md",
+            "--math-mode",
+            "image",
+            "--dolphin-command",
+            "d -i {input} -o {output}",
+            "--timeout",
+            "5",
+            "--latex",
+            "xelatex",
+        ])
+        .unwrap();
+        let c = config(&a);
+        assert_eq!(c.math.mode, LibMathMode::ImageFallback);
+        assert_eq!(c.graphs.dolphin.program, "d");
+        assert_eq!(c.tool_timeout, Duration::from_secs(5));
+        assert!(matches!(&c.math.engine, MathImageEngine::LatexDvipng { latex, .. } if latex == "xelatex"));
+        // Default is the safe, tool-free mode.
+        let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
+        assert_eq!(config(&d).math.mode, LibMathMode::NativeOmml);
     }
 }

@@ -19,6 +19,7 @@ use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEn
 
 use crate::config::{Config, MathMode};
 use crate::error::{CrateError, Result};
+use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
@@ -34,7 +35,6 @@ pub(crate) fn markdown_options(math: bool) -> Options {
     o
 }
 
-const OMML_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const PAGE_WIDTH_TWIPS: u32 = 11906;
 const MARGIN_TWIPS: i32 = 1440;
 /// Usable text width on A4 with 1" side margins.
@@ -221,63 +221,72 @@ fn marker(nonce: &str, slot: usize) -> String {
     format!("REQMECHOMML{nonce}X{slot}X")
 }
 
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(hi), Some(lo)) = (hex(b[i + 1]), hex(b[i + 2])) {
-                out.push(hi * 16 + lo);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
+/// Decode `%XX` escapes in an image path. `percent-encoding` works on bytes and
+/// `decode_utf8_lossy` replaces invalid sequences, so no input can make this
+/// slice inside a UTF-8 character or panic.
+fn decode_path(raw: &str) -> String {
+    percent_encoding::percent_decode_str(raw)
+        .decode_utf8_lossy()
+        .into_owned()
+}
+
+/// Refuse images whose header claims more pixels than this (about 100 MP).
+const MAX_IMAGE_PIXELS: u64 = 100_000_000;
+/// Tallest picture we place: the A4 text height (1" margins) in EMU.
+const MAX_IMAGE_HEIGHT_EMU: u128 = (16838 - 2 * MARGIN_TWIPS as u128) * 635;
+
+/// Display size in EMU for a `w` x `h` pixel image at `dpi`, shrunk
+/// (aspect ratio preserved) to fit the text area. Every step is checked;
+/// `None` means the numbers do not fit, never a wrapped or panicking result.
+fn display_size_emu(w: u32, h: u32, dpi: u32) -> Option<(u32, u32)> {
+    let dpi = u128::from(dpi.max(1));
+    let emu = u128::from(EMU_PER_INCH);
+    let mut we = u128::from(w).checked_mul(emu)?.checked_div(dpi)?;
+    let mut he = u128::from(h).checked_mul(emu)?.checked_div(dpi)?;
+    let max_w = u128::from(MAX_IMAGE_WIDTH_EMU);
+    if we > max_w {
+        he = he.checked_mul(max_w)?.checked_div(we)?;
+        we = max_w;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    if he > MAX_IMAGE_HEIGHT_EMU {
+        we = we.checked_mul(MAX_IMAGE_HEIGHT_EMU)?.checked_div(he)?;
+        he = MAX_IMAGE_HEIGHT_EMU;
+    }
+    // Never a zero-sized drawing; both values are now bounded by the page.
+    Some((u32::try_from(we.max(1)).ok()?, u32::try_from(he.max(1)).ok()?))
 }
 
 /// Build a `Pic` from image bytes. docx-rs only embeds PNG, so other formats
 /// are decoded and re-encoded; `Pic::new` is avoided because it panics on
 /// undecodable input.
 fn make_picture(bytes: Vec<u8>, dpi: u32, origin: &Path) -> Result<Pic> {
-    let bad = |e: image::ImageError| {
-        CrateError::DocxGenerationError(format!("cannot decode image {}: {e}", origin.display()))
-    };
+    let fail = |why: String| CrateError::DocxGenerationError(format!("image {}: {why}", origin.display()));
     let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
     let (png, w, h) = if is_png {
         let (w, h) = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .map_err(|e| CrateError::io(origin, e))?
             .into_dimensions()
-            .map_err(bad)?;
+            .map_err(|e| fail(format!("cannot read PNG header: {e}")))?;
+        // Check the claimed size before anything could try to decode it.
+        if u64::from(w) * u64::from(h) > MAX_IMAGE_PIXELS {
+            return Err(fail(format!(
+                "{w}x{h} pixels exceeds the {MAX_IMAGE_PIXELS} pixel limit"
+            )));
+        }
         (bytes, w, h)
     } else {
-        let img = image::load_from_memory(&bytes).map_err(bad)?;
+        let img = image::load_from_memory(&bytes).map_err(|e| fail(format!("cannot decode: {e}")))?;
         let mut out = Cursor::new(Vec::new());
-        img.write_to(&mut out, image::ImageFormat::Png).map_err(bad)?;
+        img.write_to(&mut out, image::ImageFormat::Png)
+            .map_err(|e| fail(format!("cannot re-encode as PNG: {e}")))?;
         (out.into_inner(), img.width(), img.height())
     };
     if w == 0 || h == 0 {
-        return Err(CrateError::DocxGenerationError(format!(
-            "image {} has no pixels",
-            origin.display()
-        )));
+        return Err(fail("has no pixels".into()));
     }
-    // u128: a hostile PNG header can claim ~4e9 pixels per side.
-    let dpi = u128::from(dpi.max(1));
-    let mut we = u128::from(w) * u128::from(EMU_PER_INCH) / dpi;
-    let mut he = u128::from(h) * u128::from(EMU_PER_INCH) / dpi;
-    let max_w = u128::from(MAX_IMAGE_WIDTH_EMU);
-    if we > max_w {
-        he = he * max_w / we;
-        we = max_w;
-    }
-    let to_u32 = |v: u128| u32::try_from(v.max(1)).unwrap_or(u32::MAX);
-    Ok(Pic::new_with_dimensions(png, w, h).size(to_u32(we), to_u32(he)))
+    let (we, he) = display_size_emu(w, h, dpi).ok_or_else(|| fail(format!("{w}x{h} px is out of range")))?;
+    Ok(Pic::new_with_dimensions(png, w, h).size(we, he))
 }
 
 impl<'a> Builder<'a> {
@@ -496,7 +505,7 @@ impl<'a> Builder<'a> {
             self.push(Child::Run(run));
             return Ok(());
         }
-        let rel = percent_decode(dest.strip_prefix("file://").unwrap_or(dest));
+        let rel = decode_path(dest.strip_prefix("file://").unwrap_or(dest));
         let path = if Path::new(&rel).is_absolute() {
             PathBuf::from(&rel)
         } else {
@@ -845,14 +854,8 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
         let end = doc[at..].find(close_tag).ok_or_else(lost)? + at + close_tag.len();
         doc.replace_range(start..end, &replacement);
     }
-    // Declare the math namespace once on the root, as Word does.
-    if !doc.contains("xmlns:m=") {
-        let root = doc
-            .find("<w:document ")
-            .ok_or_else(|| CrateError::DocxGenerationError("document.xml has no <w:document> root".into()))?;
-        doc.insert_str(root + "<w:document".len(), &format!(" xmlns:m=\"{OMML_NS}\""));
-    }
-    Ok(doc)
+    // Declare the math namespace on the root, as Word does.
+    ensure_math_namespace(&doc).map_err(|e| CrateError::DocxGenerationError(e.to_string()))
 }
 
 // ------------------------------------------------------------------ driver
@@ -908,23 +911,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn percent_decoding_never_slices_inside_a_char() {
-        assert_eq!(percent_decode("a%20b"), "a b");
-        assert_eq!(percent_decode("100%"), "100%");
-        assert_eq!(percent_decode("%é%zz%4"), "%é%zz%4");
-        assert_eq!(percent_decode("caf%C3%A9.png"), "café.png");
+    fn path_decoding_never_slices_inside_a_char() {
+        assert_eq!(decode_path("a%20b"), "a b");
+        assert_eq!(decode_path("100%"), "100%");
+        assert_eq!(decode_path("%é%zz%4"), "%é%zz%4");
+        assert_eq!(decode_path("caf%C3%A9.png"), "café.png");
+        // Malformed UTF-8 is replaced, not rejected or sliced.
+        assert_eq!(decode_path("x%FFy"), "x\u{FFFD}y");
+        assert_eq!(decode_path("日本%E6語%"), "日本\u{FFFD}語%");
     }
 
-    #[test]
-    fn huge_claimed_dimensions_do_not_overflow() {
-        // Valid PNG header (IHDR only) claiming 4e9 x 4e9 pixels; we must
-        // return an error or a clamped size, never panic.
+    fn png_header(w: u32, h: u32) -> Vec<u8> {
         let mut png = vec![
             0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, b'I', b'H', b'D', b'R',
         ];
-        png.extend_from_slice(&4_000_000_000u32.to_be_bytes());
-        png.extend_from_slice(&4_000_000_000u32.to_be_bytes());
+        png.extend_from_slice(&w.to_be_bytes());
+        png.extend_from_slice(&h.to_be_bytes());
         png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
-        let _ = make_picture(png, 1, Path::new("hostile.png"));
+        png
+    }
+
+    #[test]
+    fn hostile_dimensions_are_rejected_without_panicking() {
+        for (w, h) in [
+            (4_000_000_000, 4_000_000_000),
+            (u32::MAX, 1),
+            (1, u32::MAX),
+            (0, 0),
+            (20_000, 20_000),
+        ] {
+            assert!(
+                make_picture(png_header(w, h), 1, Path::new("hostile.png")).is_err(),
+                "{w}x{h}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_size_is_bounded_and_keeps_aspect_ratio() {
+        // 6in x 3in at 288 dpi, well inside the page: exact.
+        assert_eq!(display_size_emu(1728, 864, 288), Some((5_486_400, 2_743_200)));
+        // Wider than the page: clamped to the text width, ratio kept.
+        let (w, h) = display_size_emu(10_000, 5_000, 96).unwrap();
+        assert_eq!(u64::from(w), MAX_IMAGE_WIDTH_EMU);
+        assert!((i64::from(w) - 2 * i64::from(h)).abs() <= 1);
+        // Very tall and narrow: clamped to the text height.
+        let (w, h) = display_size_emu(100, 50_000, 96).unwrap();
+        assert_eq!(u128::from(h), MAX_IMAGE_HEIGHT_EMU);
+        assert!(w >= 1);
+        // Extremes never overflow, wrap, or divide by zero.
+        assert!(display_size_emu(u32::MAX, u32::MAX, 0).is_some());
+        assert!(display_size_emu(1, 1, u32::MAX).is_some());
+        assert_eq!(display_size_emu(0, 0, 96), Some((1, 1)));
     }
 }
