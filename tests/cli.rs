@@ -1,5 +1,7 @@
 //! Tests for the `md2docx` binary (clap interface), run as a real subprocess.
 
+#![cfg(feature = "cli")]
+
 mod common;
 
 use std::path::Path;

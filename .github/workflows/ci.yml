@@ -50,6 +50,11 @@ jobs:
         env:
           REQUIRE_TEX: ${{ runner.os == 'Linux' && '1' || '' }}
 
+      # Library users build without the CLI feature (no clap/shlex).
+      - name: Test as a library (no default features)
+        if: runner.os == 'Linux'
+        run: cargo test --no-default-features --locked
+
   # Oldest toolchain we promise to support (Cargo.toml `rust-version`; set by our dependencies).
   msrv:
     name: MSRV 1.88

@@ -169,10 +169,7 @@ fn main() {}
 #[test]
 fn local_images_are_embedded_relative_to_base_dir() {
     let fx = Fixture::new();
-    let cfg = Config {
-        base_dir: Some(fx.dir.path().to_path_buf()),
-        ..Config::default()
-    };
+    let cfg = Config::default().with_base_dir(fx.dir.path());
     let docx = markdown_to_docx("![logo](fixture.png) and ![remote](https://example.com/x.png)", &cfg).unwrap();
     assert_eq!(media_count(&docx), 1);
     assert!(zip_text(&docx, "word/document.xml").contains("[remote]"));

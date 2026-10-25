@@ -226,10 +226,7 @@ fn images_cannot_escape_the_base_directory() {
     std::fs::create_dir_all(base.join("img")).unwrap();
     std::fs::copy(fx.path("fixture.png"), base.join("img/ok.png")).unwrap();
     std::fs::copy(fx.path("fixture.png"), fx.path("secret.png")).unwrap();
-    let cfg = Config {
-        base_dir: Some(base.clone()),
-        ..Config::native_math()
-    };
+    let cfg = Config::native_math().with_base_dir(base.clone());
 
     assert_eq!(media_count(&markdown_to_docx("![ok](img/ok.png)", &cfg).unwrap()), 1);
     for evil in [
@@ -255,10 +252,7 @@ fn symlinks_and_device_files_cannot_be_embedded() {
     std::fs::create_dir_all(&base).unwrap();
     std::fs::copy(fx.path("fixture.png"), fx.path("secret.png")).unwrap();
     std::os::unix::fs::symlink(fx.path("secret.png"), base.join("link.png")).unwrap();
-    let mut cfg = Config {
-        base_dir: Some(base),
-        ..Config::native_math()
-    };
+    let mut cfg = Config::native_math().with_base_dir(base);
     assert!(matches!(err("![x](link.png)", &cfg), CrateError::UnsafeContent(_)));
     // Even a fully trusting configuration refuses endless or blocking files.
     cfg.image_access = ImageAccess::Any;
@@ -297,10 +291,7 @@ fn image_access_none_and_unsupported_formats_degrade_to_alt_text() {
 #[test]
 fn huge_claimed_image_dimensions_are_rejected_cheaply() {
     let fx = Fixture::new();
-    let cfg = Config {
-        base_dir: Some(fx.dir.path().to_path_buf()),
-        ..Config::native_math()
-    };
+    let cfg = Config::native_math().with_base_dir(fx.dir.path());
     // Header says 60000 x 60000 (3.6 billion pixels); the file is a few dozen bytes.
     std::fs::write(fx.path("bomb.png"), png_claiming(60_000, 60_000)).unwrap();
     assert!(matches!(err("![x](bomb.png)", &cfg), CrateError::LimitExceeded(m) if m.contains("pixels")));

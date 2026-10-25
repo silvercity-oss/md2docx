@@ -11,10 +11,72 @@ let docx: Vec<u8> = markdown_to_docx("# Hi\n\n$$E = mc^2$$", &Config::native_mat
 std::fs::write("out.docx", docx)?;
 ```
 
-`markdown_file_to_docx(&Path, &Config)` does the same for a file and resolves
-relative image paths against its directory. Every failure is a
-`CrateError` (`MissingExternalCLI`, `InvalidMarkdown`, `DocxGenerationError`,
-`ExternalToolFailed`, `Io`); the crate does not panic on bad input.
+## Using it as a library
+
+```toml
+[dependencies]
+# default-features = false: skip the `md2docx` binary's dependencies (clap, shlex).
+silvercity-oss = { version = "0.1", default-features = false }
+```
+
+```rust
+use silvercity_oss::{markdown_to_docx, Config, CrateError};
+
+// For Markdown you do not control: no subprocess, no local files, tight limits.
+let docx = markdown_to_docx(&user_markdown, &Config::untrusted())?;
+```
+
+| Function | Use |
+| --- | --- |
+| `markdown_to_docx(&str, &Config) -> Result<Vec<u8>>` | The common case |
+| `markdown_to_docx_writer(&str, &Config, impl Write + Seek)` | Stream to a `File` or `Cursor`; nothing is written if conversion fails first |
+| `markdown_file_to_docx(&Path, &Config)` | Reads the file with the input-size limit applied *before* it is read (devices and directories are refused); relative images resolve against its directory |
+| `omml::latex_to_omml(&str)` | The LaTeX to OMML converter on its own |
+| `preprocess(&str, &Config)` | Stage 1 only: renders math/diagrams and returns the rewritten Markdown |
+
+**Configuration.** `Config` is `#[non_exhaustive]`, so new options never break your
+code: start from a preset, then chain `with_*` methods or assign fields.
+
+| Preset | For |
+| --- | --- |
+| `Config::untrusted()` | User uploads, web forms, services. Native math, diagrams off, no local images, no `<a>` links, tight limits. **Starts no subprocess** |
+| `Config::native_math()` | Your own documents, no external tools needed |
+| `Config::default()` | Your own documents; math as pictures via TeX (the original spec's default), diagrams via `merman-cli` |
+
+`DocumentOptions` sets the page (`A4`, `Letter`, `Legal`, or `Custom` twips for
+landscape or any size), margins, body and code fonts, body size and heading
+colour. All options are validated up front: out-of-range values are a
+`CrateError::InvalidConfig` naming the option, before any work is done.
+
+**Good to know.**
+
+* **Blocking.** Conversion is synchronous and may wait on external tools. From
+  async code use `spawn_blocking`.
+* **Thread-safe.** `Config` is `Send + Sync`. Each call has its own scratch
+  directory, removed when it returns (also on error); concurrent calls are
+  independent (tested with 16 threads).
+* **Not byte-reproducible.** Same input gives the same *content*, but docx-rs
+  numbers relationship, footnote and picture ids from process-wide counters, so
+  two outputs can differ in those ids. Compare or cache by content.
+* **Errors** are `CrateError` (`#[non_exhaustive]`, `std::error::Error + Send +
+  Sync`): `MissingExternalCLI`, `ExternalToolFailed`, `InvalidMarkdown`,
+  `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGenerationError`,
+  `Io`. The crate never panics on bad input and is `#![forbid(unsafe_code)]`.
+* **Dependencies.** Library-only builds compile 79 crates (93 with the CLI).
+  External tools (TeX, merman-cli, mmdc) are programs you install, never linked.
+
+### Supported Rust versions
+
+`rust-version = "1.88"`, checked in CI. That is the **floor our dependencies
+set, not a choice**: `docx-rs` depends on `zip` 8, which requires 1.88, and cargo's
+MSRV-aware resolver cannot find an older combination (tried down to 1.75). So
+supporting older compilers is not possible without replacing `docx-rs`, and
+raising the minimum would buy nothing but fewer users. Policy: the MSRV only
+rises when a dependency forces it, in a minor release, noted in the changelog.
+Building from source needs only a current rustup toolchain; Debian 13's
+packaged Rust (1.85) and Ubuntu 24.04's (1.75) are too old, as they are for
+most of the ecosystem. Note this is about *building* this crate; `merman-cli`,
+a separate program, needs 1.95 to build (`cargo install merman-cli`).
 
 ## Pipeline
 
@@ -105,13 +167,36 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 | Footnotes `[^1]` | Native Word footnotes (unknown labels stay literal) |
 | Definition lists | Bold term, indented definitions |
 | YAML / TOML front matter | Dropped, but only at the very start of the file and only if it looks like metadata. `---` blocks elsewhere are normal content |
-| Raw HTML | `<b> <i> <u> <s> <sup> <sub> <code> <kbd> <br> <hr> <h1-6> <li> <img>` and block elements are rendered; scripts, styles, comments, iframes and unknown tags contribute only their text |
-| Images | Local PNG/JPEG/GIF scaled to the text width, subject to the image policy; SVG, WebP and corrupt images, and all remote or `data:` images become `[alt text]` (nothing is fetched) |
+| Raw HTML | Rendered the way a browser would show it for the tags people use in READMEs: see the table below. Scripts, styles, comments, iframes, objects and unknown tags contribute at most their text |
+| Images | Local PNG/JPEG/GIF (Markdown `![]()` or HTML `<img>` with `width=`) scaled to the text width, subject to the image policy; SVG, WebP and corrupt images, and all remote or `data:` images become `[alt text]` (nothing is fetched) |
 | `$..$` / `$$..$$` math, `mermaid` / `dolphin` fences | See above |
 
 Not supported: HTML `<a href>` links (their text is kept), bare-URL autolinking, wiki links,
 super/subscript via `^x^`/`~x~` (use `<sup>`/`<sub>`), `<table>` layout (cell text
 is kept), math inside footnotes (shown as source text).
+
+### Raw HTML
+
+Markdown files in the wild are full of HTML. These tags are interpreted, in
+every mode:
+
+| HTML | Word result |
+| --- | --- |
+| `<b> <strong> <i> <em> <u> <s> <del> <sup> <sub> <code> <kbd> <br>` | Character formatting and line breaks |
+| `<p> <div> <center> <h1>-<h6>` with `align="center\|right\|left\|justify"` or `style="text-align:..."` | Aligned paragraphs and headings (the alignment ends with the element) |
+| `<ul> <ol start=N> <li>` (nestable) | Real Word bulleted / numbered lists |
+| `<table> <tr> <th> <td>` | A real Word table; `<th>` cells are bold and shaded. Missing close tags and ragged rows are tolerated |
+| `<pre>` | Code lines with whitespace and indentation preserved |
+| `<blockquote>`, `<hr>`, `<details><summary>` | Quote bar, rule, plain text |
+| `<img src=.. alt=.. width=..>` (pixels or `%`) | The same image policy as Markdown images; sized as requested, never wider than the page |
+| `<a href=..>` | **Default: a hyperlink**, only for `http`, `https`, `mailto` (also around an `<img>`, for badges). **`--untrusted`: dropped, text kept** |
+| `<script> <style> <iframe> <object> <embed> <template> <head> <title>` and comments | Dropped with their content |
+| Everything else (`<svg>`, `<form>`, `<span>`, custom tags...) | The tag is dropped, the text kept |
+
+Attributes are never interpreted except those in the table (`align`, `style`'s
+`text-align`, `start`, `src`, `alt`, `width`, `href`), so `onclick=`,
+`style="background:url(...)"` and the like have no effect. `--untrusted` renders
+the same HTML; the only differences are `<a>` links and the image policy.
 
 ## CLI
 
@@ -180,7 +265,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
 | Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
 | A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
-| Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist**: only presentation tags (`b i u s sup sub code kbd br hr h1-6 li p div ...` and `<img>`) have any effect, everything else contributes at most its text, and attributes are never interpreted except `<img src/alt>`, which goes through the image policy. So `<a>` is stripped (its text stays), scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. Same in `--untrusted`, which still renders the safe subset |
+| Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist** (see "Raw HTML"): only the listed tags have an effect, attributes are not interpreted beyond the listed ones, scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. `<a href>` becomes a link only for `http`/`https`/`mailto`, and not at all with `--untrusted` |
 | `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |
 
 `Config::untrusted()` turns the strict settings on together: native math, diagram
@@ -220,6 +305,8 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
 * Unit tests: LaTeX to OMML (including hostile nesting), namespace injection,
   the security gates, HTML tokenizer, image sizing, command parsing.
 * `tests/markdown_coverage.rs`: one case per Markdown construct (above).
+* `tests/library_api.rs`: the public API as a downstream crate sees it: page/font
+  options, validation, writers, the bounded file reader, concurrent use.
 * `tests/security.rs`: every gate in the table, plus seeded random Markdown and
   LaTeX runs (with a watchdog) asserting no panic, no hang, well-formed output.
 * `tests/tool_hardening.rs` (Unix): runaway output, disk filling, oversized

@@ -11,6 +11,7 @@
 
 use std::fmt;
 
+/// Why a LaTeX formula could not be converted to OMML.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OmmlError(pub String);
 

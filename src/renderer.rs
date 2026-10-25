@@ -1,6 +1,6 @@
 //! Stage 1 helpers: run external CLIs and turn graph/math sources into PNGs.
 //!
-//! Every file lives inside a [`Workspace`], a `tempfile::TempDir` owned by the
+//! Every file lives inside a `Workspace`, a `tempfile::TempDir` owned by the
 //! conversion, so nothing outlives the call even on error paths.
 
 use std::fs;

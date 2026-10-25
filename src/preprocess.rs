@@ -17,11 +17,15 @@ use crate::safety::sanitize_xml_chars;
 /// What an image reference in the rewritten Markdown stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetKind {
+    /// A rendered ```` ```mermaid ````/```` ```dolphin ```` diagram.
     Graph,
+    /// A `$...$` formula.
     InlineMath,
+    /// A `$$...$$` formula.
     DisplayMath,
 }
 
+/// Where a pre-rendered asset's content lives.
 #[derive(Debug, Clone)]
 pub enum AssetSource {
     /// A rendered PNG inside the pre-processor's workspace.
@@ -34,7 +38,9 @@ pub enum AssetSource {
 /// Markdown.
 #[derive(Debug, Clone)]
 pub struct Asset {
+    /// What the asset is.
     pub kind: AssetKind,
+    /// Its rendered content.
     pub source: AssetSource,
     /// Original graph/LaTeX text, used for the image's description.
     pub original: String,

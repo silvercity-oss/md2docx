@@ -24,6 +24,23 @@ First release.
   `DocxGenerationError`, `ExternalToolFailed`, `Io`); temp files are removed
   on every path.
 
+### Library
+- `markdown_to_docx_writer` (stream to a file); `Config` presets and `with_*`
+  setters; `Config`, `Limits`, `GraphOptions`, `MathOptions`, `DocumentOptions`
+  and `CrateError` are `#[non_exhaustive]`.
+- `DocumentOptions`: page size (A4, Letter, Legal, custom), margins, body and
+  code fonts, body size, heading colour; validated up front (`InvalidConfig`).
+- `cli` feature (default): library users can use `default-features = false`
+  to skip `clap`/`shlex`. docx-rs's unused `image` feature is off (no TIFF/BMP).
+- `markdown_file_to_docx` applies the input limit before reading and refuses
+  devices and directories.
+- `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
+
+### Raw HTML
+- `<a href>` hyperlinks (safe schemes only; off in `--untrusted`), alignment via
+  `align`/`text-align`/`<center>`, real lists (`<ol start>`), tables, `<pre>`,
+  `<blockquote>`, and `<img width>`.
+
 ### Security
 - Image mode runs a local TeX engine on document content; use native mode for
   untrusted input. See the README.

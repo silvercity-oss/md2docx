@@ -10,7 +10,10 @@ pub enum CrateError {
     /// A required external program (e.g. `mmdc`, `latex`, `dvipng`) is not on
     /// `PATH` (or the configured path does not exist).
     #[error("external CLI `{program}` was not found{}", install_hint(program))]
-    MissingExternalCLI { program: String },
+    MissingExternalCLI {
+        /// The program that could not be started, as configured.
+        program: String,
+    },
 
     /// The Markdown input could not be processed (not UTF-8, empty graph
     /// block, malformed math, ...).
@@ -26,6 +29,10 @@ pub enum CrateError {
     #[error("blocked by security policy: {0}")]
     UnsafeContent(String),
 
+    /// A [`Config`](crate::Config) value is out of range (page size, dpi, ...).
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
+
     /// The Word document could not be assembled or packed.
     #[error("docx generation failed: {0}")]
     DocxGenerationError(String),
@@ -33,12 +40,19 @@ pub enum CrateError {
     /// An external renderer started but failed, timed out, or produced no
     /// usable image.
     #[error("external tool `{program}` failed: {detail}")]
-    ExternalToolFailed { program: String, detail: String },
+    ExternalToolFailed {
+        /// The program that failed.
+        program: String,
+        /// Exit status and the tool's own message, or why it was stopped.
+        detail: String,
+    },
 
     /// Reading an input file or an image referenced by the document failed.
     #[error("i/o error on {}: {source}", path.display())]
     Io {
+        /// The file that could not be read.
         path: PathBuf,
+        /// The underlying error.
         #[source]
         source: std::io::Error,
     },
@@ -53,6 +67,7 @@ impl CrateError {
     }
 }
 
+/// `Result` with [`CrateError`] as the error type.
 pub type Result<T> = std::result::Result<T, CrateError>;
 
 /// How to get a tool that is commonly missing, appended to the error message.

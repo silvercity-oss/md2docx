@@ -40,12 +40,43 @@ pub(crate) fn markdown_options(math: bool) -> Options {
     o
 }
 
-const PAGE_WIDTH_TWIPS: u32 = 11906;
-const MARGIN_TWIPS: i32 = 1440;
-/// Usable text width on A4 with 1" side margins.
-const CONTENT_WIDTH_TWIPS: usize = PAGE_WIDTH_TWIPS as usize - 2 * MARGIN_TWIPS as usize;
-/// The same width in EMU (1 twip = 635 EMU).
-const MAX_IMAGE_WIDTH_EMU: u64 = CONTENT_WIDTH_TWIPS as u64 * 635;
+/// Page layout derived from [`DocumentOptions`]; everything that depends on the
+/// page size (image clamping, table width) reads it from here.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Geometry {
+    page_w: u32,
+    page_h: u32,
+    margin: u32,
+    /// Usable text width in twips.
+    content_w: usize,
+    /// Widest / tallest picture we place, in EMU (1 twip = 635 EMU).
+    max_img_w: u128,
+    max_img_h: u128,
+}
+
+impl Geometry {
+    pub(crate) fn new(o: &crate::config::DocumentOptions) -> Self {
+        let (page_w, page_h) = o.page.twips();
+        let margin = o.margin_twips;
+        let content_w = page_w.saturating_sub(2 * margin).max(1) as usize;
+        let content_h = page_h.saturating_sub(2 * margin).max(1) as usize;
+        Geometry {
+            page_w,
+            page_h,
+            margin,
+            content_w,
+            max_img_w: content_w as u128 * 635,
+            max_img_h: content_h as u128 * 635,
+        }
+    }
+}
+
+impl Default for Geometry {
+    fn default() -> Self {
+        Geometry::new(&crate::config::DocumentOptions::default())
+    }
+}
+
 const EMU_PER_INCH: u64 = 914_400;
 // docx-rs's default package already defines abstract numbering 1 / num 1, so
 // ours start well clear of it.
@@ -60,18 +91,18 @@ fn fonts(name: &str) -> RunFonts {
     RunFonts::new().ascii(name).hi_ansi(name).east_asia(name).cs(name)
 }
 
-fn base_docx() -> Docx {
+fn base_docx(o: &crate::config::DocumentOptions, g: &Geometry) -> Docx {
     let mut docx = Docx::new()
-        .default_fonts(fonts("Calibri"))
-        .default_size(22)
+        .default_fonts(fonts(&o.body_font))
+        .default_size(o.body_size_half_points as usize)
         .default_line_spacing(LineSpacing::new().after(120))
-        .page_size(PAGE_WIDTH_TWIPS, 16838) // A4
+        .page_size(g.page_w, g.page_h)
         .page_margin(
             PageMargin::new()
-                .top(1440)
-                .bottom(1440)
-                .left(MARGIN_TWIPS)
-                .right(MARGIN_TWIPS),
+                .top(g.margin as i32)
+                .bottom(g.margin as i32)
+                .left(g.margin as i32)
+                .right(g.margin as i32),
         );
     let heading_sizes = [40usize, 32, 28, 26, 24, 22];
     for (i, size) in heading_sizes.iter().enumerate() {
@@ -80,7 +111,7 @@ fn base_docx() -> Docx {
                 .name(format!("heading {}", i + 1))
                 .size(*size)
                 .bold()
-                .color("1F3864")
+                .color(o.heading_color.as_str())
                 .outline_lvl(i),
         );
     }
@@ -93,13 +124,13 @@ fn base_docx() -> Docx {
     .add_style(
         Style::new("InlineCode", StyleType::Character)
             .name("Inline Code")
-            .fonts(fonts("Consolas"))
+            .fonts(fonts(&o.code_font))
             .size(20),
     )
     .add_style(
         Style::new("CodeBlock", StyleType::Paragraph)
             .name("Code Block")
-            .fonts(fonts("Consolas"))
+            .fonts(fonts(&o.code_font))
             .size(19),
     )
 }
@@ -171,9 +202,19 @@ struct LinkCtx {
     children: Vec<Child>,
 }
 
+/// Width requested for an image by an HTML `width=` attribute.
+#[derive(Clone, Copy)]
+enum ImgWidth {
+    /// CSS pixels.
+    Px(u64),
+    /// Percent of the text width.
+    Percent(u64),
+}
+
 struct ImageCtx {
     dest: String,
     alt: String,
+    width: Option<ImgWidth>,
 }
 
 #[derive(Default)]
@@ -185,6 +226,10 @@ struct TableState {
     cell_paras: usize,
     col: usize,
     in_head: bool,
+    /// Built from HTML `<table>` tags rather than Markdown syntax.
+    html: bool,
+    /// Widest row seen so far (HTML tables have no header to count columns).
+    max_cols: usize,
 }
 
 enum Block {
@@ -201,6 +246,7 @@ struct OmmlSlot {
 struct Builder<'a> {
     pre: &'a Preprocessed,
     cfg: &'a Config,
+    geo: Geometry,
     base_dir: PathBuf,
     nonce: String,
     /// Footnote bodies by label, collected before the main pass.
@@ -212,9 +258,17 @@ struct Builder<'a> {
     /// Bytes of images embedded so far.
     image_bytes: u64,
     html: Option<String>,
+    /// The open code buffer came from an HTML `<pre>`.
+    html_pre: bool,
     /// Hidden element (`script`...) opened by inline HTML and not yet closed:
     /// text events are skipped until it closes or the paragraph ends.
     hidden: Option<&'static str>,
+    /// The open link came from an HTML `<a>` (closed by `</a>` or the paragraph end).
+    html_link: bool,
+    /// Alignment from HTML `align=`/`<center>`: (element name, alignment), innermost last.
+    align_stack: Vec<(String, AlignmentType)>,
+    html_quotes: usize,
+    html_lists: usize,
     underline: usize,
     sup: usize,
     sub: usize,
@@ -247,25 +301,37 @@ fn marker(nonce: &str, slot: usize) -> String {
 const MAX_IMAGE_PIXELS: u64 = 50_000_000;
 /// Allocation ceiling handed to the image decoders.
 const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
-/// Tallest picture we place: the A4 text height (1" margins) in EMU.
-const MAX_IMAGE_HEIGHT_EMU: u128 = (16838 - 2 * MARGIN_TWIPS as u128) * 635;
 
 /// Display size in EMU for a `w` x `h` pixel image at `dpi`, shrunk
 /// (aspect ratio preserved) to fit the text area. Every step is checked;
 /// `None` means the numbers do not fit, never a wrapped or panicking result.
-fn display_size_emu(w: u32, h: u32, dpi: u32) -> Option<(u32, u32)> {
+fn display_size_emu(g: &Geometry, w: u32, h: u32, dpi: u32) -> Option<(u32, u32)> {
     let dpi = u128::from(dpi.max(1));
     let emu = u128::from(EMU_PER_INCH);
-    let mut we = u128::from(w).checked_mul(emu)?.checked_div(dpi)?;
-    let mut he = u128::from(h).checked_mul(emu)?.checked_div(dpi)?;
-    let max_w = u128::from(MAX_IMAGE_WIDTH_EMU);
+    let we = u128::from(w).checked_mul(emu)?.checked_div(dpi)?;
+    let he = u128::from(h).checked_mul(emu)?.checked_div(dpi)?;
+    fit_to_page(g, we, he)
+}
+
+/// Like [`display_size_emu`] but for a width the document asked for (EMU);
+/// the height follows from the aspect ratio.
+fn display_size_for_width(g: &Geometry, w: u32, h: u32, width_emu: u128) -> Option<(u32, u32)> {
+    let he = width_emu
+        .checked_mul(u128::from(h))?
+        .checked_div(u128::from(w.max(1)))?;
+    fit_to_page(g, width_emu, he)
+}
+
+/// Shrink (never grow) `we` x `he` EMU to the text area, keeping the aspect ratio.
+fn fit_to_page(g: &Geometry, mut we: u128, mut he: u128) -> Option<(u32, u32)> {
+    let max_w = g.max_img_w;
     if we > max_w {
         he = he.checked_mul(max_w)?.checked_div(we)?;
         we = max_w;
     }
-    if he > MAX_IMAGE_HEIGHT_EMU {
-        we = we.checked_mul(MAX_IMAGE_HEIGHT_EMU)?.checked_div(he)?;
-        he = MAX_IMAGE_HEIGHT_EMU;
+    if he > g.max_img_h {
+        we = we.checked_mul(g.max_img_h)?.checked_div(he)?;
+        he = g.max_img_h;
     }
     // Never a zero-sized drawing; both values are now bounded by the page.
     Some((u32::try_from(we.max(1)).ok()?, u32::try_from(he.max(1)).ok()?))
@@ -277,7 +343,7 @@ fn display_size_emu(w: u32, h: u32, dpi: u32) -> Option<(u32, u32)> {
 ///
 /// `Ok(None)` means "not an image we can embed" (SVG, WebP, corrupt data); the
 /// caller shows the alt text. An error means the image is dangerous or too big.
-fn make_picture(bytes: Vec<u8>, dpi: u32, origin: &Path) -> Result<Option<Pic>> {
+fn make_picture(g: &Geometry, bytes: Vec<u8>, dpi: u32, origin: &Path, width: Option<ImgWidth>) -> Result<Option<Pic>> {
     let reader = || image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format();
     let Ok((w, h)) = reader().map_err(|e| CrateError::io(origin, e))?.into_dimensions() else {
         return Ok(None);
@@ -306,7 +372,15 @@ fn make_picture(bytes: Vec<u8>, dpi: u32, origin: &Path) -> Result<Option<Pic>> 
         }
         out.into_inner()
     };
-    let (we, he) = display_size_emu(w, h, dpi)
+    let requested = width.map(|wd| match wd {
+        ImgWidth::Px(px) => u128::from(px) * 9525, // 1 CSS px = 9525 EMU
+        ImgWidth::Percent(pct) => g.max_img_w * u128::from(pct.min(100)) / 100,
+    });
+    let sized = match requested {
+        Some(width_emu) if width_emu > 0 => display_size_for_width(g, w, h, width_emu),
+        _ => display_size_emu(g, w, h, dpi),
+    };
+    let (we, he) = sized
         .ok_or_else(|| CrateError::LimitExceeded(format!("image {} ({w}x{h} px) is out of range", origin.display())))?;
     Ok(Some(Pic::new_with_dimensions(png, w, h).size(we, he)))
 }
@@ -316,6 +390,7 @@ impl<'a> Builder<'a> {
         Builder {
             pre,
             cfg,
+            geo: Geometry::new(&cfg.document),
             base_dir: cfg.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
             nonce,
             footnotes: HashMap::new(),
@@ -323,7 +398,12 @@ impl<'a> Builder<'a> {
             footnote_bytes: 0,
             image_bytes: 0,
             html: None,
+            html_pre: false,
             hidden: None,
+            html_link: false,
+            align_stack: Vec::new(),
+            html_quotes: 0,
+            html_lists: 0,
             underline: 0,
             sup: 0,
             sub: 0,
@@ -406,6 +486,10 @@ impl<'a> Builder<'a> {
 
     /// Resolve the children of a finished paragraph into a docx paragraph.
     fn flush(&mut self) {
+        // An HTML `<a>` that was never closed ends with its paragraph.
+        if self.html_link {
+            self.close_html_link();
+        }
         let Some(children) = self.cur.take() else { return };
         let kind = std::mem::replace(&mut self.kind, ParaKind::Normal);
         if children.is_empty() {
@@ -466,6 +550,8 @@ impl<'a> Builder<'a> {
         }
         if centred {
             p = p.align(AlignmentType::Center);
+        } else if let Some((_, a)) = self.align_stack.last() {
+            p = p.align(*a);
         }
         if let Some(t) = self.table.as_ref() {
             let a = t.aligns.get(t.col).copied().unwrap_or(Alignment::None);
@@ -578,7 +664,7 @@ impl<'a> Builder<'a> {
             self.cfg.limits.max_image_bytes,
         )?;
         self.spend_image_bytes(bytes.len() as u64)?;
-        match make_picture(bytes, 96, &path)? {
+        match make_picture(&self.geo, bytes, 96, &path, ctx.width)? {
             Some(pic) => self.push(Child::Picture {
                 run: Run::new().add_image(pic),
                 kind: AssetKind::Graph,
@@ -607,7 +693,7 @@ impl<'a> Builder<'a> {
                     // Formulas are typeset at 12pt; body text is 11pt.
                     _ => self.cfg.math.dpi.saturating_mul(12) / 11,
                 };
-                match make_picture(bytes, dpi, path)? {
+                match make_picture(&self.geo, bytes, dpi, path, None)? {
                     Some(pic) => self.push(Child::Picture {
                         run: Run::new().add_image(pic),
                         kind: asset.kind,
@@ -713,6 +799,12 @@ impl<'a> Builder<'a> {
         }
         for piece in html::tokenize(raw) {
             match piece {
+                Piece::Text(t) if self.code.is_some() => {
+                    // Inside <pre>: keep every space and newline.
+                    if let Some(buf) = self.code.as_mut() {
+                        buf.push_str(&t);
+                    }
+                }
                 Piece::Text(t) => {
                     let collapsed = t.split_whitespace().collect::<Vec<_>>().join(" ");
                     let at_start = self.cur.as_ref().is_none_or(Vec::is_empty);
@@ -753,35 +845,208 @@ impl<'a> Builder<'a> {
             "sup" => adjust(&mut self.sup, closing),
             "sub" => adjust(&mut self.sub, closing),
             "code" | "kbd" | "samp" | "tt" => adjust(&mut self.mono, closing),
+            "a" => self.html_anchor(closing, attrs),
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                self.flush();
+                self.block_boundary(name, closing, attrs);
                 if !closing {
                     self.start_para(ParaKind::Heading(name.as_bytes()[1] - b'0'));
                 }
             }
-            "li" => {
-                self.flush();
-                if !closing {
-                    self.text("\u{2022} ");
-                }
+            "p" | "div" | "section" | "article" | "header" | "footer" | "nav" | "aside" | "main" | "address"
+            | "figure" | "figcaption" | "details" | "summary" | "center" | "dl" | "dt" | "dd" => {
+                self.block_boundary(name, closing, attrs);
             }
             "hr" => {
                 self.flush();
                 self.rule();
             }
-            "td" | "th" if closing => self.text("  "),
-            "p" | "div" | "section" | "article" | "header" | "footer" | "nav" | "aside" | "main" | "ul" | "ol"
-            | "dl" | "dt" | "dd" | "table" | "tr" | "blockquote" | "pre" | "figure" | "figcaption" | "details"
-            | "summary" | "center" | "address" => self.flush(),
+            "blockquote" => {
+                self.block_boundary(name, closing, attrs);
+                if !closing {
+                    self.quote_depth += 1;
+                    self.html_quotes += 1;
+                } else if self.html_quotes > 0 {
+                    self.quote_depth = self.quote_depth.saturating_sub(1);
+                    self.html_quotes -= 1;
+                }
+            }
+            "pre" => {
+                self.flush();
+                if !closing {
+                    if self.code.is_none() {
+                        self.code = Some(String::new());
+                        self.html_pre = true;
+                    }
+                } else if self.html_pre {
+                    self.html_pre = false;
+                    if let Some(code) = self.code.take() {
+                        // HTML ignores a newline right after <pre>.
+                        self.code_block(code.strip_prefix('\n').unwrap_or(&code));
+                    }
+                }
+            }
+            "ul" | "ol" => {
+                self.flush();
+                if !closing {
+                    let start = (name == "ol").then(|| {
+                        html::attr(attrs, "start")
+                            .and_then(|s| s.trim().parse::<u64>().ok())
+                            .unwrap_or(1)
+                    });
+                    self.start_list(start);
+                    self.html_lists += 1;
+                } else if self.html_lists > 0 {
+                    self.lists.pop();
+                    self.html_lists -= 1;
+                }
+            }
+            "li" => {
+                self.flush();
+                match self.lists.last_mut() {
+                    Some(ctx) if self.html_lists > 0 => {
+                        ctx.item_open = !closing;
+                        ctx.first_para = !closing;
+                        ctx.task = None;
+                    }
+                    // A stray <li> outside any list: keep it readable.
+                    _ if !closing => self.text("\u{2022} "),
+                    _ => {}
+                }
+            }
+            "table" | "tr" | "td" | "th" => self.html_table_tag(name, closing),
             "img" if !closing => {
                 if let Some(src) = html::attr(attrs, "src").filter(|s| !s.trim().is_empty()) {
                     let alt = html::attr(attrs, "alt").unwrap_or_default();
-                    self.image(ImageCtx { dest: src, alt })?;
+                    let width = html::attr(attrs, "width").and_then(|w| parse_img_width(&w));
+                    self.image(ImageCtx { dest: src, alt, width })?;
                 }
             }
             _ => {}
         }
         Ok(())
+    }
+
+    /// A block-level HTML element opens or closes: end the current paragraph and
+    /// track `align=`/`style="text-align:"`/`<center>` for the paragraphs inside.
+    fn block_boundary(&mut self, name: &str, closing: bool, attrs: &str) {
+        self.flush();
+        if closing {
+            // Pop the nearest matching open element (tolerates missing close tags).
+            if let Some(i) = self.align_stack.iter().rposition(|(n, _)| n == name) {
+                self.align_stack.truncate(i);
+            }
+        } else if let Some(a) = html_align(name, attrs) {
+            self.align_stack.push((name.to_string(), a));
+        }
+    }
+
+    fn html_anchor(&mut self, closing: bool, attrs: &str) {
+        if closing {
+            if self.html_link {
+                self.close_html_link();
+            }
+            return;
+        }
+        if !self.cfg.html_links || self.link.is_some() {
+            return; // links off, or already inside a link: keep the text only
+        }
+        let url = html::attr(attrs, "href").and_then(|h| safe_link(&h, &self.cfg.allowed_link_schemes));
+        if let Some(url) = url {
+            self.link = Some(LinkCtx {
+                url,
+                children: Vec::new(),
+            });
+            self.html_link = true;
+        }
+    }
+
+    fn close_html_link(&mut self) {
+        self.html_link = false;
+        if let Some(link) = self.link.take() {
+            self.finish_link(link.url, link.children);
+        }
+    }
+
+    fn html_table_tag(&mut self, name: &str, closing: bool) {
+        if name == "table" {
+            if !closing {
+                if self.table.is_none() {
+                    self.flush();
+                    self.table = Some(TableState {
+                        html: true,
+                        ..TableState::default()
+                    });
+                }
+            } else if self.table.as_ref().is_some_and(|t| t.html) {
+                self.close_html_cell();
+                self.close_html_row();
+                self.finish_table();
+            }
+            return;
+        }
+        // Markdown tables (and no table at all) ignore stray row/cell tags.
+        if !self.table.as_ref().is_some_and(|t| t.html) {
+            return;
+        }
+        match (name, closing) {
+            ("tr", _) => {
+                self.close_html_cell();
+                self.close_html_row();
+            }
+            ("td" | "th", false) => {
+                self.close_html_cell();
+                if let Some(t) = self.table.as_mut() {
+                    t.in_head = name == "th";
+                }
+                self.cell_start();
+            }
+            ("td" | "th", true) => self.close_html_cell(),
+            _ => {}
+        }
+    }
+
+    fn close_html_cell(&mut self) {
+        if self.table.as_ref().is_some_and(|t| t.html && t.cell.is_some()) {
+            self.cell_end();
+            if let Some(t) = self.table.as_mut() {
+                t.in_head = false;
+            }
+        }
+    }
+
+    fn close_html_row(&mut self) {
+        if let Some(t) = self.table.as_mut() {
+            if t.html && !t.row_cells.is_empty() {
+                t.max_cols = t.max_cols.max(t.row_cells.len());
+                self.row_end();
+            }
+        }
+    }
+
+    fn finish_table(&mut self) {
+        if let Some(t) = self.table.take() {
+            if t.rows.is_empty() {
+                return; // Word rejects a table without rows
+            }
+            let cols = t.aligns.len().max(t.max_cols).max(1);
+            let table = Table::new(t.rows)
+                .set_grid(vec![self.geo.content_w / cols; cols])
+                .width(self.geo.content_w, WidthType::Dxa);
+            self.blocks.push(Block::Table(Box::new(table)));
+        }
+    }
+
+    /// Close anything raw HTML left open at the end of the document.
+    fn finish_html(&mut self) {
+        if self.table.as_ref().is_some_and(|t| t.html) {
+            self.close_html_cell();
+            self.close_html_row();
+            self.finish_table();
+        }
+        if self.html_link {
+            self.close_html_link();
+        }
+        self.flush();
     }
 
     // ---- footnotes
@@ -1009,6 +1274,7 @@ impl<'a> Builder<'a> {
                 self.image = Some(ImageCtx {
                     dest: dest_url.to_string(),
                     alt: String::new(),
+                    width: None,
                 });
             }
             Tag::Table(aligns) => {
@@ -1085,15 +1351,7 @@ impl<'a> Builder<'a> {
             TagEnd::Image => {
                 // Finished by `feed`, which can fail.
             }
-            TagEnd::Table => {
-                if let Some(t) = self.table.take() {
-                    let cols = t.aligns.len().max(1);
-                    let table = Table::new(t.rows)
-                        .set_grid(vec![CONTENT_WIDTH_TWIPS / cols; cols])
-                        .width(CONTENT_WIDTH_TWIPS, WidthType::Dxa);
-                    self.blocks.push(Block::Table(Box::new(table)));
-                }
-            }
+            TagEnd::Table => self.finish_table(),
             TagEnd::TableHead => {
                 self.row_end();
                 if let Some(t) = self.table.as_mut() {
@@ -1126,6 +1384,47 @@ impl<'a> Builder<'a> {
             self.push(c);
         }
     }
+}
+
+/// Alignment requested by an HTML element: `<center>`, `align="..."`, or
+/// `style="text-align:..."`.
+fn html_align(name: &str, attrs: &str) -> Option<AlignmentType> {
+    if name == "center" {
+        return Some(AlignmentType::Center);
+    }
+    let value = html::attr(attrs, "align").or_else(|| {
+        html::attr(attrs, "style").and_then(|style| {
+            style.split(';').find_map(|decl| {
+                let (k, v) = decl.split_once(':')?;
+                (k.trim().eq_ignore_ascii_case("text-align")).then(|| v.trim().to_string())
+            })
+        })
+    })?;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "center" | "middle" => Some(AlignmentType::Center),
+        "right" | "end" => Some(AlignmentType::Right),
+        "left" | "start" => Some(AlignmentType::Left),
+        "justify" => Some(AlignmentType::Both),
+        _ => None,
+    }
+}
+
+/// `width="120"`, `"120px"` or `"50%"`; anything else is ignored.
+fn parse_img_width(raw: &str) -> Option<ImgWidth> {
+    let raw = raw.trim().to_ascii_lowercase();
+    if let Some(pct) = raw.strip_suffix('%') {
+        return pct
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|p| (1..=100).contains(p))
+            .map(ImgWidth::Percent);
+    }
+    let px = raw.strip_suffix("px").unwrap_or(&raw).trim();
+    px.parse::<u64>()
+        .ok()
+        .filter(|p| (1..=20_000).contains(p))
+        .map(ImgWidth::Px)
 }
 
 // ----------------------------------------------------------- OMML injection
@@ -1216,7 +1515,7 @@ fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
     map
 }
 
-pub fn build_docx(pre: &Preprocessed, cfg: &Config) -> Result<Vec<u8>> {
+pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &Config, writer: W) -> Result<()> {
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown);
@@ -1236,10 +1535,10 @@ pub fn build_docx(pre: &Preprocessed, cfg: &Config) -> Result<Vec<u8>> {
             b.feed(event)?;
         }
     }
-    b.flush();
+    b.finish_html();
 
     let (bullets, ordered) = numbering_definitions();
-    let mut docx = base_docx()
+    let mut docx = base_docx(&cfg.document, &b.geo)
         .add_abstract_numbering(bullets)
         .add_abstract_numbering(ordered)
         .add_numbering(Numbering::new(BULLET_NUM_ID, BULLET_ABSTRACT_ID));
@@ -1261,11 +1560,9 @@ pub fn build_docx(pre: &Preprocessed, cfg: &Config) -> Result<Vec<u8>> {
         parts.document = inject_omml(&xml, &b.nonce, &b.omml)?.into_bytes();
     }
 
-    let mut out = Cursor::new(Vec::new());
     parts
-        .pack(&mut out)
-        .map_err(|e| CrateError::DocxGenerationError(e.to_string()))?;
-    Ok(out.into_inner())
+        .pack(writer)
+        .map_err(|e| CrateError::DocxGenerationError(e.to_string()))
 }
 
 #[cfg(test)]
@@ -1291,17 +1588,38 @@ mod tests {
             (0, 0),
             (20_000, 20_000),
         ] {
-            let r = make_picture(png_header(w, h), 1, Path::new("hostile.png"));
+            let r = make_picture(
+                &Geometry::default(),
+                png_header(w, h),
+                1,
+                Path::new("hostile.png"),
+                None,
+            );
             assert!(!matches!(r, Ok(Some(_))), "{w}x{h} must not be embedded");
         }
         // Garbage and unsupported formats are "not an image", not a crash.
         assert!(matches!(
-            make_picture(b"<svg xmlns='x'/>".to_vec(), 96, Path::new("a.svg")),
+            make_picture(
+                &Geometry::default(),
+                b"<svg xmlns='x'/>".to_vec(),
+                96,
+                Path::new("a.svg"),
+                None
+            ),
             Ok(None)
         ));
-        assert!(matches!(make_picture(Vec::new(), 96, Path::new("empty")), Ok(None)));
         assert!(matches!(
-            make_picture(vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0], 96, Path::new("bad.jpg")),
+            make_picture(&Geometry::default(), Vec::new(), 96, Path::new("empty"), None),
+            Ok(None)
+        ));
+        assert!(matches!(
+            make_picture(
+                &Geometry::default(),
+                vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0],
+                96,
+                Path::new("bad.jpg"),
+                None
+            ),
             Ok(None)
         ));
     }
@@ -1309,18 +1627,21 @@ mod tests {
     #[test]
     fn display_size_is_bounded_and_keeps_aspect_ratio() {
         // 6in x 3in at 288 dpi, well inside the page: exact.
-        assert_eq!(display_size_emu(1728, 864, 288), Some((5_486_400, 2_743_200)));
+        assert_eq!(
+            display_size_emu(&Geometry::default(), 1728, 864, 288),
+            Some((5_486_400, 2_743_200))
+        );
         // Wider than the page: clamped to the text width, ratio kept.
-        let (w, h) = display_size_emu(10_000, 5_000, 96).unwrap();
-        assert_eq!(u64::from(w), MAX_IMAGE_WIDTH_EMU);
+        let (w, h) = display_size_emu(&Geometry::default(), 10_000, 5_000, 96).unwrap();
+        assert_eq!(u128::from(w), Geometry::default().max_img_w);
         assert!((i64::from(w) - 2 * i64::from(h)).abs() <= 1);
         // Very tall and narrow: clamped to the text height.
-        let (w, h) = display_size_emu(100, 50_000, 96).unwrap();
-        assert_eq!(u128::from(h), MAX_IMAGE_HEIGHT_EMU);
+        let (w, h) = display_size_emu(&Geometry::default(), 100, 50_000, 96).unwrap();
+        assert_eq!(u128::from(h), Geometry::default().max_img_h);
         assert!(w >= 1);
         // Extremes never overflow, wrap, or divide by zero.
-        assert!(display_size_emu(u32::MAX, u32::MAX, 0).is_some());
-        assert!(display_size_emu(1, 1, u32::MAX).is_some());
-        assert_eq!(display_size_emu(0, 0, 96), Some((1, 1)));
+        assert!(display_size_emu(&Geometry::default(), u32::MAX, u32::MAX, 0).is_some());
+        assert!(display_size_emu(&Geometry::default(), 1, 1, u32::MAX).is_some());
+        assert_eq!(display_size_emu(&Geometry::default(), 0, 0, 96), Some((1, 1)));
     }
 }

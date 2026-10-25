@@ -24,11 +24,14 @@ pub enum MathMode {
 /// * `{display}` – `1` for display math, `0` for inline math (math only)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandSpec {
+    /// Executable name or path.
     pub program: String,
+    /// Arguments; may contain the placeholders above.
     pub args: Vec<String>,
 }
 
 impl CommandSpec {
+    /// A command with the given program and arguments (placeholders allowed).
     pub fn new<S: Into<String>>(program: impl Into<String>, args: impl IntoIterator<Item = S>) -> Self {
         CommandSpec {
             program: program.into(),
@@ -42,7 +45,12 @@ impl CommandSpec {
 pub enum MathImageEngine {
     /// `latex` followed by `dvipng -T tight -bg Transparent` (TeX Live). The
     /// formula is wrapped in a minimal `standalone`-style document.
-    LatexDvipng { latex: String, dvipng: String },
+    LatexDvipng {
+        /// The `latex` executable (e.g. `latex`, or a full path).
+        latex: String,
+        /// The `dvipng` executable.
+        dvipng: String,
+    },
     /// Any command that reads LaTeX source from `{input}` and writes a PNG to
     /// `{output}` – e.g. a headless-browser/MathJax node script.
     Command(CommandSpec),
@@ -58,8 +66,12 @@ impl Default for MathImageEngine {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
+/// How formulas are rendered.
 pub struct MathOptions {
+    /// Native OMML equations or rendered pictures.
     pub mode: MathMode,
+    /// The tool used in [`MathMode::ImageFallback`].
     pub engine: MathImageEngine,
     /// Resolution of rendered formulas; also used to size them in the page.
     pub dpi: u32,
@@ -78,6 +90,7 @@ impl Default for MathOptions {
 /// Hard ceilings that keep one document from exhausting memory, disk or time.
 /// Exceeding any of them is a [`CrateError::LimitExceeded`](crate::CrateError).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Limits {
     /// Size of the Markdown input.
     pub max_input_bytes: usize,
@@ -174,7 +187,9 @@ impl MermaidEngine {
     }
 }
 
+/// How diagrams are rendered.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct GraphOptions {
     /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
     /// blocks and no diagram tool is ever started.
@@ -210,17 +225,130 @@ impl Default for GraphOptions {
     }
 }
 
+/// Paper size of the generated document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PageSize {
+    /// 210 x 297 mm.
+    #[default]
+    A4,
+    /// 8.5 x 11 in.
+    Letter,
+    /// 8.5 x 14 in.
+    Legal,
+    /// Explicit size in twentieths of a point (1 inch = 1440). Use a larger
+    /// width than height for landscape.
+    Custom {
+        /// Page width, 2880 (2 in) to 31680 (22 in).
+        width_twips: u32,
+        /// Page height, 2880 (2 in) to 31680 (22 in).
+        height_twips: u32,
+    },
+}
+
+impl PageSize {
+    /// `(width, height)` in twips.
+    pub fn twips(self) -> (u32, u32) {
+        match self {
+            PageSize::A4 => (11906, 16838),
+            PageSize::Letter => (12240, 15840),
+            PageSize::Legal => (12240, 20160),
+            PageSize::Custom {
+                width_twips,
+                height_twips,
+            } => (width_twips, height_twips),
+        }
+    }
+}
+
+/// Look of the generated document.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct DocumentOptions {
+    /// Paper size (default A4).
+    pub page: PageSize,
+    /// Margin on all four sides, in twips (default 1440 = 1 inch).
+    pub margin_twips: u32,
+    /// Body font family (default `Calibri`).
+    pub body_font: String,
+    /// Body size in half-points: 22 = 11 pt (default), range 12..=144.
+    pub body_size_half_points: u32,
+    /// Font for code (default `Consolas`).
+    pub code_font: String,
+    /// Heading colour as six hex digits, e.g. `1F3864` (default).
+    pub heading_color: String,
+}
+
+impl Default for DocumentOptions {
+    fn default() -> Self {
+        DocumentOptions {
+            page: PageSize::default(),
+            margin_twips: 1440,
+            body_font: "Calibri".into(),
+            body_size_half_points: 22,
+            code_font: "Consolas".into(),
+            heading_color: "1F3864".into(),
+        }
+    }
+}
+
+impl DocumentOptions {
+    /// Check the values; the error text names the offending option.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        let (w, h) = self.page.twips();
+        if !(2880..=31680).contains(&w) || !(2880..=31680).contains(&h) {
+            return Err(format!(
+                "page size {w} x {h} twips must be between 2 and 22 inches on each side"
+            ));
+        }
+        if u64::from(self.margin_twips) * 2 + 1440 > u64::from(w.min(h)) {
+            return Err(format!(
+                "margin of {} twips leaves less than 1 inch of text area on a {w} x {h} page",
+                self.margin_twips
+            ));
+        }
+        if !(12..=144).contains(&self.body_size_half_points) {
+            return Err(format!(
+                "body size {} half-points must be between 12 (6 pt) and 144 (72 pt)",
+                self.body_size_half_points
+            ));
+        }
+        for (what, font) in [("body font", &self.body_font), ("code font", &self.code_font)] {
+            if font.trim().is_empty() || font.chars().count() > 64 || font.chars().any(char::is_control) {
+                return Err(format!("{what} must be 1 to 64 printable characters"));
+            }
+        }
+        if self.heading_color.len() != 6 || !self.heading_color.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!(
+                "heading colour `{}` must be six hex digits like 1F3864",
+                self.heading_color
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Top-level configuration for [`crate::markdown_to_docx`].
+///
+/// The struct is `#[non_exhaustive]`: build one with [`Config::default`],
+/// [`Config::native_math`] or [`Config::untrusted`], then adjust it with the
+/// `with_*` methods or by assigning to fields. New options can be added in
+/// later versions without breaking your code.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Config {
+    /// Formula rendering.
     pub math: MathOptions,
+    /// Diagram rendering.
     pub graphs: GraphOptions,
+    /// Page size, margins and fonts of the generated document.
+    pub document: DocumentOptions,
     /// Directory against which relative image paths in the Markdown are
     /// resolved. Defaults to the current directory;
     /// [`crate::markdown_file_to_docx`] sets it to the file's directory.
     pub base_dir: Option<PathBuf>,
     /// Kill an external renderer that runs longer than this.
     pub tool_timeout: Duration,
+    /// Hard ceilings on input size, work and output.
     pub limits: Limits,
     /// Which local images may be embedded.
     pub image_access: ImageAccess,
@@ -228,6 +356,10 @@ pub struct Config {
     /// other scheme, or none (relative paths, `#anchors`, UNC paths), are
     /// written as plain text.
     pub allowed_link_schemes: Vec<String>,
+    /// Turn raw HTML `<a href>` into hyperlinks (still limited to
+    /// [`Config::allowed_link_schemes`]). When `false` the tag is dropped and
+    /// only its text stays. Default `true`; [`Config::untrusted`] sets `false`.
+    pub html_links: bool,
 }
 
 impl Default for Config {
@@ -235,16 +367,86 @@ impl Default for Config {
         Config {
             math: MathOptions::default(),
             graphs: GraphOptions::default(),
+            document: DocumentOptions::default(),
             base_dir: None,
             tool_timeout: Duration::from_secs(60),
             limits: Limits::default(),
             image_access: ImageAccess::default(),
             allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
+            html_links: true,
         }
     }
 }
 
 impl Config {
+    /// Check every option; called by the conversion functions before any work is
+    /// done. The error names the offending option.
+    pub fn validate(&self) -> crate::error::Result<()> {
+        let bad = |m: String| crate::error::CrateError::InvalidConfig(m);
+        self.document.validate().map_err(bad)?;
+        if !(1..=2400).contains(&self.math.dpi) || !(1..=2400).contains(&self.graphs.dpi) {
+            return Err(bad("dpi values must be between 1 and 2400".into()));
+        }
+        if self
+            .allowed_link_schemes
+            .iter()
+            .any(|s| s.is_empty() || s.contains(':'))
+        {
+            return Err(bad(
+                "allowed_link_schemes entries must be bare scheme names like `https`".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Choose native OMML or rendered-picture math.
+    pub fn with_math_mode(mut self, mode: MathMode) -> Self {
+        self.math.mode = mode;
+        self
+    }
+
+    /// Set the directory relative image paths resolve against.
+    pub fn with_base_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.base_dir = Some(dir.into());
+        self
+    }
+
+    /// Choose which local images may be embedded.
+    pub fn with_image_access(mut self, access: ImageAccess) -> Self {
+        self.image_access = access;
+        self
+    }
+
+    /// Replace the limits.
+    pub fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Replace the page and font options.
+    pub fn with_document(mut self, document: DocumentOptions) -> Self {
+        self.document = document;
+        self
+    }
+
+    /// Choose the Mermaid renderer.
+    pub fn with_mermaid_engine(mut self, engine: MermaidEngine) -> Self {
+        self.graphs.use_engine(engine);
+        self
+    }
+
+    /// Set the per-tool timeout.
+    pub fn with_tool_timeout(mut self, timeout: Duration) -> Self {
+        self.tool_timeout = timeout;
+        self
+    }
+
+    /// Turn raw HTML `<a href>` links on or off.
+    pub fn with_html_links(mut self, on: bool) -> Self {
+        self.html_links = on;
+        self
+    }
+
     /// Strictest preset for Markdown from people you do not trust (uploads,
     /// web forms, multi-tenant services): native math only, so no TeX process;
     /// diagram fences are left as code, so no browser process; no local files
@@ -253,6 +455,7 @@ impl Config {
         let mut c = Config::native_math();
         c.graphs.enabled = false;
         c.image_access = ImageAccess::None;
+        c.html_links = false;
         c.limits = Limits {
             max_input_bytes: 2 * 1024 * 1024,
             max_rendered_blocks: 200,

@@ -1,19 +1,80 @@
 //! Markdown to Word (`.docx`) with native handling of LaTeX math and
-//! text-based diagrams.
+//! text-based diagrams, built to be safe on untrusted input.
 //!
 //! ```text
 //! Markdown -> [1 preprocess: render math/graphs, rewrite as images]
 //!          -> [2 pulldown-cmark events] -> [3 docx-rs writer] -> .docx bytes
 //! ```
 //!
-//! * ```` ```mermaid ```` / ```` ```dolphin ```` fences are rendered to PNG by
-//!   an external CLI (`mmdc` by default) and embedded as pictures.
-//! * `$..$` and `$$..$$` become either transparent PNGs rendered by an
-//!   external tool ([`MathMode::ImageFallback`], the default) or native,
-//!   editable Word equations ([`MathMode::NativeOmml`], no external tool).
+//! # Quick start
 //!
-//! All intermediate files live in a `tempfile::TempDir` that is removed when
-//! the conversion returns, on success and on error.
+//! ```
+//! use silvercity_oss::{markdown_to_docx, Config};
+//!
+//! # fn main() -> Result<(), silvercity_oss::CrateError> {
+//! let docx: Vec<u8> = markdown_to_docx("# Hello\n\nEuler: $e^{i\\pi} + 1 = 0$", &Config::native_math())?;
+//! assert_eq!(&docx[..2], b"PK"); // a zip archive, i.e. a .docx file
+//! # Ok(()) }
+//! ```
+//!
+//! # Untrusted input
+//!
+//! Use [`Config::untrusted`] for Markdown you do not control. It starts no
+//! subprocess, reads no local file and enforces tight size limits; raw HTML is
+//! reduced to a safe subset. Every failure is a [`CrateError`]; the crate does
+//! not panic on bad input.
+//!
+//! ```
+//! use silvercity_oss::{markdown_to_docx, Config, CrateError};
+//!
+//! let hostile = "[x](javascript:alert(1)) <script>bad()</script> ![secret](/etc/passwd)";
+//! let docx = markdown_to_docx(hostile, &Config::untrusted()).expect("safe by construction");
+//! # let _ = docx;
+//!
+//! // Limits turn abuse into errors, not hangs or crashes.
+//! let huge = "x".repeat(3 * 1024 * 1024);
+//! assert!(matches!(markdown_to_docx(&huge, &Config::untrusted()), Err(CrateError::LimitExceeded(_))));
+//! ```
+//!
+//! # Page, fonts and writers
+//!
+//! ```
+//! use silvercity_oss::{markdown_to_docx_writer, Config, DocumentOptions, PageSize};
+//!
+//! # fn main() -> Result<(), silvercity_oss::CrateError> {
+//! let mut document = DocumentOptions::default();
+//! document.page = PageSize::Letter;
+//! document.body_font = "Georgia".into();
+//! let config = Config::untrusted().with_document(document);
+//!
+//! let mut out = std::io::Cursor::new(Vec::new()); // or a std::fs::File
+//! markdown_to_docx_writer("# Letter-size page", &config, &mut out)?;
+//! assert!(out.into_inner().len() > 1000);
+//! # Ok(()) }
+//! ```
+//!
+//! # Things to know
+//!
+//! * **Blocking.** Conversion is synchronous and may wait on external tools
+//!   (diagrams, image-mode math). From async code, call it inside
+//!   `spawn_blocking`.
+//! * **Thread-safe.** [`Config`] is `Send + Sync`; share one across threads.
+//!   Each call uses its own scratch directory, removed when the call returns.
+//! * **Not byte-reproducible.** The same input gives the same *content* every
+//!   time, but `docx-rs` numbers relationship, footnote and picture ids from
+//!   process-wide counters, so two calls can differ in those ids (and in the
+//!   order of relationship entries). Compare or cache by content, not by
+//!   hashing the bytes.
+//! * **Features.** `cli` (default) builds the `md2docx` binary. Library users
+//!   should depend on the crate with `default-features = false` to avoid
+//!   compiling `clap` and `shlex`.
+//! * **Diagram and TeX tools are external** programs, never linked in. See
+//!   [`MermaidEngine`] and [`MathImageEngine`].
+//!
+//! The whole crate is `#![forbid(unsafe_code)]`.
+
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 mod config;
 mod error;
@@ -21,28 +82,47 @@ mod html;
 pub mod omml;
 mod parser;
 mod preprocess;
+/// External-tool plumbing. Not part of the stable API; exposed for the crate's
+/// own tests.
+#[doc(hidden)]
 pub mod renderer;
 mod safety;
 
-use std::fs;
+use std::io::{Seek, Write};
 use std::path::Path;
 
 pub use config::{
-    CommandSpec, Config, GraphOptions, ImageAccess, Limits, MathImageEngine, MathMode, MathOptions, MermaidEngine,
+    CommandSpec, Config, DocumentOptions, GraphOptions, ImageAccess, Limits, MathImageEngine, MathMode, MathOptions,
+    MermaidEngine, PageSize,
 };
 pub use error::{CrateError, Result};
 pub use preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
 
 /// Convert Markdown text to the bytes of a `.docx` file.
+///
+/// Returns [`CrateError::InvalidConfig`] for out-of-range options before doing
+/// any work.
 pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    markdown_to_docx_writer(markdown, config, &mut out)?;
+    Ok(out.into_inner())
+}
+
+/// Convert Markdown text and write the `.docx` archive to `writer`
+/// (a `File`, a `Cursor<Vec<u8>>`, ...). Nothing is written if conversion fails
+/// before packaging.
+pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
+    config.validate()?;
     let pre = preprocess(markdown, config)?;
-    parser::build_docx(&pre, config)
+    parser::build_docx(&pre, config, writer)
 }
 
 /// Convert a Markdown file. Relative image paths resolve against the file's
 /// directory unless `config.base_dir` is set.
 pub fn markdown_file_to_docx(path: &Path, config: &Config) -> Result<Vec<u8>> {
-    let bytes = fs::read(path).map_err(|e| CrateError::io(path, e))?;
+    // Bounded read: a huge file or a device like /dev/zero must not be slurped into memory.
+    let max = u64::try_from(config.limits.max_input_bytes).unwrap_or(u64::MAX);
+    let bytes = safety::read_regular_file(path, &path.display().to_string(), max)?;
     let text = String::from_utf8(bytes)
         .map_err(|_| CrateError::InvalidMarkdown(format!("{} is not valid UTF-8", path.display())))?;
     let mut cfg = config.clone();

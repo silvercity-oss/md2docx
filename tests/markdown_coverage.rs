@@ -519,9 +519,9 @@ fn raw_html() {
         (
             "lists",
             "<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n",
-            &[],
-            &["• one", "• two"],
-            &["<li>"],
+            &["<w:numPr>"],
+            &["one", "two"],
+            &["<li>", "\u{2022}"],
         ),
         (
             "table text",
@@ -717,13 +717,9 @@ fn large_but_legitimate_documents_are_fast() {
     let table: String = (0..1500).map(|i| format!("| {i} | cell {i} | **b** |\n")).collect();
     md.push_str(&format!("| n | text | f |\n|---|------|---|\n{table}"));
     let started = std::time::Instant::now();
-    let cfg = Config {
-        limits: silvercity_oss::Limits {
-            max_rendered_blocks: 10_000,
-            ..Default::default()
-        },
-        ..Config::native_math()
-    };
+    let mut limits = silvercity_oss::Limits::default();
+    limits.max_rendered_blocks = 10_000;
+    let cfg = Config::native_math().with_limits(limits);
     let docx = markdown_to_docx(&md, &cfg).unwrap();
     let elapsed = started.elapsed();
     assert!(docx.len() > 100_000);
@@ -800,10 +796,7 @@ fn unsafe_html_is_stripped_but_its_text_is_kept() {
     for (name, cfg) in [
         (
             "default, images off",
-            silvercity_oss::Config {
-                image_access: silvercity_oss::ImageAccess::None,
-                ..silvercity_oss::Config::native_math()
-            },
+            silvercity_oss::Config::native_math().with_image_access(silvercity_oss::ImageAccess::None),
         ),
         ("untrusted", silvercity_oss::Config::untrusted()),
     ] {
@@ -835,11 +828,11 @@ fn unsafe_html_is_stripped_but_its_text_is_kept() {
                 "[{name}] relationships contain `{dangerous}`"
             );
         }
-        assert!(
-            !rels.contains("ok.example"),
-            "[{name}] <a> is stripped: no link relationship at all"
-        );
-        assert_eq!(b.matches("<w:hyperlink").count(), 0, "[{name}]");
+        // `<a href>` is the one place the modes differ: a safe https link becomes a hyperlink
+        // by default, never in --untrusted; the javascript: one is never a link.
+        let expected_links = usize::from(name != "untrusted");
+        assert_eq!(b.matches("<w:hyperlink").count(), expected_links, "[{name}]");
+        assert_eq!(rels.contains("https://ok.example"), expected_links == 1, "[{name}]");
         assert_eq!(media_count(&docx), 0, "[{name}]");
         for kept in [
             "click me",
@@ -861,4 +854,191 @@ fn unsafe_html_is_stripped_but_its_text_is_kept() {
             "[{name}] harmless formatting tags still work"
         );
     }
+}
+
+// ---- raw HTML the way people write it in READMEs (default mode; --untrusted differs only in links)
+
+fn html_docx(md: &str, cfg: &silvercity_oss::Config) -> (Vec<u8>, String) {
+    let docx = markdown_to_docx(md, cfg).expect("conversion");
+    let b = zip_text(&docx, "word/document.xml");
+    assert_well_formed(&b);
+    (docx, b)
+}
+
+fn no_images() -> silvercity_oss::Config {
+    silvercity_oss::Config::native_math().with_image_access(silvercity_oss::ImageAccess::None)
+}
+
+#[test]
+fn html_links_become_hyperlinks_unless_untrusted() {
+    let md = "Visit <a href=\"https://example.com/docs\">the docs</a>, <a href=\"mailto:me@example.com\">mail</a>, \
+              <a href=\"javascript:alert(1)\">bad</a>, <a href=\"file:///etc/passwd\">file</a>, <a href=\"#top\">anchor</a>, <a>no href</a>.\n\n\
+              <p align=\"center\"><a href=\"https://ci.example\"><img src=\"https://img.example/badge.svg\" alt=\"build\"></a></p>\n";
+    let (docx, b) = html_docx(md, &no_images());
+    let rels = zip_text(&docx, "word/_rels/document.xml.rels");
+    assert_eq!(b.matches("<w:hyperlink").count(), 3, "docs, mail and the badge: {b}");
+    for good in [
+        "https://example.com/docs",
+        "mailto:me@example.com",
+        "https://ci.example",
+    ] {
+        assert!(rels.contains(good), "{good} missing");
+    }
+    for bad in ["javascript", "file:", "#top"] {
+        assert!(!rels.contains(bad), "{bad} became a link target");
+    }
+    let text = visible_text(&b);
+    for label in ["the docs", "mail", "bad", "file", "anchor", "no href", "[build]"] {
+        assert!(text.contains(label), "`{label}` lost: {text}");
+    }
+
+    // The strict preset keeps the text and drops every link.
+    let (docx, b) = html_docx(md, &silvercity_oss::Config::untrusted());
+    assert_eq!(b.matches("<w:hyperlink").count(), 0);
+    assert!(!zip_text(&docx, "word/_rels/document.xml.rels").contains("example.com"));
+    assert!(visible_text(&b).contains("the docs"));
+}
+
+#[test]
+fn unclosed_or_overlapping_html_links_are_contained() {
+    let (_, b) = html_docx(
+        "a <a href=\"https://x.example\">unclosed link\n\nnext paragraph <a href=\"https://y.example\">also open",
+        &no_images(),
+    );
+    assert_eq!(b.matches("<w:hyperlink").count(), 2, "each ends with its paragraph");
+    assert!(visible_text(&b).contains("next paragraph"));
+    // An HTML link inside a Markdown link does not nest or corrupt anything.
+    let (_, b) = html_docx(
+        "[md <a href=\"https://inner.example\">html</a> link](https://outer.example)\n",
+        &no_images(),
+    );
+    assert!(b.matches("<w:hyperlink").count() >= 1);
+    assert!(visible_text(&b).contains("html"));
+}
+
+#[test]
+fn html_alignment_is_applied_in_every_mode() {
+    let md = "<p align=\"center\">centred</p>\n\n<div align=\"right\">right</div>\n\n\
+              <h2 style=\"text-align: center\">styled heading</h2>\n\n<center>old school</center>\n\n\
+              <div align=\"left\">left</div>\n\nplain after\n";
+    for cfg in [no_images(), silvercity_oss::Config::untrusted()] {
+        let (_, b) = html_docx(md, &cfg);
+        assert_eq!(b.matches("w:jc w:val=\"center\"").count(), 3, "p, h2, center: {b}");
+        assert_eq!(b.matches("w:jc w:val=\"right\"").count(), 1);
+        assert!(b.contains("Heading2"));
+        // Alignment ends with its element.
+        let after = b.split("plain after").next().unwrap().rsplit("<w:p ").next().unwrap();
+        assert!(
+            !after.contains("w:jc"),
+            "text after the block must not inherit alignment"
+        );
+    }
+}
+
+#[test]
+fn html_lists_use_real_word_numbering() {
+    let md = "<ol start=\"3\"><li>third</li><li>fourth<ul><li>nested a</li><li>nested b</li></ul></li></ol>\n\n<ul><li>bullet</li></ul>\n";
+    let docx = markdown_to_docx(md, &no_images()).unwrap();
+    let b = zip_text(&docx, "word/document.xml");
+    assert_well_formed(&b);
+    assert_eq!(b.matches("<w:numPr>").count(), 5);
+    assert!(zip_text(&docx, "word/numbering.xml").contains("startOverride w:val=\"3\""));
+    assert!(b.contains("w:ilvl w:val=\"1\""), "nested list is one level deeper");
+    let text = visible_text(&b);
+    assert!(text.contains("third") && text.contains("nested b") && !text.contains('\u{2022}'));
+    // Stray list tags neither crash nor eat a Markdown list.
+    let (_, b) = html_docx(
+        "</ul></ol>\n\n- md one\n- md two\n\n</ul>\n\n<li>loose item</li>\n",
+        &no_images(),
+    );
+    assert_eq!(b.matches("<w:numPr>").count(), 2);
+    assert!(visible_text(&b).contains("loose item"));
+}
+
+#[test]
+fn html_pre_keeps_whitespace_and_blockquote_is_a_quote() {
+    let md = "<pre>\nfn main() {\n    let x = 1;\n\n    println!(\"{x}\");\n}\n</pre>\n\n<blockquote>quoted <b>html</b></blockquote>\n\nafter\n";
+    let (_, b) = html_docx(md, &no_images());
+    assert!(b.matches("CodeBlock").count() >= 5, "one code paragraph per line");
+    let text = visible_text(&b);
+    assert!(
+        text.contains("    let x = 1;") && text.contains("fn main() {"),
+        "indentation must survive: {text:?}"
+    );
+    assert!(b.contains("w:left w:val=\"single\""), "blockquote gets the quote bar");
+    // A stray </blockquote> must not unbalance a Markdown quote.
+    let (_, b) = html_docx("</blockquote>\n\n> md quote\n\ntext\n", &no_images());
+    assert_eq!(b.matches("w:left w:val=\"single\"").count(), 1);
+}
+
+#[test]
+fn html_tables_become_word_tables() {
+    let md = "<table>\n<tr><th>Name</th><th>Qty</th></tr>\n<tr><td>apples</td><td>3</td></tr>\n<tr><td>pears</td><td><b>12</b></td></tr>\n</table>\n\nafter\n";
+    for cfg in [no_images(), silvercity_oss::Config::untrusted()] {
+        let (_, b) = html_docx(md, &cfg);
+        assert_eq!(b.matches("<w:tbl>").count(), 1);
+        assert_eq!(b.matches("<w:tr>").count() + b.matches("<w:tr ").count(), 3);
+        assert!(b.contains("E7E6E6"), "header cells are shaded");
+        let text = visible_text(&b);
+        for t in ["Name", "Qty", "apples", "3", "pears", "12", "after"] {
+            assert!(text.contains(t), "{t}: {text}");
+        }
+    }
+    // Sloppy HTML: missing </td>/</tr>/</table>, ragged rows, empty table, stray cells.
+    for sloppy in [
+        "<table><tr><td>a<td>b<tr><td>c</table>\n",
+        "<table><tr><td>only one cell<tr><td>x<td>y<td>z\n",
+        "<table></table>\n\ntext\n",
+        "<td>stray</td><tr><th>head</th></tr>\n",
+        "<table><tr><td><table><tr><td>nested</td></tr></table></td></tr></table>\n",
+    ] {
+        let (_, b) = html_docx(sloppy, &no_images());
+        assert!(b.contains("<w:body>"), "{sloppy}");
+    }
+    let (_, b) = html_docx("<table></table>\n\ntext\n", &no_images());
+    assert_eq!(
+        b.matches("<w:tbl>").count(),
+        0,
+        "a table without rows would be invalid Word"
+    );
+    let (_, b) = html_docx("<table><tr><td>a<td>b<tr><td>c</table>\n", &no_images());
+    assert_eq!(b.matches("<w:tr>").count() + b.matches("<w:tr ").count(), 2);
+}
+
+#[test]
+fn html_img_width_sets_the_picture_size() {
+    let fx = Fixture::new(); // fixture.png is 600x300 px
+    let cfg = silvercity_oss::Config::native_math().with_base_dir(fx.dir.path());
+    let extent = |md: &str| -> (u64, u64) {
+        let (_, b) = html_docx(md, &cfg);
+        let tag = &b[b.find("<wp:extent").expect("a picture")..];
+        let get = |k: &str| -> u64 {
+            let at = tag.find(k).unwrap() + k.len();
+            tag[at..].split('"').next().unwrap().parse().unwrap()
+        };
+        (get("cx=\""), get("cy=\""))
+    };
+    // 150 CSS px wide = 150 * 9525 EMU, height follows the 2:1 aspect ratio.
+    assert_eq!(
+        extent("<img src=\"fixture.png\" width=\"150\">"),
+        (150 * 9525, 75 * 9525)
+    );
+    assert_eq!(
+        extent("<img src=\"fixture.png\" width=\"150px\">"),
+        (150 * 9525, 75 * 9525)
+    );
+    // 50% of the text width.
+    let (cx, cy) = extent("<img src=\"fixture.png\" width=\"50%\">");
+    assert!(cx > 2_000_000 && cx.abs_diff(2 * cy) <= 1, "{cx} x {cy}");
+    // Nonsense widths fall back to the natural size (600 px at 96 dpi = 600 * 9525).
+    for bad in ["abc", "0", "-5", "999999", "50%%", ""] {
+        assert_eq!(
+            extent(&format!("<img src=\"fixture.png\" width=\"{bad}\">")),
+            (600 * 9525, 300 * 9525),
+            "{bad}"
+        );
+    }
+    // Wider than the page is clamped, never overflowing the margins.
+    let (cx, _) = extent("<img src=\"fixture.png\" width=\"5000\">");
+    assert!(cx <= 9026 * 635, "{cx}");
 }

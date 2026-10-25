@@ -198,7 +198,7 @@ pub(crate) fn read_regular_file(path: &Path, label: &str, max_bytes: u64) -> Res
     }
     if meta.len() > max_bytes {
         return Err(CrateError::LimitExceeded(format!(
-            "image {} is {} bytes (limit {max_bytes})",
+            "file {} is {} bytes (limit {max_bytes})",
             path.display(),
             meta.len()
         )));
@@ -210,7 +210,7 @@ pub(crate) fn read_regular_file(path: &Path, label: &str, max_bytes: u64) -> Res
     if buf.len() as u64 > max_bytes {
         // The file grew while we read it.
         return Err(CrateError::LimitExceeded(format!(
-            "image {} exceeds {max_bytes} bytes",
+            "file {} exceeds {max_bytes} bytes",
             path.display()
         )));
     }
