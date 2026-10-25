@@ -11,7 +11,7 @@ use crate::config::{Config, MathMode};
 use crate::error::{CrateError, Result};
 use crate::omml;
 use crate::parser::markdown_options;
-use crate::renderer::{asset_stem, render_graph, render_math_image, GraphKind, Workspace};
+use crate::renderer::{asset_stem, render_custom, render_graph, render_math_image, GraphKind, Workspace};
 use crate::safety::sanitize_xml_chars;
 
 /// What an image reference in the rewritten Markdown stands for.
@@ -67,8 +67,17 @@ fn escape_dest(path: &str) -> String {
     path.replace('\\', "\\\\")
 }
 
+/// Who renders a fenced block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Fence {
+    /// `mermaid` / `dolphin` through their configured commands.
+    Builtin(GraphKind),
+    /// A [`FenceRenderer`](crate::FenceRenderer) registered for this language.
+    Custom(String),
+}
+
 enum Found {
-    Graph(GraphKind, String),
+    Graph(Fence, String),
     Math { latex: String, display: bool },
 }
 
@@ -143,17 +152,28 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     // Pass 1: locate everything to replace, using real CommonMark parsing so
     // code spans, escapes and nested containers are handled correctly.
     let mut found: Vec<(Range<usize>, Found)> = Vec::new();
-    let mut open_graph: Option<(Range<usize>, GraphKind, String)> = None;
+    let mut open_graph: Option<(Range<usize>, Fence, String)> = None;
+    let mut diagrams = 0usize;
     for (event, range) in Parser::new_ext(markdown, markdown_options(true)).into_offset_iter() {
         match event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                // With diagrams disabled the fence stays an ordinary code block.
-                if let Some(kind) = GraphKind::from_info(&info)
-                    .filter(|_| cfg.graphs.enabled)
-                    // Hardened mode renders Mermaid only; Dolphin is an arbitrary command.
-                    .filter(|k| !(cfg.graphs.hardened && *k == GraphKind::Dolphin))
-                {
-                    open_graph = Some((range, kind, String::new()));
+                // A renderer registered by the embedder wins, whatever the other settings.
+                let custom = info
+                    .split_whitespace()
+                    .next()
+                    .map(str::to_ascii_lowercase)
+                    .filter(|lang| cfg.fence_renderers.get(lang).is_some());
+                // Otherwise: with diagrams disabled the fence stays an ordinary code block.
+                let fence = match custom {
+                    Some(lang) => Some(Fence::Custom(lang)),
+                    None => GraphKind::from_info(&info)
+                        .filter(|_| cfg.graphs.enabled)
+                        // Hardened mode renders Mermaid only; Dolphin is an arbitrary command.
+                        .filter(|k| !(cfg.graphs.hardened && *k == GraphKind::Dolphin))
+                        .map(Fence::Builtin),
+                };
+                if let Some(fence) = fence {
+                    open_graph = Some((range, fence, String::new()));
                 }
             }
             Event::Text(t) => {
@@ -162,10 +182,10 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
-                if let Some((range, kind, buf)) = open_graph.take() {
+                if let Some((range, fence, buf)) = open_graph.take() {
                     if buf.trim().is_empty() {
                         return Err(CrateError::InvalidMarkdown(format!(
-                            "empty {kind:?} block at line {}",
+                            "empty {fence:?} block at line {}",
                             line_of(markdown, range.start)
                         )));
                     }
@@ -177,7 +197,8 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                             limits.max_graph_source_bytes
                         )));
                     }
-                    found.push((range, Found::Graph(kind, buf)));
+                    diagrams += 1;
+                    found.push((range, Found::Graph(fence, buf)));
                 }
             }
             Event::InlineMath(m) | Event::DisplayMath(m) if m.len() > limits.max_formula_bytes => {
@@ -204,7 +225,6 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
             )),
             _ => {}
         }
-        let diagrams = found.iter().filter(|(_, f)| matches!(f, Found::Graph(..))).count();
         if diagrams > limits.max_diagrams {
             return Err(CrateError::LimitExceeded(format!(
                 "more than {} diagrams in one document",
@@ -225,8 +245,11 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
 
     for (range, item) in found {
         let (dest, alt, asset) = match item {
-            Found::Graph(kind, source) => {
-                let png = render_graph(&workspace, kind, &source, cfg)?;
+            Found::Graph(fence, source) => {
+                let png = match &fence {
+                    Fence::Builtin(kind) => render_graph(&workspace, *kind, &source, cfg)?,
+                    Fence::Custom(lang) => render_custom(&workspace, lang, &source, cfg)?,
+                };
                 let dest = png.to_string_lossy().into_owned();
                 (
                     dest,

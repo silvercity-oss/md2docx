@@ -68,6 +68,10 @@
 //! * **Features.** `cli` (default) builds the `md2docx` binary. Library users
 //!   should depend on the crate with `default-features = false` to avoid
 //!   compiling `clap` and `shlex`.
+//! * **Extensible by the embedder, not the document author.**
+//!   [`Config::with_fence_renderer`] renders fenced blocks with your own code and
+//!   [`Config::with_html_tag`] styles custom HTML tags; both are safe with
+//!   [`Config::untrusted`].
 //! * **Diagram and TeX tools are external** programs, never linked in. See
 //!   [`MermaidEngine`] and [`MathImageEngine`].
 //!
@@ -78,6 +82,7 @@
 
 mod config;
 mod error;
+mod extend;
 mod html;
 pub mod omml;
 mod parser;
@@ -96,6 +101,7 @@ pub use config::{
     MermaidEngine, PageSize,
 };
 pub use error::{CrateError, Result};
+pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, TagStyle};
 pub use preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
 
 /// Convert Markdown text to the bytes of a `.docx` file.
@@ -110,7 +116,9 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 
 /// Convert Markdown text and write the `.docx` archive to `writer`
 /// (a `File`, a `Cursor<Vec<u8>>`, ...). Nothing is written if conversion fails
-/// before packaging.
+/// before packaging, or if the result would exceed `Limits::max_output_bytes`
+/// (checked first). If packaging itself fails, the writer may hold a partial
+/// archive: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
     config.validate()?;
     let pre = preprocess(markdown, config)?;

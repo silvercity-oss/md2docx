@@ -71,6 +71,16 @@ impl Workspace {
     pub fn path(&self) -> &Path {
         self.dir.path()
     }
+
+    /// Fail when the conversion's total time for external work is used up.
+    pub fn check_budget(&self, what: &str) -> Result<()> {
+        match self.deadline {
+            Some(d) if Instant::now() >= d => Err(CrateError::LimitExceeded(format!(
+                "the time budget for external work ran out before {what} finished"
+            ))),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Deterministic, collision-resistant file stem: `<prefix>_<16 hex of sha256>`.
@@ -376,6 +386,52 @@ pub fn render_graph(ws: &Workspace, kind: GraphKind, source: &str, cfg: &Config)
         scrub_env: cfg.graphs.hardened,
     };
     run_spec(ws, cfg, &job)?;
+    Ok(output)
+}
+
+/// Render a fenced block with the embedder's [`FenceRenderer`](crate::FenceRenderer)
+/// to `<workspace>/fence_<hash>.png`.
+pub fn render_custom(ws: &Workspace, lang: &str, source: &str, cfg: &Config) -> Result<PathBuf> {
+    let who = format!("fence renderer `{lang}`");
+    let renderer = cfg
+        .fence_renderers
+        .get(lang)
+        .ok_or_else(|| CrateError::InvalidConfig(format!("no fence renderer registered for `{lang}`")))?;
+    let stem = asset_stem("fence", &[lang.as_bytes(), source.as_bytes()]);
+    let output = ws.path().join(format!("{stem}.png"));
+    if output.exists() {
+        return Ok(output);
+    }
+    ws.check_budget(&who)?;
+    // A renderer is arbitrary code: a panic becomes an error instead of unwinding
+    // through the converter.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| renderer.render(source)));
+    let failed = |detail: String| CrateError::ExternalToolFailed {
+        program: who.clone(),
+        detail,
+    };
+    let bytes = match result {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => return Err(failed(e.to_string())),
+        Err(_) => return Err(failed("the renderer panicked".into())),
+    };
+    ws.check_budget(&who)?;
+    // Check the size before the bytes reach the disk.
+    if bytes.len() as u64 > cfg.limits.max_image_bytes {
+        return Err(CrateError::LimitExceeded(format!(
+            "{who} returned {} bytes (limit {})",
+            bytes.len(),
+            cfg.limits.max_image_bytes
+        )));
+    }
+    fs::write(&output, &bytes).map_err(|e| CrateError::io(&output, e))?;
+    if dir_size(ws.path(), 0) > cfg.limits.max_workspace_bytes {
+        return Err(CrateError::LimitExceeded(format!(
+            "rendered images exceed {} bytes in total",
+            cfg.limits.max_workspace_bytes
+        )));
+    }
+    check_png(&who, &output, cfg.limits.max_image_bytes)?;
     Ok(output)
 }
 

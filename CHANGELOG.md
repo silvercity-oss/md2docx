@@ -36,6 +36,18 @@ First release.
   devices and directories.
 - `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
 
+### Extension points
+- `Config::with_fence_renderer(lang, renderer)`: render fenced blocks with your own
+  code (`FenceRenderer` trait or a closure) to a PNG; replaces the external command
+  when registered for `mermaid`/`dolphin`. Panics are caught, output is checked like
+  any image, and the blocks count against the diagram limits.
+- `Config::with_html_tag(name, TagStyle)`: style custom or built-in HTML tags
+  (inline formatting, colour, highlight, or a block with fill, bar, indent, label).
+  Attributes in the document are ignored. Tag names may contain `-`.
+- `DocumentOptions::{code_background, link_color, quote_bar_color}`.
+- `Limits::max_output_bytes` (256 MiB; **50 MiB** in `Config::untrusted()`): the
+  `.docx` is stored uncompressed, so a small input could expand about 40x.
+
 ### Diagrams for untrusted input
 - `Config::untrusted_with_diagrams()` / `md2docx --untrusted --diagrams`: Mermaid
   rendered by `merman-cli` (no browser) with a locked-down command (stock merman

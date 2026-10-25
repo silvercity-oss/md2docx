@@ -1,7 +1,11 @@
 //! Configuration for the conversion pipeline.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
+
+use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, TagStyle};
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -108,6 +112,11 @@ pub struct Limits {
     pub max_total_image_bytes: u64,
     /// Total size of the scratch directory while external tools run.
     pub max_workspace_bytes: u64,
+    /// Size of the finished `.docx`. The archive is stored uncompressed, so this
+    /// is also roughly the size of the XML inside. Enforced before and while
+    /// writing, to within a few KB of archive headers, so an over-large result
+    /// fails early; [`Config::untrusted`] sets 50 MiB.
+    pub max_output_bytes: u64,
     /// Total wall-clock time one conversion may spend in external tools, on top
     /// of the per-tool [`Config::tool_timeout`].
     pub max_total_tool_time: Duration,
@@ -125,6 +134,7 @@ impl Default for Limits {
             max_image_bytes: 25 * MIB,
             max_total_image_bytes: 150 * MIB,
             max_workspace_bytes: 256 * MIB,
+            max_output_bytes: 256 * MIB,
             max_total_tool_time: Duration::from_secs(300),
         }
     }
@@ -300,6 +310,12 @@ pub struct DocumentOptions {
     pub code_font: String,
     /// Heading colour as six hex digits, e.g. `1F3864` (default).
     pub heading_color: String,
+    /// Background of code blocks and inline code, six hex digits (default `F2F2F2`).
+    pub code_background: String,
+    /// Colour of hyperlinks, six hex digits (default `0563C1`).
+    pub link_color: String,
+    /// Colour of the bar beside block quotes, six hex digits (default `A6A6A6`).
+    pub quote_bar_color: String,
 }
 
 impl Default for DocumentOptions {
@@ -311,6 +327,9 @@ impl Default for DocumentOptions {
             body_size_half_points: 22,
             code_font: "Consolas".into(),
             heading_color: "1F3864".into(),
+            code_background: "F2F2F2".into(),
+            link_color: "0563C1".into(),
+            quote_bar_color: "A6A6A6".into(),
         }
     }
 }
@@ -341,11 +360,15 @@ impl DocumentOptions {
                 return Err(format!("{what} must be 1 to 64 printable characters"));
             }
         }
-        if self.heading_color.len() != 6 || !self.heading_color.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!(
-                "heading colour `{}` must be six hex digits like 1F3864",
-                self.heading_color
-            ));
+        for (what, value) in [
+            ("heading colour", &self.heading_color),
+            ("code background", &self.code_background),
+            ("link colour", &self.link_color),
+            ("quote bar colour", &self.quote_bar_color),
+        ] {
+            if !crate::extend::is_hex_color(value) {
+                return Err(format!("{what} `{value}` must be six hex digits like 1F3864"));
+            }
         }
         Ok(())
     }
@@ -384,6 +407,12 @@ pub struct Config {
     /// [`Config::allowed_link_schemes`]). When `false` the tag is dropped and
     /// only its text stays. Default `true`; [`Config::untrusted`] sets `false`.
     pub html_links: bool,
+    /// Styles for HTML tags outside the built-in set (or overriding it), by
+    /// lower-case tag name. See [`TagStyle`]. Empty by default.
+    pub html_tags: BTreeMap<String, TagStyle>,
+    /// Renderers for fenced code blocks, by language. See [`FenceRenderer`].
+    /// Empty by default.
+    pub fence_renderers: FenceRenderers,
 }
 
 impl Default for Config {
@@ -398,6 +427,8 @@ impl Default for Config {
             image_access: ImageAccess::default(),
             allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
             html_links: true,
+            html_tags: BTreeMap::new(),
+            fence_renderers: FenceRenderers::default(),
         }
     }
 }
@@ -426,6 +457,18 @@ impl Config {
             return Err(bad(
                 "allowed_link_schemes entries must be bare scheme names like `https`".into(),
             ));
+        }
+        if self.html_tags.len() > 64 {
+            return Err(bad("at most 64 custom html tags may be registered".into()));
+        }
+        for (name, style) in &self.html_tags {
+            validate_tag(name, style).map_err(bad)?;
+        }
+        if self.fence_renderers.len() > 32 {
+            return Err(bad("at most 32 fence renderers may be registered".into()));
+        }
+        for lang in self.fence_renderers.languages() {
+            validate_fence_language(lang).map_err(bad)?;
         }
         Ok(())
     }
@@ -478,6 +521,27 @@ impl Config {
         self
     }
 
+    /// Style the HTML tag `name` (lower case). Replaces an earlier style for
+    /// the same tag; an invalid name or colour is reported by
+    /// [`Config::validate`] (so by the conversion functions), not here.
+    pub fn with_html_tag(mut self, name: impl Into<String>, style: TagStyle) -> Self {
+        self.html_tags.insert(name.into(), style);
+        self
+    }
+
+    /// Render fenced code blocks tagged `lang` with `renderer` instead of
+    /// leaving them as code. Replaces an earlier renderer for the same
+    /// language. Registering `mermaid` or `dolphin` replaces the external
+    /// command for it. A closure `|source: &str| -> Result<Vec<u8>, FenceError>`
+    /// works as a renderer.
+    pub fn with_fence_renderer(mut self, lang: impl AsRef<str>, renderer: impl FenceRenderer + 'static) -> Self {
+        let renderer: Arc<dyn FenceRenderer> = Arc::new(renderer);
+        self.fence_renderers
+            .0
+            .insert(lang.as_ref().to_ascii_lowercase(), renderer);
+        self
+    }
+
     /// Strictest preset for Markdown from people you do not trust (uploads,
     /// web forms, multi-tenant services): native math only, so no TeX process;
     /// diagram fences are left as code, so no browser process; no local files
@@ -493,6 +557,7 @@ impl Config {
             max_formula_bytes: 4 * 1024,
             max_image_bytes: 5 * 1024 * 1024,
             max_total_image_bytes: 25 * 1024 * 1024,
+            max_output_bytes: 50 * 1024 * 1024,
             ..Limits::default()
         };
         c

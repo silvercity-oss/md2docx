@@ -49,6 +49,45 @@ landscape or any size), margins, body and code fonts, body size and heading
 colour. All options are validated up front: out-of-range values are a
 `CrateError::InvalidConfig` naming the option, before any work is done.
 
+### Extending it
+
+Both extension points are set on the `Config` by *you*, never by the Markdown
+author, so they are safe with `Config::untrusted()` and the other presets.
+
+```rust
+use silvercity_oss::{markdown_to_docx, BlockStyle, Config, FenceError, TagStyle};
+
+let cfg = Config::untrusted()
+    // ```chart fences become pictures from your own code (a closure or a `FenceRenderer`).
+    .with_fence_renderer("chart", |source: &str| -> Result<Vec<u8>, FenceError> {
+        Ok(draw_chart_png(source)) // PNG bytes
+    })
+    // <mark>..</mark> highlights; <callout>..</callout> is a shaded block with a label.
+    .with_html_tag("mark", TagStyle::new().highlight("FFFF00"))
+    .with_html_tag(
+        "callout",
+        TagStyle::new().block(BlockStyle::new().fill("FFF4CE").bar_color("E0A800").label("Note: ")),
+    );
+```
+
+* **Fence renderers** (`Config::with_fence_renderer`) take the text of a fenced
+  block and return PNG bytes. The result is held to the same size, pixel and
+  format checks as any image. Registering `mermaid` or `dolphin` replaces the
+  external command for that language, which is how to plug in an in-process
+  renderer. A renderer cannot be interrupted, so one that may run long on
+  hostile input must bound itself; a panic is caught and reported as an error.
+* **Tag styles** (`Config::with_html_tag`) map an HTML tag, including your own
+  such as `<call-out>`, to bold/italic/underline/strike/monospace, a text colour
+  or highlight, or to a block with a fill, a left bar, an indent and a bold
+  label. Attributes in the document are ignored, so the author can only switch
+  styles *you* defined on and off. Names and colours are validated up front.
+* `DocumentOptions` also sets `code_background`, `link_color` and
+  `quote_bar_color`.
+
+Not offered, on purpose: handing out the Markdown parser's options or raw
+`docx-rs` paragraphs. Every event has to pass the converter's safety checks, and
+exposing `docx-rs` types would tie this crate's version to theirs.
+
 **Good to know.**
 
 * **Blocking.** Conversion is synchronous and may wait on external tools. From
@@ -305,6 +344,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
 | Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
+| Small input that expands into a huge `.docx` (the archive is stored uncompressed: 1 MB of code lines gave 39 MB) | `Limits::max_output_bytes`, checked before and while writing: 256 MiB by default, **50 MiB in `Config::untrusted()`** |
 | A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
 | Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist** (see "Raw HTML"): only the listed tags have an effect, attributes are not interpreted beyond the listed ones, scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. `<a href>` becomes a link only for `http`/`https`/`mailto`, and not at all with `--untrusted` |
 | `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |
@@ -342,6 +382,14 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
 * Unit tests: LaTeX to OMML (including hostile nesting), namespace injection,
   the security gates, HTML tokenizer, image sizing, command parsing.
 * `tests/markdown_coverage.rs`: one case per Markdown construct (above).
+* `tests/spec_corpus.rs`: all 652 CommonMark spec examples, default and untrusted
+  (valid XML, no script-scheme links, no text dropped); `tests/parser_events.rs`:
+  every parser tag/event is accounted for (exhaustive matches, so a
+  pulldown-cmark upgrade cannot add one silently); `tests/pathological.rs`: deep
+  nesting, wide/tall tables, huge lines, delimiter runs, runaway HTML under a
+  time budget.
+* `tests/extensions.rs`: fence renderers, tag styles, document colours, the
+  output limit.
 * `tests/library_api.rs`: the public API as a downstream crate sees it: page/font
   options, validation, writers, the bounded file reader, concurrent use.
 * `tests/security.rs`: every gate in the table, plus seeded random Markdown and

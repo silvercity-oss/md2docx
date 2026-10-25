@@ -23,6 +23,11 @@ const HIDDEN: &[&str] = &[
     "script", "style", "head", "title", "template", "noscript", "iframe", "object", "embed",
 ];
 
+/// True for elements whose content is never shown (and so can never be restyled).
+pub(crate) fn is_hidden(name: &str) -> bool {
+    HIDDEN.contains(&name)
+}
+
 /// The hidden element (`script`, `style`, ...) that `raw` opens without closing
 /// again, if any. Inline HTML arrives one tag per event, so the text between
 /// `<script>` and `</script>` is a separate event the caller must skip.
@@ -71,7 +76,7 @@ pub(crate) fn tokenize(html: &str) -> Vec<Piece> {
         let name_start = i + 1 + usize::from(closing);
         let name: String = lower[name_start..]
             .chars()
-            .take_while(|c| c.is_ascii_alphanumeric())
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
             .collect();
         if name.is_empty() || !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
             // `<!DOCTYPE`, `<?xml`, `a < b`: not an element; keep declarations out, '<' as text.

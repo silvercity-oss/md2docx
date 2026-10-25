@@ -217,6 +217,55 @@ pub(crate) fn read_regular_file(path: &Path, label: &str, max_bytes: u64) -> Res
     Ok(buf)
 }
 
+/// Wraps a seekable writer and refuses to let the archive grow past `max` bytes
+/// (counted from where the writer started), so an over-large result fails
+/// early instead of filling a disk or a response buffer.
+pub(crate) struct LimitedWriter<W> {
+    inner: W,
+    start: u64,
+    pos: u64,
+    max: u64,
+    /// Set when a write was refused for size, to tell that apart from an I/O error.
+    pub(crate) exceeded: bool,
+}
+
+impl<W: std::io::Write + std::io::Seek> LimitedWriter<W> {
+    pub(crate) fn new(mut inner: W, max: u64) -> std::io::Result<Self> {
+        let start = inner.stream_position()?;
+        Ok(LimitedWriter {
+            inner,
+            start,
+            pos: start,
+            max,
+            exceeded: false,
+        })
+    }
+}
+
+impl<W: std::io::Write + std::io::Seek> std::io::Write for LimitedWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let end = self.pos.saturating_add(buf.len() as u64);
+        if end - self.start > self.max {
+            self.exceeded = true;
+            return Err(std::io::Error::other("output size limit exceeded"));
+        }
+        let n = self.inner.write(buf)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<W: std::io::Write + std::io::Seek> std::io::Seek for LimitedWriter<W> {
+    fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.pos = self.inner.seek(from)?;
+        Ok(self.pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

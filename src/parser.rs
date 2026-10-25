@@ -21,10 +21,11 @@ use pulldown_cmark::{
 
 use crate::config::{Config, ImageAccess, MathMode};
 use crate::error::{CrateError, Result};
+use crate::extend::TagStyle;
 use crate::html::{self, Piece};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
-use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
+use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars, LimitedWriter};
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
 /// every formula has been rewritten, and any leftover `$` is literal text).
@@ -120,7 +121,7 @@ fn base_docx(o: &crate::config::DocumentOptions, g: &Geometry) -> Docx {
     docx.add_style(
         Style::new("Hyperlink", StyleType::Character)
             .name("Hyperlink")
-            .color("0563C1")
+            .color(o.link_color.as_str())
             .underline("single"),
     )
     .add_style(
@@ -276,6 +277,8 @@ struct Builder<'a> {
     sub: usize,
     mono: usize,
     def_depth: usize,
+    /// Custom HTML tags (from `Config::html_tags`) currently open, outermost first.
+    custom_open: Vec<(&'a str, &'a TagStyle)>,
 
     blocks: Vec<Block>,
     cur: Option<Vec<Child>>,
@@ -413,6 +416,7 @@ impl<'a> Builder<'a> {
             sub: 0,
             mono: 0,
             def_depth: 0,
+            custom_open: Vec::new(),
             blocks: Vec::new(),
             cur: None,
             kind: ParaKind::Normal,
@@ -454,6 +458,29 @@ impl<'a> Builder<'a> {
         }
         if self.mono > 0 {
             run = run.style("InlineCode");
+        }
+        for (_, st) in &self.custom_open {
+            if st.bold {
+                run = run.bold();
+            }
+            if st.italic {
+                run = run.italic();
+            }
+            if st.strike {
+                run = run.strike();
+            }
+            if st.underline {
+                run = run.underline("single");
+            }
+            if st.monospace {
+                run = run.style("InlineCode");
+            }
+            if let Some(c) = &st.color {
+                run = run.color(c.as_str());
+            }
+            if let Some(h) = &st.highlight {
+                run = run.shading(Shading::new().fill(h.as_str()));
+            }
         }
         run
     }
@@ -560,6 +587,7 @@ impl<'a> Builder<'a> {
         } else if let Some((_, a)) = self.align_stack.last() {
             p = p.align(*a);
         }
+        p = self.apply_custom_block(p);
         if let Some(t) = self.table.as_ref() {
             let a = t.aligns.get(t.col).copied().unwrap_or(Alignment::None);
             p = match a {
@@ -569,6 +597,63 @@ impl<'a> Builder<'a> {
             };
         }
         self.emit(p);
+    }
+
+    /// Layout from the innermost open block-level custom tag, if any.
+    fn apply_custom_block(&self, mut p: Paragraph) -> Paragraph {
+        let Some(b) = self.custom_open.iter().rev().find_map(|(_, s)| s.block.as_ref()) else {
+            return p;
+        };
+        if let Some(fill) = &b.fill {
+            p.property = p.property.shading(Shading::new().fill(fill.as_str()));
+        }
+        // Inside a list item the numbering fixes the indent; leave it alone.
+        let in_item = self.table.is_none() && self.lists.last().is_some_and(|c| c.item_open);
+        if b.indent_twips > 0 && !in_item {
+            let base = 360 * self.quote_depth + 720 * self.def_depth;
+            let left = i32::try_from(base.saturating_add(b.indent_twips as usize)).unwrap_or(i32::MAX);
+            p = p.indent(Some(left), None, None, None);
+        }
+        if let Some(color) = &b.bar_color {
+            p.property = p.property.set_borders(
+                ParagraphBorders::with_empty().set(
+                    ParagraphBorder::new(ParagraphBorderPosition::Left)
+                        .val(BorderType::Single)
+                        .size(24)
+                        .space(8)
+                        .color(color.as_str()),
+                ),
+            );
+        }
+        p
+    }
+
+    /// A custom tag from `Config::html_tags` opens or closes.
+    fn custom_tag(&mut self, key: &'a str, style: &'a TagStyle, closing: bool) {
+        // Bounds the stack, and with it the work done per run, whatever the input.
+        const MAX_OPEN: usize = 64;
+        let is_block = style.block.is_some();
+        if closing {
+            // Flush while the style is still open so the paragraph gets its layout.
+            if is_block {
+                self.flush();
+            }
+            if let Some(i) = self.custom_open.iter().rposition(|(n, _)| *n == key) {
+                self.custom_open.truncate(i);
+            }
+            return;
+        }
+        if is_block {
+            self.flush();
+        }
+        if self.custom_open.len() < MAX_OPEN {
+            self.custom_open.push((key, style));
+        }
+        if let Some(label) = style.block.as_ref().and_then(|b| b.label.as_deref()) {
+            self.start_para(ParaKind::Normal);
+            let run = self.format(Run::new().add_text(sanitize_xml_chars(label)).bold());
+            self.push(Child::Run(run));
+        }
     }
 
     fn attach(&mut self, p: Paragraph, c: Child) -> Paragraph {
@@ -590,7 +675,7 @@ impl<'a> Builder<'a> {
                         .val(BorderType::Single)
                         .size(18)
                         .space(8)
-                        .color("A6A6A6"),
+                        .color(self.cfg.document.quote_bar_color.as_str()),
                 ),
             );
         }
@@ -620,7 +705,9 @@ impl<'a> Builder<'a> {
         };
         for line in body.split('\n') {
             let mut p = Paragraph::new().style("CodeBlock");
-            p.property = p.property.shading(Shading::new().fill("F2F2F2"));
+            p.property = p
+                .property
+                .shading(Shading::new().fill(self.cfg.document.code_background.as_str()));
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
@@ -853,6 +940,11 @@ impl<'a> Builder<'a> {
             } else {
                 counter.saturating_add(1)
             };
+        }
+        let cfg: &'a Config = self.cfg;
+        if let Some((key, style)) = cfg.html_tags.get_key_value(name) {
+            self.custom_tag(key, style, closing);
+            return Ok(());
         }
         match name {
             "br" if !closing => self.push(Child::Run(Run::new().add_break(BreakType::TextWrapping))),
@@ -1166,7 +1258,7 @@ impl<'a> Builder<'a> {
                     let run = self.format(
                         Run::new()
                             .style("InlineCode")
-                            .shading(Shading::new().fill("F2F2F2"))
+                            .shading(Shading::new().fill(self.cfg.document.code_background.as_str()))
                             .add_text(sanitize_xml_chars(&t)),
                     );
                     self.push(Child::Run(run));
@@ -1583,9 +1675,42 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
         parts.document = inject_omml(&xml, &b.nonce, &b.omml)?.into_bytes();
     }
 
-    parts
-        .pack(writer)
-        .map_err(|e| CrateError::DocxGenerationError(e.to_string()))
+    let max = cfg.limits.max_output_bytes;
+    // The archive is stored uncompressed, so the parts are (nearly) its size. Checking them
+    // first refuses an over-large result before anything is written; the writer below
+    // enforces the exact figure, including the archive's own headers.
+    let media: usize = parts.media.iter().map(|(_, bytes)| bytes.len()).sum();
+    let parts_total = [
+        parts.document.len(),
+        parts.styles.len(),
+        parts.numberings.len(),
+        parts.document_rels.len(),
+        parts.footnotes.len(),
+        parts.settings.len(),
+        parts.content_type.len(),
+        parts.rels.len(),
+        parts.font_table.len(),
+        parts.comments.len(),
+        media,
+    ]
+    .iter()
+    .fold(0u64, |t, n| t.saturating_add(*n as u64));
+    // Generous allowance for the archive's own headers (about 150 bytes per entry), so that
+    // a document that passes here never trips the writer and leaves a half-written archive.
+    let overhead = 512 * (24 + parts.media.len() as u64);
+    if parts_total.saturating_add(overhead) > max {
+        return Err(CrateError::LimitExceeded(format!(
+            "the .docx would be larger than {max} bytes (Limits::max_output_bytes)"
+        )));
+    }
+    let mut limited = LimitedWriter::new(writer, max).map_err(|e| CrateError::DocxGenerationError(e.to_string()))?;
+    let packed = parts.pack(&mut limited);
+    if limited.exceeded {
+        return Err(CrateError::LimitExceeded(format!(
+            "the .docx would be larger than {max} bytes (Limits::max_output_bytes)"
+        )));
+    }
+    packed.map_err(|e| CrateError::DocxGenerationError(e.to_string()))
 }
 
 #[cfg(test)]
