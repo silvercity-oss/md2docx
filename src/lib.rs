@@ -116,6 +116,7 @@ mod parser;
 mod preprocess;
 mod renderer;
 mod safety;
+mod template;
 
 /// Not part of the public API: internals that the crate's own integration tests
 /// reach into. No stability promise of any kind; use [`markdown_to_docx`] and the
@@ -141,6 +142,7 @@ pub use extend::{
 };
 pub use highlight::{BuiltinHighlighter, Highlighter, Highlighting, Span, Theme, TokenClass, TokenStyle};
 pub use renderer::sweep_scratch;
+pub use template::ReferenceDocx;
 
 /// A finished document with what the conversion found.
 #[derive(Debug, Clone)]

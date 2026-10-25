@@ -13,7 +13,8 @@ fn fail(e: impl std::fmt::Display) -> CrateError {
 
 /// Total size of the parts docx-rs built, before any compression.
 pub(crate) fn uncompressed_size(parts: &XMLDocx) -> u64 {
-    let media: usize = parts.media.iter().map(|(_, bytes)| bytes.len()).sum();
+    let media: usize = parts.media.iter().map(|(_, bytes)| bytes.len()).sum::<usize>()
+        + parts.extra_parts.iter().map(|(_, bytes)| bytes.len()).sum::<usize>();
     [
         parts.document.len(),
         parts.styles.len(),

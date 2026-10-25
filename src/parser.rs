@@ -2817,6 +2817,14 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     }
 
     let mut parts = docx.build();
+    if let Some(reference) = &cfg.reference_docx {
+        let generated = String::from_utf8(std::mem::take(&mut parts.styles))
+            .map_err(|e| CrateError::DocxGenerationError(format!("styles.xml is not UTF-8: {e}")))?;
+        parts.styles = crate::template::merge_styles(reference, &generated)?.into_bytes();
+        if let Some(theme) = &reference.theme {
+            crate::template::add_theme(&mut parts, theme)?;
+        }
+    }
     parts.footnotes = add_footnote_marks(std::mem::take(&mut parts.footnotes));
     let (front_title, front_author) = pre.meta.clone();
     let title = cfg.document.title.clone().or(front_title);

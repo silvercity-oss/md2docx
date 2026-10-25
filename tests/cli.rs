@@ -618,3 +618,46 @@ fn a_force_killed_conversion_leaves_only_what_sweep_scratch_can_recover() {
     let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_string();
     let _ = Command::new("kill").args(["-9", &pid]).status();
 }
+
+#[test]
+fn layout_flags_reach_the_document() {
+    let fx = Fixture::new();
+    let input = fx.path("book.md");
+    std::fs::write(&input, "# One\n\n## Two\n\nSee https://example.com and H ~2~ O.\n").unwrap();
+    let out = md2docx(&[
+        "--toc",
+        "2",
+        "--number-headings",
+        "--autolink",
+        "--sup-sub",
+        path_str(&input),
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let docx = std::fs::read(fx.path("book.docx")).unwrap();
+    let body = zip_text(&docx, "word/document.xml");
+    assert!(visible_text(&body).starts_with("Contents"), "{body}");
+    assert!(body.contains("<w:numPr>") && body.contains("w:val=\"subscript\""));
+    assert!(zip_text(&docx, "word/_rels/document.xml.rels").contains("https://example.com"));
+}
+
+#[test]
+fn a_reference_document_is_read_and_checked() {
+    let fx = Fixture::new();
+    let input = fx.path("r.md");
+    std::fs::write(&input, "# Styled\n").unwrap();
+    // The converter's own output makes a fine reference.
+    assert!(md2docx(&[path_str(&input)]).status.success());
+    let reference = fx.path("brand.docx");
+    std::fs::copy(fx.path("r.docx"), &reference).unwrap();
+    let out = md2docx(&[
+        "--reference-doc",
+        path_str(&reference),
+        "-o",
+        path_str(&fx.path("out.docx")),
+        path_str(&input),
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let bad = md2docx(&["--reference-doc", path_str(&input), path_str(&input)]);
+    assert!(!bad.status.success());
+    assert!(stderr(&bad).contains("reference document"), "{}", stderr(&bad));
+}

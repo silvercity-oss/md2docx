@@ -9,6 +9,7 @@ use crate::control::CancelToken;
 use crate::diagnostics::LossPolicy;
 use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, ImageResolver, TagStyle};
 use crate::highlight::Highlighting;
+use crate::template::ReferenceDocx;
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -648,6 +649,10 @@ pub struct Config {
     pub scratch_dir: Option<PathBuf>,
     /// A token the host can use to stop a running conversion; see [`CancelToken`](crate::CancelToken).
     pub cancel: Option<CancelToken>,
+    /// Take the document's look (styles and theme) from a `.docx` you supply instead of the
+    /// built-in one; see [`ReferenceDocx`]. `DocumentOptions` fonts and colours then only apply to
+    /// styles the reference does not define. Trusted configuration.
+    pub reference_docx: Option<Arc<ReferenceDocx>>,
     /// Read `^x^` as superscript and `~x~` as subscript (`~~x~~` stays strikethrough). Off by
     /// default: without it a single `~x~` is strikethrough, so turning this on changes what such
     /// existing documents mean, and the markers must stand at word boundaries (`H ~2~ O`). The HTML `<sup>`/`<sub>` tags always work.
@@ -776,6 +781,13 @@ impl Config {
     pub fn with_loss_policy(mut self, policy: LossPolicy) -> Self {
         self.loss_policy = policy;
         self
+    }
+
+    /// Style the document from a reference `.docx` (see [`ReferenceDocx`]). The reference is read
+    /// and checked now, so a bad one is an error here rather than during a conversion.
+    pub fn with_reference_docx(mut self, docx: &[u8]) -> crate::error::Result<Self> {
+        self.reference_docx = Some(Arc::new(ReferenceDocx::from_bytes(docx)?));
+        Ok(self)
     }
 
     /// Read `^x^` as superscript and `~x~` as subscript (see [`Config::superscript_subscript`]).
@@ -932,6 +944,7 @@ impl Config {
             fence_renderers: FenceRenderers::default(),
             scratch_dir: None,
             cancel: None,
+            reference_docx: None,
             superscript_subscript: false,
             autolink_bare_urls: false,
             loss_policy: LossPolicy::default(),

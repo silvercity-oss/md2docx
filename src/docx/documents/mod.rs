@@ -352,6 +352,7 @@ impl Docx {
             custom_item_rels,
             custom_item_props,
             footnotes: self.footnotes.build(),
+            extra_parts: Vec::new(),
         }
     }
 

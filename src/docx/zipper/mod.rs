@@ -94,6 +94,11 @@ where
         }
     }
 
+    for (path, bytes) in &xml.extra_parts {
+        zip.start_file(path.as_str(), options)?;
+        zip.write_all(bytes)?;
+    }
+
     // For now support only taskpanes
     if let Some(taskpanes) = xml.taskpanes {
         zip.add_directory("word/webextensions/", directory_options)?;

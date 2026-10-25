@@ -32,6 +32,8 @@ pub struct XMLDocx {
     pub custom_item_rels: Vec<Vec<u8>>,
     pub custom_item_props: Vec<Vec<u8>>,
     pub footnotes: Vec<u8>,
+    /// Further parts to store as-is: (path inside the package, bytes).
+    pub extra_parts: Vec<(String, Vec<u8>)>,
 }
 
 impl XMLDocx {

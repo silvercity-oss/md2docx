@@ -7,7 +7,8 @@ use std::time::Duration;
 use clap::{CommandFactory, Parser, ValueEnum};
 use silvercity_oss::{
     convert_file, CodeBlockLayout, CommandSpec, Config, DiagramFailure, Highlighting, ImageAccess as LibImageAccess,
-    LossPolicy, MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Severity, Theme,
+    LossPolicy, MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Severity, TableOfContents,
+    Theme,
 };
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +159,32 @@ pub struct Args {
 
     #[arg(
         long,
+        value_name = "FILE.docx",
+        help = "Take the styles and theme (fonts, sizes, colours, heading looks) from this .docx; styles it lacks are added"
+    )]
+    pub reference_doc: Option<PathBuf>,
+
+    #[arg(long, help = "Number headings 1, 1.1, 1.1.1 ...")]
+    pub number_headings: bool,
+
+    #[arg(
+        long,
+        value_name = "MAX_LEVEL",
+        num_args = 0..=1,
+        default_missing_value = "3",
+        value_parser = clap::value_parser!(u8).range(1..=6),
+        help = "Start the document with a linked table of contents down to this heading level [default: 3]"
+    )]
+    pub toc: Option<u8>,
+
+    #[arg(long, help = "Turn bare http://, https:// and www. addresses into links")]
+    pub autolink: bool,
+
+    #[arg(long, help = "Read ^x^ as superscript and ~x~ as subscript")]
+    pub sup_sub: bool,
+
+    #[arg(
+        long,
         value_name = "DIR",
         help = "Create the temporary working directory under DIR instead of the system temp directory (DIR must exist)"
     )]
@@ -208,7 +235,7 @@ fn parse_command(template: &str) -> Result<CommandSpec, String> {
     Ok(CommandSpec::new(program, args))
 }
 
-fn config(args: &Args) -> Config {
+fn config(args: &Args) -> Result<Config, String> {
     let mut cfg = if args.untrusted {
         if args.diagrams {
             Config::untrusted_with_diagrams()
@@ -243,6 +270,16 @@ fn config(args: &Args) -> Config {
         cfg
     };
     cfg.compression_level = args.compression_level;
+    cfg.autolink_bare_urls = args.autolink;
+    cfg.superscript_subscript = args.sup_sub;
+    cfg.document.number_headings = args.number_headings;
+    if let Some(level) = args.toc {
+        cfg.document.table_of_contents = Some(TableOfContents::new().max_level(level));
+    }
+    if let Some(path) = &args.reference_doc {
+        let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        cfg = cfg.with_reference_docx(&bytes).map_err(|e| e.to_string())?;
+    }
     if args.strict {
         cfg.loss_policy = LossPolicy::Reject;
     }
@@ -267,7 +304,7 @@ fn config(args: &Args) -> Config {
     if let Some(seconds) = args.timeout {
         cfg.tool_timeout = Duration::from_secs(seconds);
     }
-    cfg
+    Ok(cfg)
 }
 
 /// True when `out` is the same file as `input`, however either is spelled: through `.`/`..`,
@@ -342,7 +379,7 @@ fn run(args: &Args) -> Result<PathBuf, String> {
     if is_same_file(&args.input, &out) {
         return Err(format!("refusing to overwrite the input file {}", args.input.display()));
     }
-    let conversion = match convert_file(&args.input, &config(args)) {
+    let conversion = match convert_file(&args.input, &config(args)?) {
         Ok(c) => c,
         Err(silvercity_oss::CrateError::LossyContent { diagnostics }) => {
             for d in &diagnostics {
@@ -414,7 +451,7 @@ mod tests {
     #[test]
     fn untrusted_preset_is_strict_and_exclusive() {
         let a = Args::try_parse_from(["md2docx", "in.md", "--untrusted"]).unwrap();
-        let c = config(&a);
+        let c = config(&a).unwrap();
         assert_eq!(c.math.mode, LibMathMode::NativeOmml);
         assert!(!c.graphs.enabled);
         assert_eq!(c.image_access, LibImageAccess::None);
@@ -433,15 +470,15 @@ mod tests {
         assert!(Args::try_parse_from(["md2docx", "in.md", "--untrusted", "--mermaid-engine", "mmdc"]).is_err());
         // Defaults for the normal mode keep images inside the input's directory.
         let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
-        assert_eq!(config(&d).image_access, LibImageAccess::BaseDir);
+        assert_eq!(config(&d).unwrap().image_access, LibImageAccess::BaseDir);
     }
 
     #[test]
     fn mermaid_engine_defaults_to_merman_and_can_switch_to_mmdc() {
         let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
-        assert_eq!(config(&d).graphs.mermaid.program, "merman-cli");
+        assert_eq!(config(&d).unwrap().graphs.mermaid.program, "merman-cli");
         let m = Args::try_parse_from(["md2docx", "in.md", "--mermaid-engine", "mmdc"]).unwrap();
-        assert_eq!(config(&m).graphs.mermaid.program, "mmdc");
+        assert_eq!(config(&m).unwrap().graphs.mermaid.program, "mmdc");
         // An explicit command wins, and cannot be combined with the engine switch.
         let c = Args::try_parse_from([
             "md2docx",
@@ -450,7 +487,7 @@ mod tests {
             "my-mmdc -i {input} -o {output}",
         ])
         .unwrap();
-        assert_eq!(config(&c).graphs.mermaid.program, "my-mmdc");
+        assert_eq!(config(&c).unwrap().graphs.mermaid.program, "my-mmdc");
         assert!(Args::try_parse_from([
             "md2docx",
             "in.md",
@@ -477,13 +514,13 @@ mod tests {
             "xelatex",
         ])
         .unwrap();
-        let c = config(&a);
+        let c = config(&a).unwrap();
         assert_eq!(c.math.mode, LibMathMode::ImageFallback);
         assert_eq!(c.graphs.dolphin.program, "d");
         assert_eq!(c.tool_timeout, Duration::from_secs(5));
         assert!(matches!(&c.math.engine, MathImageEngine::LatexDvipng { latex, .. } if latex == "xelatex"));
         // Default is the safe, tool-free mode.
         let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
-        assert_eq!(config(&d).math.mode, LibMathMode::NativeOmml);
+        assert_eq!(config(&d).unwrap().math.mode, LibMathMode::NativeOmml);
     }
 }
