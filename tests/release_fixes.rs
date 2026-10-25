@@ -64,12 +64,27 @@ fn internal_links_work_in_untrusted_mode_and_never_reach_outside() {
 }
 
 #[test]
-fn links_in_footnotes_stay_text() {
+fn heading_links_in_footnotes_point_at_the_body_bookmark() {
     let md = "# H\n\nNote[^1]\n\n[^1]: back to [the top](#h)\n";
     let d = docx(md, &Config::native_math());
     let notes = zip_text(&d, "word/footnotes.xml");
-    assert!(!notes.contains("w:anchor") && !notes.contains("r:id"), "{notes}");
     assert!(visible_text(&notes).contains("the top"));
+    let anchor = notes
+        .split("w:anchor=\"")
+        .nth(1)
+        .expect("an internal link")
+        .split('"')
+        .next()
+        .unwrap();
+    let body = zip_text(&d, "word/document.xml");
+    assert!(
+        body.contains(&format!("w:name=\"{anchor}\"")),
+        "no bookmark {anchor} in the body"
+    );
+    assert!(
+        !notes.contains("r:id"),
+        "an internal link needs no relationship: {notes}"
+    );
 }
 
 // ---- footnote numbers

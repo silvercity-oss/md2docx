@@ -445,18 +445,15 @@ fn split_bare_urls(text: &str) -> Vec<UrlPiece<'_>> {
             let (opens, mut closes) = rest[..end].bytes().fold((0usize, 0usize), |(o, c), b| {
                 (o + usize::from(b == b'('), c + usize::from(b == b')'))
             });
-            loop {
-                let Some(last) = rest[..end].chars().next_back() else {
-                    break;
-                };
+            while let Some(last) = rest[..end].chars().next_back() {
                 let unbalanced_paren = last == ')' && closes > opens;
-                if matches!(last, '?' | '!' | '.' | ',' | ':' | '*' | '_' | '~' | '\'' | '"' | ';') || unbalanced_paren
+                if !(matches!(last, '?' | '!' | '.' | ',' | ':' | '*' | '_' | '~' | '\'' | '"' | ';')
+                    || unbalanced_paren)
                 {
-                    closes -= usize::from(last == ')');
-                    end -= last.len_utf8();
-                } else {
                     break;
                 }
+                closes -= usize::from(last == ')');
+                end -= last.len_utf8();
             }
             // `www.` alone, or a scheme with nothing after it, is not an address.
             let candidate = &rest[..end];

@@ -101,7 +101,7 @@ First release.
   `GraphOptions::enabled` to `false`. `Config::native_math()` is documented as a trusted preset.
   The `md2docx` binary is unchanged (it starts from `Config::trusted()`).
 - **Findings and strict mode.** `convert`, `convert_to_writer`, `convert_file` and `analyze` return
-  `Diagnostic`s (23 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
+  `Diagnostic`s (18 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
   `Config::loss_policy` (`LossPolicy::Allow` default, `Reject` = `CrateError::LossyContent`);
   `md2docx --strict`, with `file:line:column` output. See docs/diagnostics.md.
 - **Host-supplied images.** `ImageResolver` / `AssetMap` / `Config::with_image_resolver`: exact
@@ -119,6 +119,15 @@ First release.
 - **Cleanup.** A tool's whole process group is now ended on *every* exit after it starts
   (including a post-exit workspace-limit or console-limit error, which used to return first),
   by an owned guard; the console cap is rechecked after exit.
+- **Footnote content.** Footnotes keep links, pictures, diagrams, native equations and tables
+  (their relationships live in the footnotes part). A footnote cannot contain a footnote.
+- **Layout and conveniences, all opt-in.** `DocumentOptions::table_of_contents` (static, linked,
+  no page numbers; `--toc`), `DocumentOptions::number_headings` (Word multilevel numbering;
+  `--number-headings`), `Config::autolink_bare_urls` (`--autolink`),
+  `Config::superscript_subscript` (`--sup-sub`), `Config::with_reference_docx` (styles and theme
+  from a `.docx`; `--reference-doc`). Always on: table columns sized by content, HTML `id=` /
+  `<a name>` anchors usable as `#` link targets, `mailto:` links limited to `subject`, `body`,
+  `cc` and `bcc`.
 - A display equation that is alone in a list item, quote or task item keeps the paragraph's
   numbering, indent and checkbox (it was replaced by a bare paragraph).
 - Docs: docs/embedding.md, docs/diagnostics.md, docs/integration-test-plan.md,

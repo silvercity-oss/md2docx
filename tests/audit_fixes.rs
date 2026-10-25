@@ -122,15 +122,15 @@ fn deep_quotes_get_bounded_indents() {
 // ---- package validity
 
 #[test]
-fn links_in_footnotes_do_not_leave_dangling_relationships() {
+fn links_in_footnotes_resolve_in_the_footnotes_relationships() {
     let md = "Text[^1].\n\n[^1]: see [the site](https://example.com/) here\n";
     for cfg in [Config::untrusted(), Config::native_math()] {
         let docx = markdown_to_docx(md, &cfg).unwrap();
         let notes = zip_text(&docx, "word/footnotes.xml");
-        assert!(
-            !notes.contains("r:id"),
-            "footnote part must not reference relationships: {notes}"
-        );
+        let rels = zip_text(&docx, "word/_rels/footnotes.xml.rels");
+        let id = notes.split("r:id=\"").nth(1).unwrap().split('"').next().unwrap();
+        assert!(rels.contains(&format!("Id=\"{id}\"")), "{id} not in {rels}");
+        assert!(rels.contains("https://example.com/"), "{rels}");
         assert!(visible_text(&notes).contains("the site"), "{notes}");
         assert!(notes.contains("Hyperlink"), "link text keeps the link look");
     }
@@ -142,16 +142,22 @@ fn every_relationship_id_resolves() {
     let cfg = Config::native_math().with_base_dir(fx.dir.path());
     let md = "[a](https://example.com/) ![p](fixture.png)\n\nNote[^1] and <a href=\"https://e.org/\">b</a>\n\n[^1]: [c](https://c.example/)\n";
     let docx = markdown_to_docx(md, &cfg).unwrap();
-    let rels = zip_text(&docx, "word/_rels/document.xml.rels");
-    for part in ["word/document.xml", "word/footnotes.xml"] {
+    for (part, rels_part) in [
+        ("word/document.xml", "word/_rels/document.xml.rels"),
+        ("word/footnotes.xml", "word/_rels/footnotes.xml.rels"),
+    ] {
+        let rels = zip_text(&docx, rels_part);
         let xml = zip_text(&docx, part);
+        let mut seen = 0;
         for chunk in xml.split("r:id=\"").skip(1).chain(xml.split("r:embed=\"").skip(1)) {
             let id = chunk.split('"').next().unwrap();
+            seen += 1;
             assert!(
                 rels.contains(&format!("Id=\"{id}\"")),
                 "{part}: {id} has no relationship in {rels}"
             );
         }
+        assert!(seen > 0, "{part} should reference something");
     }
 }
 

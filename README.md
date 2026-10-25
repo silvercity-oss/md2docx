@@ -340,13 +340,26 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 
 Internal links: `[text](#heading-slug)` jumps to that heading (GitHub-style slugs, `{#id}`
 respected, repeated headings numbered `-1`, `-2`; a link to a heading that does not exist stays
-plain text; links inside footnotes stay text).
+plain text). HTML anchors work too: any element with `id=`, or `<a name=>`, is a target for
+`[x](#id)` and `<a href="#id">`.
 
-Not supported: bare-URL autolinking, wiki links, super/subscript via `^x^`/`~x~` (use
-`<sup>`/`<sub>`), tables inside footnotes (dropped), math inside footnotes (shown as source text),
-anchors from raw HTML (`<a href="#x">` stays text, `<a name>` is ignored), a table of contents,
-reference `.docx` templates, heading numbering and content-based table column widths (columns
-are equal). Code blocks can be highlighted, see "Extending it".
+Footnotes carry the same content as the body: links, pictures, diagrams, native equations and
+tables (the footnotes part has its own relationships). A footnote cannot contain a footnote.
+
+Layout and conveniences you can switch on (all off by default, none changes a document you
+did not ask about):
+
+| Option | Effect |
+| --- | --- |
+| `DocumentOptions::table_of_contents` / `--toc [LEVEL]` | A static, linked table of contents at the start: one line per heading, indented by level, no page numbers, so Word never has to update fields |
+| `DocumentOptions::number_headings` / `--number-headings` | Word multilevel numbering `1`, `1.1`, `1.1.1` on Markdown headings (the contents repeats the numbers) |
+| `Config::autolink_bare_urls` / `--autolink` | `http://`, `https://` and `www.` addresses in text become links, limited to the allowed schemes |
+| `Config::superscript_subscript` / `--sup-sub` | `^x^` superscript and `~x~` subscript (at word boundaries; `~~x~~` stays strikethrough) |
+| `Config::with_reference_docx(bytes)` / `--reference-doc` | Styles and theme from a `.docx` of yours (fonts, sizes, colours, heading looks); styles it lacks are added from the built-in ones |
+
+Table columns are sized by their content. Not supported: wiki links, page numbers in the table
+of contents, headers and footers from a reference document. Code blocks can be highlighted, see
+"Extending it".
 
 ### Raw HTML
 
@@ -455,9 +468,10 @@ fences left as code (no browser), no local files, smaller limits.
 ### What is not covered
 
 * **Known content gaps** (each one is reported as a finding, see
-  [docs/diagnostics.md](docs/diagnostics.md)). Tables inside footnotes are dropped; a lone
-  `\r` inside a code line is removed; `mailto:` links keep their query string
-  (`?subject=...`, and in principle `?attach=`, which a few old mail clients honour).
+  [docs/diagnostics.md](docs/diagnostics.md)). A lone `\r` inside a code line is removed (Word
+  text cannot hold a bare carriage return); a `mailto:` link keeps only `subject`, `body`, `cc`
+  and `bcc`; LibreOffice cannot hold a table inside a footnote and drops it when it re-saves a
+  file (Word can).
 * **`Config::native_math()` is a trusted preset.** It removes the TeX process and nothing else:
   it still reads images from `base_dir`, runs diagram tools and accepts raw HTML links. The
   untrusted policy is `Config::default()` / `Config::untrusted()`.
@@ -469,9 +483,6 @@ fences left as code (no browser), no local files, smaller limits.
 * **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB
   input to a few hundred MB while building; set `Limits::max_elements` lower, and
   run conversions in a memory-limited worker, if that matters for your service.
-* **Windows UNC paths.** `//host/share` and `\\host\share` image references are
-  refused from the text alone, but this was reasoned from the code and not
-  exercised on Windows.
 
 * **Diagram tools are not sandboxed.** There is no seccomp/landlock/chroot around
   them; the protections are the ones listed above (no browser, scrubbed
