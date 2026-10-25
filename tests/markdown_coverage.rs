@@ -1042,3 +1042,80 @@ fn html_img_width_sets_the_picture_size() {
     let (cx, _) = extent("<img src=\"fixture.png\" width=\"5000\">");
     assert!(cx <= 9026 * 635, "{cx}");
 }
+
+#[test]
+fn code_blocks_keep_their_layout() {
+    let b = body("```rust,ignore title=\"x\"\n    four spaces\n\ttab\ta\n\n  after blank  \nlast\n```\n");
+    // The language and any attributes after it are not shown; the code is.
+    let text = visible_text(&b);
+    assert!(!text.contains("rust") && !text.contains("title"), "{text}");
+    // Leading and trailing spaces survive.
+    assert!(b.contains(">    four spaces<"), "{b}");
+    assert!(b.contains(">  after blank  <"), "{b}");
+    // Tabs are real tab elements, not raw characters inside the text.
+    assert!(!b.contains('\t'), "raw tab character in document.xml");
+    assert_eq!(b.matches("<w:tab/>").count(), 2, "{b}");
+    // One shaded, monospace paragraph per line, including the blank one.
+    assert_eq!(b.matches("w:val=\"CodeBlock\"").count(), 5, "{b}");
+    assert_eq!(b.matches("w:fill=\"F2F2F2\"").count(), 5);
+}
+
+#[test]
+fn code_blocks_inside_containers_are_indented() {
+    let b = body("- item\n\n  ```\n  in list\n  ```\n\n> ```\n> in quote\n> ```\n");
+    let text = visible_text(&b);
+    assert!(text.contains("in list") && text.contains("in quote"), "{text}");
+    assert_eq!(b.matches("w:val=\"CodeBlock\"").count(), 2);
+    assert!(
+        b.contains("w:left=\"720\""),
+        "list code is indented under the item: {b}"
+    );
+    assert!(b.contains("w:left=\"360\""), "quoted code is indented: {b}");
+}
+
+#[test]
+fn inline_code_spans() {
+    let b = body("use `` a ` b `` and `x` and ` padded `\n");
+    assert_eq!(b.matches("w:val=\"InlineCode\"").count(), 3, "{b}");
+    let text = visible_text(&b);
+    assert!(text.contains("a ` b") && text.contains("x"), "{text}");
+}
+
+#[test]
+fn code_in_every_container_converts() {
+    for (md, word) in [
+        ("1. step\n\n   ```sh\n   run\n   ```\n", "run"),
+        ("> quote\n>\n>     indented code\n", "indented code"),
+        ("| a |\n|---|\n| `code` |\n", "code"),
+        ("term\n: ```\n  code\n  ```\n", "code"),
+        ("see[^n]\n\n[^n]: note\n\n    ```\n    in note\n    ```\n", "see"),
+        (
+            "<details>\n\n```\nfenced in html\n```\n\n</details>\n",
+            "fenced in html",
+        ),
+        ("<pre>raw\n  pre</pre>\n", "raw"),
+    ] {
+        let b = body(md);
+        assert!(visible_text(&b).contains(word), "`{word}` missing for {md:?}: {b}");
+    }
+}
+
+#[test]
+fn nested_image_alt_text_is_kept() {
+    // Found by the CommonMark corpus: the outer alt text was lost.
+    let cfg = Config::native_math().with_image_access(silvercity_oss::ImageAccess::None);
+    let b = body_with("![foo ![bar](/url)](/url2)\n", &cfg);
+    assert!(visible_text(&b).contains("[foo bar]"), "{}", visible_text(&b));
+}
+
+#[test]
+fn content_between_html_table_tags_is_not_lost() {
+    // Found by the CommonMark corpus: an indented block (code, per CommonMark)
+    // between table tags was silently dropped. It now appears in front of the table.
+    let b = body("<table>\n\n  <tr>\n\n    <td>\n      Hi\n    </td>\n\n  </tr>\n\n</table>\n");
+    let text = visible_text(&b);
+    assert!(text.contains("<td>") && text.contains("Hi"), "{text}");
+    // Markdown inside a real cell stays in the cell.
+    let b = body("<table><tr><td>\n\n**bold** text\n\n</td></tr></table>\n");
+    assert!(b.contains("<w:tbl>") && visible_text(&b).contains("bold"), "{b}");
+}

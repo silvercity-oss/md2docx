@@ -1,0 +1,2226 @@
+<<<EXAMPLE>>>
+	foo	baz		bim
+<<<EXAMPLE>>>
+  	foo	baz		bim
+<<<EXAMPLE>>>
+    a	a
+    ὐ	a
+<<<EXAMPLE>>>
+  - foo
+
+	bar
+<<<EXAMPLE>>>
+- foo
+
+		bar
+<<<EXAMPLE>>>
+>		foo
+<<<EXAMPLE>>>
+-		foo
+<<<EXAMPLE>>>
+    foo
+	bar
+<<<EXAMPLE>>>
+ - foo
+   - bar
+	 - baz
+<<<EXAMPLE>>>
+#	Foo
+<<<EXAMPLE>>>
+*	*	*	
+<<<EXAMPLE>>>
+\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~
+<<<EXAMPLE>>>
+\	\A\a\ \3\φ\«
+<<<EXAMPLE>>>
+\*not emphasized*
+\<br/> not a tag
+\[not a link](/foo)
+\`not code`
+1\. not a list
+\* not a list
+\# not a heading
+\[foo]: /url "not a reference"
+\&ouml; not a character entity
+<<<EXAMPLE>>>
+\\*emphasis*
+<<<EXAMPLE>>>
+foo\
+bar
+<<<EXAMPLE>>>
+`` \[\` ``
+<<<EXAMPLE>>>
+    \[\]
+<<<EXAMPLE>>>
+~~~
+\[\]
+~~~
+<<<EXAMPLE>>>
+<https://example.com?find=\*>
+<<<EXAMPLE>>>
+<a href="/bar\/)">
+<<<EXAMPLE>>>
+[foo](/bar\* "ti\*tle")
+<<<EXAMPLE>>>
+[foo]
+
+[foo]: /bar\* "ti\*tle"
+<<<EXAMPLE>>>
+``` foo\+bar
+foo
+```
+<<<EXAMPLE>>>
+&nbsp; &amp; &copy; &AElig; &Dcaron;
+&frac34; &HilbertSpace; &DifferentialD;
+&ClockwiseContourIntegral; &ngE;
+<<<EXAMPLE>>>
+&#35; &#1234; &#992; &#0;
+<<<EXAMPLE>>>
+&#X22; &#XD06; &#xcab;
+<<<EXAMPLE>>>
+&nbsp &x; &#; &#x;
+&#87654321;
+&#abcdef0;
+&ThisIsNotDefined; &hi?;
+<<<EXAMPLE>>>
+&copy
+<<<EXAMPLE>>>
+&MadeUpEntity;
+<<<EXAMPLE>>>
+<a href="&ouml;&ouml;.html">
+<<<EXAMPLE>>>
+[foo](/f&ouml;&ouml; "f&ouml;&ouml;")
+<<<EXAMPLE>>>
+[foo]
+
+[foo]: /f&ouml;&ouml; "f&ouml;&ouml;"
+<<<EXAMPLE>>>
+``` f&ouml;&ouml;
+foo
+```
+<<<EXAMPLE>>>
+`f&ouml;&ouml;`
+<<<EXAMPLE>>>
+    f&ouml;f&ouml;
+<<<EXAMPLE>>>
+&#42;foo&#42;
+*foo*
+<<<EXAMPLE>>>
+&#42; foo
+
+* foo
+<<<EXAMPLE>>>
+foo&#10;&#10;bar
+<<<EXAMPLE>>>
+&#9;foo
+<<<EXAMPLE>>>
+[a](url &quot;tit&quot;)
+<<<EXAMPLE>>>
+- `one
+- two`
+<<<EXAMPLE>>>
+***
+---
+___
+<<<EXAMPLE>>>
++++
+<<<EXAMPLE>>>
+===
+<<<EXAMPLE>>>
+--
+**
+__
+<<<EXAMPLE>>>
+ ***
+  ***
+   ***
+<<<EXAMPLE>>>
+    ***
+<<<EXAMPLE>>>
+Foo
+    ***
+<<<EXAMPLE>>>
+_____________________________________
+<<<EXAMPLE>>>
+ - - -
+<<<EXAMPLE>>>
+ **  * ** * ** * **
+<<<EXAMPLE>>>
+-     -      -      -
+<<<EXAMPLE>>>
+- - - -    
+<<<EXAMPLE>>>
+_ _ _ _ a
+
+a------
+
+---a---
+<<<EXAMPLE>>>
+ *-*
+<<<EXAMPLE>>>
+- foo
+***
+- bar
+<<<EXAMPLE>>>
+Foo
+***
+bar
+<<<EXAMPLE>>>
+Foo
+---
+bar
+<<<EXAMPLE>>>
+* Foo
+* * *
+* Bar
+<<<EXAMPLE>>>
+- Foo
+- * * *
+<<<EXAMPLE>>>
+# foo
+## foo
+### foo
+#### foo
+##### foo
+###### foo
+<<<EXAMPLE>>>
+####### foo
+<<<EXAMPLE>>>
+#5 bolt
+
+#hashtag
+<<<EXAMPLE>>>
+\## foo
+<<<EXAMPLE>>>
+# foo *bar* \*baz\*
+<<<EXAMPLE>>>
+#                  foo                     
+<<<EXAMPLE>>>
+ ### foo
+  ## foo
+   # foo
+<<<EXAMPLE>>>
+    # foo
+<<<EXAMPLE>>>
+foo
+    # bar
+<<<EXAMPLE>>>
+## foo ##
+  ###   bar    ###
+<<<EXAMPLE>>>
+# foo ##################################
+##### foo ##
+<<<EXAMPLE>>>
+### foo ###     
+<<<EXAMPLE>>>
+### foo ### b
+<<<EXAMPLE>>>
+# foo#
+<<<EXAMPLE>>>
+### foo \###
+## foo #\##
+# foo \#
+<<<EXAMPLE>>>
+****
+## foo
+****
+<<<EXAMPLE>>>
+Foo bar
+# baz
+Bar foo
+<<<EXAMPLE>>>
+## 
+#
+### ###
+<<<EXAMPLE>>>
+Foo *bar*
+=========
+
+Foo *bar*
+---------
+<<<EXAMPLE>>>
+Foo *bar
+baz*
+====
+<<<EXAMPLE>>>
+  Foo *bar
+baz*	
+====
+<<<EXAMPLE>>>
+Foo
+-------------------------
+
+Foo
+=
+<<<EXAMPLE>>>
+   Foo
+---
+
+  Foo
+-----
+
+  Foo
+  ===
+<<<EXAMPLE>>>
+    Foo
+    ---
+
+    Foo
+---
+<<<EXAMPLE>>>
+Foo
+   ----      
+<<<EXAMPLE>>>
+Foo
+    ---
+<<<EXAMPLE>>>
+Foo
+= =
+
+Foo
+--- -
+<<<EXAMPLE>>>
+Foo  
+-----
+<<<EXAMPLE>>>
+Foo\
+----
+<<<EXAMPLE>>>
+`Foo
+----
+`
+
+<a title="a lot
+---
+of dashes"/>
+<<<EXAMPLE>>>
+> Foo
+---
+<<<EXAMPLE>>>
+> foo
+bar
+===
+<<<EXAMPLE>>>
+- Foo
+---
+<<<EXAMPLE>>>
+Foo
+Bar
+---
+<<<EXAMPLE>>>
+---
+Foo
+---
+Bar
+---
+Baz
+<<<EXAMPLE>>>
+
+====
+<<<EXAMPLE>>>
+---
+---
+<<<EXAMPLE>>>
+- foo
+-----
+<<<EXAMPLE>>>
+    foo
+---
+<<<EXAMPLE>>>
+> foo
+-----
+<<<EXAMPLE>>>
+\> foo
+------
+<<<EXAMPLE>>>
+Foo
+
+bar
+---
+baz
+<<<EXAMPLE>>>
+Foo
+bar
+
+---
+
+baz
+<<<EXAMPLE>>>
+Foo
+bar
+* * *
+baz
+<<<EXAMPLE>>>
+Foo
+bar
+\---
+baz
+<<<EXAMPLE>>>
+    a simple
+      indented code block
+<<<EXAMPLE>>>
+  - foo
+
+    bar
+<<<EXAMPLE>>>
+1.  foo
+
+    - bar
+<<<EXAMPLE>>>
+    <a/>
+    *hi*
+
+    - one
+<<<EXAMPLE>>>
+    chunk1
+
+    chunk2
+  
+ 
+ 
+    chunk3
+<<<EXAMPLE>>>
+    chunk1
+      
+      chunk2
+<<<EXAMPLE>>>
+Foo
+    bar
+
+<<<EXAMPLE>>>
+    foo
+bar
+<<<EXAMPLE>>>
+# Heading
+    foo
+Heading
+------
+    foo
+----
+<<<EXAMPLE>>>
+        foo
+    bar
+<<<EXAMPLE>>>
+
+    
+    foo
+    
+
+<<<EXAMPLE>>>
+    foo  
+<<<EXAMPLE>>>
+```
+<
+ >
+```
+<<<EXAMPLE>>>
+~~~
+<
+ >
+~~~
+<<<EXAMPLE>>>
+``
+foo
+``
+<<<EXAMPLE>>>
+```
+aaa
+~~~
+```
+<<<EXAMPLE>>>
+~~~
+aaa
+```
+~~~
+<<<EXAMPLE>>>
+````
+aaa
+```
+``````
+<<<EXAMPLE>>>
+~~~~
+aaa
+~~~
+~~~~
+<<<EXAMPLE>>>
+```
+<<<EXAMPLE>>>
+`````
+
+```
+aaa
+<<<EXAMPLE>>>
+> ```
+> aaa
+
+bbb
+<<<EXAMPLE>>>
+```
+
+  
+```
+<<<EXAMPLE>>>
+```
+```
+<<<EXAMPLE>>>
+ ```
+ aaa
+aaa
+```
+<<<EXAMPLE>>>
+  ```
+aaa
+  aaa
+aaa
+  ```
+<<<EXAMPLE>>>
+   ```
+   aaa
+    aaa
+  aaa
+   ```
+<<<EXAMPLE>>>
+    ```
+    aaa
+    ```
+<<<EXAMPLE>>>
+```
+aaa
+  ```
+<<<EXAMPLE>>>
+   ```
+aaa
+  ```
+<<<EXAMPLE>>>
+```
+aaa
+    ```
+<<<EXAMPLE>>>
+``` ```
+aaa
+<<<EXAMPLE>>>
+~~~~~~
+aaa
+~~~ ~~
+<<<EXAMPLE>>>
+foo
+```
+bar
+```
+baz
+<<<EXAMPLE>>>
+foo
+---
+~~~
+bar
+~~~
+# baz
+<<<EXAMPLE>>>
+```ruby
+def foo(x)
+  return 3
+end
+```
+<<<EXAMPLE>>>
+~~~~    ruby startline=3 $%@#$
+def foo(x)
+  return 3
+end
+~~~~~~~
+<<<EXAMPLE>>>
+````;
+````
+<<<EXAMPLE>>>
+``` aa ```
+foo
+<<<EXAMPLE>>>
+~~~ aa ``` ~~~
+foo
+~~~
+<<<EXAMPLE>>>
+```
+``` aaa
+```
+<<<EXAMPLE>>>
+<table><tr><td>
+<pre>
+**Hello**,
+
+_world_.
+</pre>
+</td></tr></table>
+<<<EXAMPLE>>>
+<table>
+  <tr>
+    <td>
+           hi
+    </td>
+  </tr>
+</table>
+
+okay.
+<<<EXAMPLE>>>
+ <div>
+  *hello*
+         <foo><a>
+<<<EXAMPLE>>>
+</div>
+*foo*
+<<<EXAMPLE>>>
+<DIV CLASS="foo">
+
+*Markdown*
+
+</DIV>
+<<<EXAMPLE>>>
+<div id="foo"
+  class="bar">
+</div>
+<<<EXAMPLE>>>
+<div id="foo" class="bar
+  baz">
+</div>
+<<<EXAMPLE>>>
+<div>
+*foo*
+
+*bar*
+<<<EXAMPLE>>>
+<div id="foo"
+*hi*
+<<<EXAMPLE>>>
+<div class
+foo
+<<<EXAMPLE>>>
+<div *???-&&&-<---
+*foo*
+<<<EXAMPLE>>>
+<div><a href="bar">*foo*</a></div>
+<<<EXAMPLE>>>
+<table><tr><td>
+foo
+</td></tr></table>
+<<<EXAMPLE>>>
+<div></div>
+``` c
+int x = 33;
+```
+<<<EXAMPLE>>>
+<a href="foo">
+*bar*
+</a>
+<<<EXAMPLE>>>
+<Warning>
+*bar*
+</Warning>
+<<<EXAMPLE>>>
+<i class="foo">
+*bar*
+</i>
+<<<EXAMPLE>>>
+</ins>
+*bar*
+<<<EXAMPLE>>>
+<del>
+*foo*
+</del>
+<<<EXAMPLE>>>
+<del>
+
+*foo*
+
+</del>
+<<<EXAMPLE>>>
+<del>*foo*</del>
+<<<EXAMPLE>>>
+<pre language="haskell"><code>
+import Text.HTML.TagSoup
+
+main :: IO ()
+main = print $ parseTags tags
+</code></pre>
+okay
+<<<EXAMPLE>>>
+<script type="text/javascript">
+// JavaScript example
+
+document.getElementById("demo").innerHTML = "Hello JavaScript!";
+</script>
+okay
+<<<EXAMPLE>>>
+<textarea>
+
+*foo*
+
+_bar_
+
+</textarea>
+<<<EXAMPLE>>>
+<style
+  type="text/css">
+h1 {color:red;}
+
+p {color:blue;}
+</style>
+okay
+<<<EXAMPLE>>>
+<style
+  type="text/css">
+
+foo
+<<<EXAMPLE>>>
+> <div>
+> foo
+
+bar
+<<<EXAMPLE>>>
+- <div>
+- foo
+<<<EXAMPLE>>>
+<style>p{color:red;}</style>
+*foo*
+<<<EXAMPLE>>>
+<!-- foo -->*bar*
+*baz*
+<<<EXAMPLE>>>
+<script>
+foo
+</script>1. *bar*
+<<<EXAMPLE>>>
+<!-- Foo
+
+bar
+   baz -->
+okay
+<<<EXAMPLE>>>
+<?php
+
+  echo '>';
+
+?>
+okay
+<<<EXAMPLE>>>
+<!DOCTYPE html>
+<<<EXAMPLE>>>
+<![CDATA[
+function matchwo(a,b)
+{
+  if (a < b && a < 0) then {
+    return 1;
+
+  } else {
+
+    return 0;
+  }
+}
+]]>
+okay
+<<<EXAMPLE>>>
+  <!-- foo -->
+
+    <!-- foo -->
+<<<EXAMPLE>>>
+  <div>
+
+    <div>
+<<<EXAMPLE>>>
+Foo
+<div>
+bar
+</div>
+<<<EXAMPLE>>>
+<div>
+bar
+</div>
+*foo*
+<<<EXAMPLE>>>
+Foo
+<a href="bar">
+baz
+<<<EXAMPLE>>>
+<div>
+
+*Emphasized* text.
+
+</div>
+<<<EXAMPLE>>>
+<div>
+*Emphasized* text.
+</div>
+<<<EXAMPLE>>>
+<table>
+
+<tr>
+
+<td>
+Hi
+</td>
+
+</tr>
+
+</table>
+<<<EXAMPLE>>>
+<table>
+
+  <tr>
+
+    <td>
+      Hi
+    </td>
+
+  </tr>
+
+</table>
+<<<EXAMPLE>>>
+[foo]: /url "title"
+
+[foo]
+<<<EXAMPLE>>>
+   [foo]: 
+      /url  
+           'the title'  
+
+[foo]
+<<<EXAMPLE>>>
+[Foo*bar\]]:my_(url) 'title (with parens)'
+
+[Foo*bar\]]
+<<<EXAMPLE>>>
+[Foo bar]:
+<my url>
+'title'
+
+[Foo bar]
+<<<EXAMPLE>>>
+[foo]: /url '
+title
+line1
+line2
+'
+
+[foo]
+<<<EXAMPLE>>>
+[foo]: /url 'title
+
+with blank line'
+
+[foo]
+<<<EXAMPLE>>>
+[foo]:
+/url
+
+[foo]
+<<<EXAMPLE>>>
+[foo]:
+
+[foo]
+<<<EXAMPLE>>>
+[foo]: <>
+
+[foo]
+<<<EXAMPLE>>>
+[foo]: <bar>(baz)
+
+[foo]
+<<<EXAMPLE>>>
+[foo]: /url\bar\*baz "foo\"bar\baz"
+
+[foo]
+<<<EXAMPLE>>>
+[foo]
+
+[foo]: url
+<<<EXAMPLE>>>
+[foo]
+
+[foo]: first
+[foo]: second
+<<<EXAMPLE>>>
+[FOO]: /url
+
+[Foo]
+<<<EXAMPLE>>>
+[ΑΓΩ]: /φου
+
+[αγω]
+<<<EXAMPLE>>>
+[foo]: /url
+<<<EXAMPLE>>>
+[
+foo
+]: /url
+bar
+<<<EXAMPLE>>>
+[foo]: /url "title" ok
+<<<EXAMPLE>>>
+[foo]: /url
+"title" ok
+<<<EXAMPLE>>>
+    [foo]: /url "title"
+
+[foo]
+<<<EXAMPLE>>>
+```
+[foo]: /url
+```
+
+[foo]
+<<<EXAMPLE>>>
+Foo
+[bar]: /baz
+
+[bar]
+<<<EXAMPLE>>>
+# [Foo]
+[foo]: /url
+> bar
+<<<EXAMPLE>>>
+[foo]: /url
+bar
+===
+[foo]
+<<<EXAMPLE>>>
+[foo]: /url
+===
+[foo]
+<<<EXAMPLE>>>
+[foo]: /foo-url "foo"
+[bar]: /bar-url
+  "bar"
+[baz]: /baz-url
+
+[foo],
+[bar],
+[baz]
+<<<EXAMPLE>>>
+[foo]
+
+> [foo]: /url
+<<<EXAMPLE>>>
+aaa
+
+bbb
+<<<EXAMPLE>>>
+aaa
+bbb
+
+ccc
+ddd
+<<<EXAMPLE>>>
+aaa
+
+
+bbb
+<<<EXAMPLE>>>
+  aaa
+ bbb
+<<<EXAMPLE>>>
+aaa
+             bbb
+                                       ccc
+<<<EXAMPLE>>>
+   aaa
+bbb
+<<<EXAMPLE>>>
+    aaa
+bbb
+<<<EXAMPLE>>>
+aaa     
+bbb     
+<<<EXAMPLE>>>
+  
+
+aaa
+  
+
+# aaa
+
+  
+<<<EXAMPLE>>>
+> # Foo
+> bar
+> baz
+<<<EXAMPLE>>>
+># Foo
+>bar
+> baz
+<<<EXAMPLE>>>
+   > # Foo
+   > bar
+ > baz
+<<<EXAMPLE>>>
+    > # Foo
+    > bar
+    > baz
+<<<EXAMPLE>>>
+> # Foo
+> bar
+baz
+<<<EXAMPLE>>>
+> bar
+baz
+> foo
+<<<EXAMPLE>>>
+> foo
+---
+<<<EXAMPLE>>>
+> - foo
+- bar
+<<<EXAMPLE>>>
+>     foo
+    bar
+<<<EXAMPLE>>>
+> ```
+foo
+```
+<<<EXAMPLE>>>
+> foo
+    - bar
+<<<EXAMPLE>>>
+>
+<<<EXAMPLE>>>
+>
+>  
+> 
+<<<EXAMPLE>>>
+>
+> foo
+>  
+<<<EXAMPLE>>>
+> foo
+
+> bar
+<<<EXAMPLE>>>
+> foo
+> bar
+<<<EXAMPLE>>>
+> foo
+>
+> bar
+<<<EXAMPLE>>>
+foo
+> bar
+<<<EXAMPLE>>>
+> aaa
+***
+> bbb
+<<<EXAMPLE>>>
+> bar
+baz
+<<<EXAMPLE>>>
+> bar
+
+baz
+<<<EXAMPLE>>>
+> bar
+>
+baz
+<<<EXAMPLE>>>
+> > > foo
+bar
+<<<EXAMPLE>>>
+>>> foo
+> bar
+>>baz
+<<<EXAMPLE>>>
+>     code
+
+>    not code
+<<<EXAMPLE>>>
+A paragraph
+with two lines.
+
+    indented code
+
+> A block quote.
+<<<EXAMPLE>>>
+1.  A paragraph
+    with two lines.
+
+        indented code
+
+    > A block quote.
+<<<EXAMPLE>>>
+- one
+
+ two
+<<<EXAMPLE>>>
+- one
+
+  two
+<<<EXAMPLE>>>
+ -    one
+
+     two
+<<<EXAMPLE>>>
+ -    one
+
+      two
+<<<EXAMPLE>>>
+   > > 1.  one
+>>
+>>     two
+<<<EXAMPLE>>>
+>>- one
+>>
+  >  > two
+<<<EXAMPLE>>>
+-one
+
+2.two
+<<<EXAMPLE>>>
+- foo
+
+
+  bar
+<<<EXAMPLE>>>
+1.  foo
+
+    ```
+    bar
+    ```
+
+    baz
+
+    > bam
+<<<EXAMPLE>>>
+- Foo
+
+      bar
+
+
+      baz
+<<<EXAMPLE>>>
+123456789. ok
+<<<EXAMPLE>>>
+1234567890. not ok
+<<<EXAMPLE>>>
+0. ok
+<<<EXAMPLE>>>
+003. ok
+<<<EXAMPLE>>>
+-1. not ok
+<<<EXAMPLE>>>
+- foo
+
+      bar
+<<<EXAMPLE>>>
+  10.  foo
+
+           bar
+<<<EXAMPLE>>>
+    indented code
+
+paragraph
+
+    more code
+<<<EXAMPLE>>>
+1.     indented code
+
+   paragraph
+
+       more code
+<<<EXAMPLE>>>
+1.      indented code
+
+   paragraph
+
+       more code
+<<<EXAMPLE>>>
+   foo
+
+bar
+<<<EXAMPLE>>>
+-    foo
+
+  bar
+<<<EXAMPLE>>>
+-  foo
+
+   bar
+<<<EXAMPLE>>>
+-
+  foo
+-
+  ```
+  bar
+  ```
+-
+      baz
+<<<EXAMPLE>>>
+-   
+  foo
+<<<EXAMPLE>>>
+-
+
+  foo
+<<<EXAMPLE>>>
+- foo
+-
+- bar
+<<<EXAMPLE>>>
+- foo
+-   
+- bar
+<<<EXAMPLE>>>
+1. foo
+2.
+3. bar
+<<<EXAMPLE>>>
+*
+<<<EXAMPLE>>>
+foo
+*
+
+foo
+1.
+<<<EXAMPLE>>>
+ 1.  A paragraph
+     with two lines.
+
+         indented code
+
+     > A block quote.
+<<<EXAMPLE>>>
+  1.  A paragraph
+      with two lines.
+
+          indented code
+
+      > A block quote.
+<<<EXAMPLE>>>
+   1.  A paragraph
+       with two lines.
+
+           indented code
+
+       > A block quote.
+<<<EXAMPLE>>>
+    1.  A paragraph
+        with two lines.
+
+            indented code
+
+        > A block quote.
+<<<EXAMPLE>>>
+  1.  A paragraph
+with two lines.
+
+          indented code
+
+      > A block quote.
+<<<EXAMPLE>>>
+  1.  A paragraph
+    with two lines.
+<<<EXAMPLE>>>
+> 1. > Blockquote
+continued here.
+<<<EXAMPLE>>>
+> 1. > Blockquote
+> continued here.
+<<<EXAMPLE>>>
+- foo
+  - bar
+    - baz
+      - boo
+<<<EXAMPLE>>>
+- foo
+ - bar
+  - baz
+   - boo
+<<<EXAMPLE>>>
+10) foo
+    - bar
+<<<EXAMPLE>>>
+10) foo
+   - bar
+<<<EXAMPLE>>>
+- - foo
+<<<EXAMPLE>>>
+1. - 2. foo
+<<<EXAMPLE>>>
+- # Foo
+- Bar
+  ---
+  baz
+<<<EXAMPLE>>>
+- foo
+- bar
++ baz
+<<<EXAMPLE>>>
+1. foo
+2. bar
+3) baz
+<<<EXAMPLE>>>
+Foo
+- bar
+- baz
+<<<EXAMPLE>>>
+The number of windows in my house is
+14.  The number of doors is 6.
+<<<EXAMPLE>>>
+The number of windows in my house is
+1.  The number of doors is 6.
+<<<EXAMPLE>>>
+- foo
+
+- bar
+
+
+- baz
+<<<EXAMPLE>>>
+- foo
+  - bar
+    - baz
+
+
+      bim
+<<<EXAMPLE>>>
+- foo
+- bar
+
+<!-- -->
+
+- baz
+- bim
+<<<EXAMPLE>>>
+-   foo
+
+    notcode
+
+-   foo
+
+<!-- -->
+
+    code
+<<<EXAMPLE>>>
+- a
+ - b
+  - c
+   - d
+  - e
+ - f
+- g
+<<<EXAMPLE>>>
+1. a
+
+  2. b
+
+   3. c
+<<<EXAMPLE>>>
+- a
+ - b
+  - c
+   - d
+    - e
+<<<EXAMPLE>>>
+1. a
+
+  2. b
+
+    3. c
+<<<EXAMPLE>>>
+- a
+- b
+
+- c
+<<<EXAMPLE>>>
+* a
+*
+
+* c
+<<<EXAMPLE>>>
+- a
+- b
+
+  c
+- d
+<<<EXAMPLE>>>
+- a
+- b
+
+  [ref]: /url
+- d
+<<<EXAMPLE>>>
+- a
+- ```
+  b
+
+
+  ```
+- c
+<<<EXAMPLE>>>
+- a
+  - b
+
+    c
+- d
+<<<EXAMPLE>>>
+* a
+  > b
+  >
+* c
+<<<EXAMPLE>>>
+- a
+  > b
+  ```
+  c
+  ```
+- d
+<<<EXAMPLE>>>
+- a
+<<<EXAMPLE>>>
+- a
+  - b
+<<<EXAMPLE>>>
+1. ```
+   foo
+   ```
+
+   bar
+<<<EXAMPLE>>>
+* foo
+  * bar
+
+  baz
+<<<EXAMPLE>>>
+- a
+  - b
+  - c
+
+- d
+  - e
+  - f
+<<<EXAMPLE>>>
+`hi`lo`
+<<<EXAMPLE>>>
+`foo`
+<<<EXAMPLE>>>
+`` foo ` bar ``
+<<<EXAMPLE>>>
+` `` `
+<<<EXAMPLE>>>
+`  ``  `
+<<<EXAMPLE>>>
+` a`
+<<<EXAMPLE>>>
+` b `
+<<<EXAMPLE>>>
+` `
+`  `
+<<<EXAMPLE>>>
+``
+foo
+bar  
+baz
+``
+<<<EXAMPLE>>>
+``
+foo 
+``
+<<<EXAMPLE>>>
+`foo   bar 
+baz`
+<<<EXAMPLE>>>
+`foo\`bar`
+<<<EXAMPLE>>>
+``foo`bar``
+<<<EXAMPLE>>>
+` foo `` bar `
+<<<EXAMPLE>>>
+*foo`*`
+<<<EXAMPLE>>>
+[not a `link](/foo`)
+<<<EXAMPLE>>>
+`<a href="`">`
+<<<EXAMPLE>>>
+<a href="`">`
+<<<EXAMPLE>>>
+`<https://foo.bar.`baz>`
+<<<EXAMPLE>>>
+<https://foo.bar.`baz>`
+<<<EXAMPLE>>>
+```foo``
+<<<EXAMPLE>>>
+`foo
+<<<EXAMPLE>>>
+`foo``bar``
+<<<EXAMPLE>>>
+*foo bar*
+<<<EXAMPLE>>>
+a * foo bar*
+<<<EXAMPLE>>>
+a*"foo"*
+<<<EXAMPLE>>>
+* a *
+<<<EXAMPLE>>>
+*$*alpha.
+
+*£*bravo.
+
+*€*charlie.
+<<<EXAMPLE>>>
+foo*bar*
+<<<EXAMPLE>>>
+5*6*78
+<<<EXAMPLE>>>
+_foo bar_
+<<<EXAMPLE>>>
+_ foo bar_
+<<<EXAMPLE>>>
+a_"foo"_
+<<<EXAMPLE>>>
+foo_bar_
+<<<EXAMPLE>>>
+5_6_78
+<<<EXAMPLE>>>
+пристаням_стремятся_
+<<<EXAMPLE>>>
+aa_"bb"_cc
+<<<EXAMPLE>>>
+foo-_(bar)_
+<<<EXAMPLE>>>
+_foo*
+<<<EXAMPLE>>>
+*foo bar *
+<<<EXAMPLE>>>
+*foo bar
+*
+<<<EXAMPLE>>>
+*(*foo)
+<<<EXAMPLE>>>
+*(*foo*)*
+<<<EXAMPLE>>>
+*foo*bar
+<<<EXAMPLE>>>
+_foo bar _
+<<<EXAMPLE>>>
+_(_foo)
+<<<EXAMPLE>>>
+_(_foo_)_
+<<<EXAMPLE>>>
+_foo_bar
+<<<EXAMPLE>>>
+_пристаням_стремятся
+<<<EXAMPLE>>>
+_foo_bar_baz_
+<<<EXAMPLE>>>
+_(bar)_.
+<<<EXAMPLE>>>
+**foo bar**
+<<<EXAMPLE>>>
+** foo bar**
+<<<EXAMPLE>>>
+a**"foo"**
+<<<EXAMPLE>>>
+foo**bar**
+<<<EXAMPLE>>>
+__foo bar__
+<<<EXAMPLE>>>
+__ foo bar__
+<<<EXAMPLE>>>
+__
+foo bar__
+<<<EXAMPLE>>>
+a__"foo"__
+<<<EXAMPLE>>>
+foo__bar__
+<<<EXAMPLE>>>
+5__6__78
+<<<EXAMPLE>>>
+пристаням__стремятся__
+<<<EXAMPLE>>>
+__foo, __bar__, baz__
+<<<EXAMPLE>>>
+foo-__(bar)__
+<<<EXAMPLE>>>
+**foo bar **
+<<<EXAMPLE>>>
+**(**foo)
+<<<EXAMPLE>>>
+*(**foo**)*
+<<<EXAMPLE>>>
+**Gomphocarpus (*Gomphocarpus physocarpus*, syn.
+*Asclepias physocarpa*)**
+<<<EXAMPLE>>>
+**foo "*bar*" foo**
+<<<EXAMPLE>>>
+**foo**bar
+<<<EXAMPLE>>>
+__foo bar __
+<<<EXAMPLE>>>
+__(__foo)
+<<<EXAMPLE>>>
+_(__foo__)_
+<<<EXAMPLE>>>
+__foo__bar
+<<<EXAMPLE>>>
+__пристаням__стремятся
+<<<EXAMPLE>>>
+__foo__bar__baz__
+<<<EXAMPLE>>>
+__(bar)__.
+<<<EXAMPLE>>>
+*foo [bar](/url)*
+<<<EXAMPLE>>>
+*foo
+bar*
+<<<EXAMPLE>>>
+_foo __bar__ baz_
+<<<EXAMPLE>>>
+_foo _bar_ baz_
+<<<EXAMPLE>>>
+__foo_ bar_
+<<<EXAMPLE>>>
+*foo *bar**
+<<<EXAMPLE>>>
+*foo **bar** baz*
+<<<EXAMPLE>>>
+*foo**bar**baz*
+<<<EXAMPLE>>>
+*foo**bar*
+<<<EXAMPLE>>>
+***foo** bar*
+<<<EXAMPLE>>>
+*foo **bar***
+<<<EXAMPLE>>>
+*foo**bar***
+<<<EXAMPLE>>>
+foo***bar***baz
+<<<EXAMPLE>>>
+foo******bar*********baz
+<<<EXAMPLE>>>
+*foo **bar *baz* bim** bop*
+<<<EXAMPLE>>>
+*foo [*bar*](/url)*
+<<<EXAMPLE>>>
+** is not an empty emphasis
+<<<EXAMPLE>>>
+**** is not an empty strong emphasis
+<<<EXAMPLE>>>
+**foo [bar](/url)**
+<<<EXAMPLE>>>
+**foo
+bar**
+<<<EXAMPLE>>>
+__foo _bar_ baz__
+<<<EXAMPLE>>>
+__foo __bar__ baz__
+<<<EXAMPLE>>>
+____foo__ bar__
+<<<EXAMPLE>>>
+**foo **bar****
+<<<EXAMPLE>>>
+**foo *bar* baz**
+<<<EXAMPLE>>>
+**foo*bar*baz**
+<<<EXAMPLE>>>
+***foo* bar**
+<<<EXAMPLE>>>
+**foo *bar***
+<<<EXAMPLE>>>
+**foo *bar **baz**
+bim* bop**
+<<<EXAMPLE>>>
+**foo [*bar*](/url)**
+<<<EXAMPLE>>>
+__ is not an empty emphasis
+<<<EXAMPLE>>>
+____ is not an empty strong emphasis
+<<<EXAMPLE>>>
+foo ***
+<<<EXAMPLE>>>
+foo *\**
+<<<EXAMPLE>>>
+foo *_*
+<<<EXAMPLE>>>
+foo *****
+<<<EXAMPLE>>>
+foo **\***
+<<<EXAMPLE>>>
+foo **_**
+<<<EXAMPLE>>>
+**foo*
+<<<EXAMPLE>>>
+*foo**
+<<<EXAMPLE>>>
+***foo**
+<<<EXAMPLE>>>
+****foo*
+<<<EXAMPLE>>>
+**foo***
+<<<EXAMPLE>>>
+*foo****
+<<<EXAMPLE>>>
+foo ___
+<<<EXAMPLE>>>
+foo _\__
+<<<EXAMPLE>>>
+foo _*_
+<<<EXAMPLE>>>
+foo _____
+<<<EXAMPLE>>>
+foo __\___
+<<<EXAMPLE>>>
+foo __*__
+<<<EXAMPLE>>>
+__foo_
+<<<EXAMPLE>>>
+_foo__
+<<<EXAMPLE>>>
+___foo__
+<<<EXAMPLE>>>
+____foo_
+<<<EXAMPLE>>>
+__foo___
+<<<EXAMPLE>>>
+_foo____
+<<<EXAMPLE>>>
+**foo**
+<<<EXAMPLE>>>
+*_foo_*
+<<<EXAMPLE>>>
+__foo__
+<<<EXAMPLE>>>
+_*foo*_
+<<<EXAMPLE>>>
+****foo****
+<<<EXAMPLE>>>
+____foo____
+<<<EXAMPLE>>>
+******foo******
+<<<EXAMPLE>>>
+***foo***
+<<<EXAMPLE>>>
+_____foo_____
+<<<EXAMPLE>>>
+*foo _bar* baz_
+<<<EXAMPLE>>>
+*foo __bar *baz bim__ bam*
+<<<EXAMPLE>>>
+**foo **bar baz**
+<<<EXAMPLE>>>
+*foo *bar baz*
+<<<EXAMPLE>>>
+*[bar*](/url)
+<<<EXAMPLE>>>
+_foo [bar_](/url)
+<<<EXAMPLE>>>
+*<img src="foo" title="*"/>
+<<<EXAMPLE>>>
+**<a href="**">
+<<<EXAMPLE>>>
+__<a href="__">
+<<<EXAMPLE>>>
+*a `*`*
+<<<EXAMPLE>>>
+_a `_`_
+<<<EXAMPLE>>>
+**a<https://foo.bar/?q=**>
+<<<EXAMPLE>>>
+__a<https://foo.bar/?q=__>
+<<<EXAMPLE>>>
+[link](/uri "title")
+<<<EXAMPLE>>>
+[link](/uri)
+<<<EXAMPLE>>>
+[](./target.md)
+<<<EXAMPLE>>>
+[link]()
+<<<EXAMPLE>>>
+[link](<>)
+<<<EXAMPLE>>>
+[]()
+<<<EXAMPLE>>>
+[link](/my uri)
+<<<EXAMPLE>>>
+[link](</my uri>)
+<<<EXAMPLE>>>
+[link](foo
+bar)
+<<<EXAMPLE>>>
+[link](<foo
+bar>)
+<<<EXAMPLE>>>
+[a](<b)c>)
+<<<EXAMPLE>>>
+[link](<foo\>)
+<<<EXAMPLE>>>
+[a](<b)c
+[a](<b)c>
+[a](<b>c)
+<<<EXAMPLE>>>
+[link](\(foo\))
+<<<EXAMPLE>>>
+[link](foo(and(bar)))
+<<<EXAMPLE>>>
+[link](foo(and(bar))
+<<<EXAMPLE>>>
+[link](foo\(and\(bar\))
+<<<EXAMPLE>>>
+[link](<foo(and(bar)>)
+<<<EXAMPLE>>>
+[link](foo\)\:)
+<<<EXAMPLE>>>
+[link](#fragment)
+
+[link](https://example.com#fragment)
+
+[link](https://example.com?foo=3#frag)
+<<<EXAMPLE>>>
+[link](foo\bar)
+<<<EXAMPLE>>>
+[link](foo%20b&auml;)
+<<<EXAMPLE>>>
+[link]("title")
+<<<EXAMPLE>>>
+[link](/url "title")
+[link](/url 'title')
+[link](/url (title))
+<<<EXAMPLE>>>
+[link](/url "title \"&quot;")
+<<<EXAMPLE>>>
+[link](/url "title")
+<<<EXAMPLE>>>
+[link](/url "title "and" title")
+<<<EXAMPLE>>>
+[link](/url 'title "and" title')
+<<<EXAMPLE>>>
+[link](   /uri
+  "title"  )
+<<<EXAMPLE>>>
+[link] (/uri)
+<<<EXAMPLE>>>
+[link [foo [bar]]](/uri)
+<<<EXAMPLE>>>
+[link] bar](/uri)
+<<<EXAMPLE>>>
+[link [bar](/uri)
+<<<EXAMPLE>>>
+[link \[bar](/uri)
+<<<EXAMPLE>>>
+[link *foo **bar** `#`*](/uri)
+<<<EXAMPLE>>>
+[![moon](moon.jpg)](/uri)
+<<<EXAMPLE>>>
+[foo [bar](/uri)](/uri)
+<<<EXAMPLE>>>
+[foo *[bar [baz](/uri)](/uri)*](/uri)
+<<<EXAMPLE>>>
+![[[foo](uri1)](uri2)](uri3)
+<<<EXAMPLE>>>
+*[foo*](/uri)
+<<<EXAMPLE>>>
+[foo *bar](baz*)
+<<<EXAMPLE>>>
+*foo [bar* baz]
+<<<EXAMPLE>>>
+[foo <bar attr="](baz)">
+<<<EXAMPLE>>>
+[foo`](/uri)`
+<<<EXAMPLE>>>
+[foo<https://example.com/?search=](uri)>
+<<<EXAMPLE>>>
+[foo][bar]
+
+[bar]: /url "title"
+<<<EXAMPLE>>>
+[link [foo [bar]]][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[link \[bar][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[link *foo **bar** `#`*][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[![moon](moon.jpg)][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo [bar](/uri)][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo *bar [baz][ref]*][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+*[foo*][ref]
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo *bar][ref]*
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo <bar attr="][ref]">
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo`][ref]`
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo<https://example.com/?search=][ref]>
+
+[ref]: /uri
+<<<EXAMPLE>>>
+[foo][BaR]
+
+[bar]: /url "title"
+<<<EXAMPLE>>>
+[ẞ]
+
+[SS]: /url
+<<<EXAMPLE>>>
+[Foo
+  bar]: /url
+
+[Baz][Foo bar]
+<<<EXAMPLE>>>
+[foo] [bar]
+
+[bar]: /url "title"
+<<<EXAMPLE>>>
+[foo]
+[bar]
+
+[bar]: /url "title"
+<<<EXAMPLE>>>
+[foo]: /url1
+
+[foo]: /url2
+
+[bar][foo]
+<<<EXAMPLE>>>
+[bar][foo\!]
+
+[foo!]: /url
+<<<EXAMPLE>>>
+[foo][ref[]
+
+[ref[]: /uri
+<<<EXAMPLE>>>
+[foo][ref[bar]]
+
+[ref[bar]]: /uri
+<<<EXAMPLE>>>
+[[[foo]]]
+
+[[[foo]]]: /url
+<<<EXAMPLE>>>
+[foo][ref\[]
+
+[ref\[]: /uri
+<<<EXAMPLE>>>
+[bar\\]: /uri
+
+[bar\\]
+<<<EXAMPLE>>>
+[]
+
+[]: /uri
+<<<EXAMPLE>>>
+[
+ ]
+
+[
+ ]: /uri
+<<<EXAMPLE>>>
+[foo][]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[*foo* bar][]
+
+[*foo* bar]: /url "title"
+<<<EXAMPLE>>>
+[Foo][]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[foo] 
+[]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[*foo* bar]
+
+[*foo* bar]: /url "title"
+<<<EXAMPLE>>>
+[[*foo* bar]]
+
+[*foo* bar]: /url "title"
+<<<EXAMPLE>>>
+[[bar [foo]
+
+[foo]: /url
+<<<EXAMPLE>>>
+[Foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[foo] bar
+
+[foo]: /url
+<<<EXAMPLE>>>
+\[foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+[foo*]: /url
+
+*[foo*]
+<<<EXAMPLE>>>
+[foo][bar]
+
+[foo]: /url1
+[bar]: /url2
+<<<EXAMPLE>>>
+[foo][]
+
+[foo]: /url1
+<<<EXAMPLE>>>
+[foo]()
+
+[foo]: /url1
+<<<EXAMPLE>>>
+[foo](not a link)
+
+[foo]: /url1
+<<<EXAMPLE>>>
+[foo][bar][baz]
+
+[baz]: /url
+<<<EXAMPLE>>>
+[foo][bar][baz]
+
+[baz]: /url1
+[bar]: /url2
+<<<EXAMPLE>>>
+[foo][bar][baz]
+
+[baz]: /url1
+[foo]: /url2
+<<<EXAMPLE>>>
+![foo](/url "title")
+<<<EXAMPLE>>>
+![foo *bar*]
+
+[foo *bar*]: train.jpg "train & tracks"
+<<<EXAMPLE>>>
+![foo ![bar](/url)](/url2)
+<<<EXAMPLE>>>
+![foo [bar](/url)](/url2)
+<<<EXAMPLE>>>
+![foo *bar*][]
+
+[foo *bar*]: train.jpg "train & tracks"
+<<<EXAMPLE>>>
+![foo *bar*][foobar]
+
+[FOOBAR]: train.jpg "train & tracks"
+<<<EXAMPLE>>>
+![foo](train.jpg)
+<<<EXAMPLE>>>
+My ![foo bar](/path/to/train.jpg  "title"   )
+<<<EXAMPLE>>>
+![foo](<url>)
+<<<EXAMPLE>>>
+![](/url)
+<<<EXAMPLE>>>
+![foo][bar]
+
+[bar]: /url
+<<<EXAMPLE>>>
+![foo][bar]
+
+[BAR]: /url
+<<<EXAMPLE>>>
+![foo][]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+![*foo* bar][]
+
+[*foo* bar]: /url "title"
+<<<EXAMPLE>>>
+![Foo][]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+![foo] 
+[]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+![foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+![*foo* bar]
+
+[*foo* bar]: /url "title"
+<<<EXAMPLE>>>
+![[foo]]
+
+[[foo]]: /url "title"
+<<<EXAMPLE>>>
+![Foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+!\[foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+\![foo]
+
+[foo]: /url "title"
+<<<EXAMPLE>>>
+<http://foo.bar.baz>
+<<<EXAMPLE>>>
+<https://foo.bar.baz/test?q=hello&id=22&boolean>
+<<<EXAMPLE>>>
+<irc://foo.bar:2233/baz>
+<<<EXAMPLE>>>
+<MAILTO:FOO@BAR.BAZ>
+<<<EXAMPLE>>>
+<a+b+c:d>
+<<<EXAMPLE>>>
+<made-up-scheme://foo,bar>
+<<<EXAMPLE>>>
+<https://../>
+<<<EXAMPLE>>>
+<localhost:5001/foo>
+<<<EXAMPLE>>>
+<https://foo.bar/baz bim>
+<<<EXAMPLE>>>
+<https://example.com/\[\>
+<<<EXAMPLE>>>
+<foo@bar.example.com>
+<<<EXAMPLE>>>
+<foo+special@Bar.baz-bar0.com>
+<<<EXAMPLE>>>
+<foo\+@bar.example.com>
+<<<EXAMPLE>>>
+<>
+<<<EXAMPLE>>>
+< https://foo.bar >
+<<<EXAMPLE>>>
+<m:abc>
+<<<EXAMPLE>>>
+<foo.bar.baz>
+<<<EXAMPLE>>>
+https://example.com
+<<<EXAMPLE>>>
+foo@bar.example.com
+<<<EXAMPLE>>>
+<a><bab><c2c>
+<<<EXAMPLE>>>
+<a/><b2/>
+<<<EXAMPLE>>>
+<a  /><b2
+data="foo" >
+<<<EXAMPLE>>>
+<a foo="bar" bam = 'baz <em>"</em>'
+_boolean zoop:33=zoop:33 />
+<<<EXAMPLE>>>
+Foo <responsive-image src="foo.jpg" />
+<<<EXAMPLE>>>
+<33> <__>
+<<<EXAMPLE>>>
+<a h*#ref="hi">
+<<<EXAMPLE>>>
+<a href="hi'> <a href=hi'>
+<<<EXAMPLE>>>
+< a><
+foo><bar/ >
+<foo bar=baz
+bim!bop />
+<<<EXAMPLE>>>
+<a href='bar'title=title>
+<<<EXAMPLE>>>
+</a></foo >
+<<<EXAMPLE>>>
+</a href="foo">
+<<<EXAMPLE>>>
+foo <!-- this is a --
+comment - with hyphens -->
+<<<EXAMPLE>>>
+foo <!--> foo -->
+
+foo <!---> foo -->
+<<<EXAMPLE>>>
+foo <?php echo $a; ?>
+<<<EXAMPLE>>>
+foo <!ELEMENT br EMPTY>
+<<<EXAMPLE>>>
+foo <![CDATA[>&<]]>
+<<<EXAMPLE>>>
+foo <a href="&ouml;">
+<<<EXAMPLE>>>
+foo <a href="\*">
+<<<EXAMPLE>>>
+<a href="\"">
+<<<EXAMPLE>>>
+foo  
+baz
+<<<EXAMPLE>>>
+foo\
+baz
+<<<EXAMPLE>>>
+foo       
+baz
+<<<EXAMPLE>>>
+foo  
+     bar
+<<<EXAMPLE>>>
+foo\
+     bar
+<<<EXAMPLE>>>
+*foo  
+bar*
+<<<EXAMPLE>>>
+*foo\
+bar*
+<<<EXAMPLE>>>
+`code  
+span`
+<<<EXAMPLE>>>
+`code\
+span`
+<<<EXAMPLE>>>
+<a href="foo  
+bar">
+<<<EXAMPLE>>>
+<a href="foo\
+bar">
+<<<EXAMPLE>>>
+foo\
+<<<EXAMPLE>>>
+foo  
+<<<EXAMPLE>>>
+### foo\
+<<<EXAMPLE>>>
+### foo  
+<<<EXAMPLE>>>
+foo
+baz
+<<<EXAMPLE>>>
+foo 
+ baz
+<<<EXAMPLE>>>
+hello $.;'there
+<<<EXAMPLE>>>
+Foo χρῆν
+<<<EXAMPLE>>>
+Multiple     spaces

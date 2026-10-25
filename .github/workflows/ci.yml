@@ -11,6 +11,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The CommonMark corpus is in the repo (not the published crate): never skip it in CI.
+  REQUIRE_SPEC_CORPUS: "1"
 
 jobs:
   test:

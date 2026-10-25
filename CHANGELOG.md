@@ -53,6 +53,14 @@ First release.
   `align`/`text-align`/`<center>`, real lists (`<ol start>`), tables, `<pre>`,
   `<blockquote>`, and `<img width>`.
 
+### Tests
+- All 652 CommonMark specification examples are converted in both the default and
+  untrusted configurations (well-formed XML, no script-scheme link targets, no
+  text dropped); every pulldown-cmark tag and event is accounted for, and the
+  test stops compiling if an upgrade adds one; pathological shapes (deep
+  nesting, wide and tall tables, huge lines, delimiter runs, quadratic-parsing
+  traps, runaway HTML) finish within a time budget on a default thread stack.
+
 ### Security
 - Image mode runs a local TeX engine on document content; use native mode for
   untrusted input. See the README.
@@ -71,6 +79,12 @@ First release.
 - Control characters stripped so output is always valid XML.
 
 ### Fixed
+- Content between the tags of an HTML `<table>` (an indented block or text outside
+  any cell) was silently dropped; it now appears in front of the table, as browsers do.
+- `![a ![b](x)](y)` lost the outer alt text.
+- Tabs in code blocks are real Word tab elements (a raw tab inside text is not
+  reliably shown), and adjacent text events are merged into one run, which shrinks
+  output for input full of escapes or stray delimiters.
 - `---` / `+++` blocks in the middle of a document were silently deleted as
   metadata; front matter is now recognised only at the start.
 - `<me@example.com>` autolinks lost their link target.

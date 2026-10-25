@@ -202,7 +202,7 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 | Block quotes (nested), GitHub alerts `> [!NOTE]` | Indented with a bar; alerts get a bold label line |
 | Bullet / ordered / nested / task lists, start numbers | Native Word numbering (each ordered list restarts); `☐`/`☑` for tasks |
 | Tables (alignment, inline formatting) | Word tables |
-| Fenced, tilde and indented code | Monospace shaded lines |
+| Fenced, tilde and indented code | One monospace shaded paragraph per line, spaces and tabs kept, indented inside lists and quotes. The language after the fence is not shown and there is no syntax highlighting (`mermaid`, `dolphin` and math fences are handled as described above) |
 | Thematic breaks | A rule |
 | Footnotes `[^1]` | Native Word footnotes (unknown labels stay literal) |
 | Definition lists | Bold term, indented definitions |

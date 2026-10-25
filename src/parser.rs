@@ -15,7 +15,9 @@ use docx_rs::{
     ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Pic, Run, RunFonts, Shading, SpecialIndentType, Start,
     Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
 };
-use pulldown_cmark::{Alignment, BlockQuoteKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, BlockQuoteKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd, TextMergeStream,
+};
 
 use crate::config::{Config, ImageAccess, MathMode};
 use crate::error::{CrateError, Result};
@@ -283,6 +285,8 @@ struct Builder<'a> {
     strike: usize,
     link: Option<LinkCtx>,
     image: Option<ImageCtx>,
+    /// Images opened inside the alt text of `image` (`![a ![b](x)](y)`).
+    image_nesting: usize,
     code: Option<String>,
     quote_depth: usize,
     lists: Vec<ListCtx>,
@@ -417,6 +421,7 @@ impl<'a> Builder<'a> {
             strike: 0,
             link: None,
             image: None,
+            image_nesting: 0,
             code: None,
             quote_depth: 0,
             lists: Vec::new(),
@@ -478,10 +483,12 @@ impl<'a> Builder<'a> {
             if let Some(cell) = t.cell.take() {
                 t.cell = Some(cell.add_paragraph(p));
                 t.cell_paras += 1;
+                return;
             }
-        } else {
-            self.blocks.push(Block::Para(Box::new(p)));
         }
+        // No open cell: content between the tags of an HTML table. Browsers move
+        // it in front of the table, and so does this.
+        self.blocks.push(Block::Para(Box::new(p)));
     }
 
     /// Resolve the children of a finished paragraph into a docx paragraph.
@@ -617,7 +624,18 @@ impl<'a> Builder<'a> {
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
-            p = p.add_run(Run::new().add_text(sanitize_xml_chars(line.trim_end_matches('\r'))));
+            // A raw tab inside `<w:t>` is not reliably shown by Word; use a real tab element.
+            let line = sanitize_xml_chars(line.trim_end_matches('\r'));
+            let mut run = Run::new();
+            for (i, part) in line.split('\t').enumerate() {
+                if i > 0 {
+                    run = run.add_tab();
+                }
+                if !part.is_empty() {
+                    run = run.add_text(part);
+                }
+            }
+            p = p.add_run(run);
             self.emit(p);
         }
     }
@@ -1103,7 +1121,9 @@ impl<'a> Builder<'a> {
         let image_ended = matches!(ev, Event::End(TagEnd::Image));
         self.event(ev)?;
         if image_ended {
-            if let Some(ctx) = self.image.take() {
+            if self.image_nesting > 0 {
+                self.image_nesting -= 1;
+            } else if let Some(ctx) = self.image.take() {
                 self.image(ctx)?;
             }
         }
@@ -1270,6 +1290,8 @@ impl<'a> Builder<'a> {
                     children: Vec::new(),
                 });
             }
+            // An image inside another image's alt text only contributes its alt text.
+            Tag::Image { .. } if self.image.is_some() => self.image_nesting += 1,
             Tag::Image { dest_url, .. } => {
                 self.image = Some(ImageCtx {
                     dest: dest_url.to_string(),
@@ -1497,7 +1519,7 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
 fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
     let mut map = HashMap::new();
     let mut open: Option<(String, Vec<Event<'_>>)> = None;
-    for ev in Parser::new_ext(markdown, markdown_options(false)) {
+    for ev in TextMergeStream::new(Parser::new_ext(markdown, markdown_options(false))) {
         match ev {
             Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_string(), Vec::new())),
             Event::End(TagEnd::FootnoteDefinition) => {
@@ -1521,7 +1543,8 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
     b.footnotes = collect_footnotes(&pre.markdown);
 
     let mut in_definition = false;
-    for event in Parser::new_ext(&pre.markdown, markdown_options(false)) {
+    // Adjacent text events (escapes, entities, stray delimiters) become one run, not one each.
+    for event in TextMergeStream::new(Parser::new_ext(&pre.markdown, markdown_options(false))) {
         // Footnote bodies are emitted where they are referenced, not in place.
         match &event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,

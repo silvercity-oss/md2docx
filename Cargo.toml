@@ -8,7 +8,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["markdown", "docx", "word", "latex", "mermaid"]
 categories = ["text-processing", "command-line-utilities"]
-exclude = [".github/", ".gitattributes"]
+exclude = [".github/", ".gitattributes", "tests/data/"]
 
 [lib]
 name = "silvercity_oss"
