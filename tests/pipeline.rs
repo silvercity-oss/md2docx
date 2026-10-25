@@ -78,13 +78,13 @@ fn dollars_in_code_and_prose_are_not_math() {
 
 #[test]
 fn missing_cli_is_reported_by_name() {
-    let mut cfg = Config::default();
+    let mut cfg = Config::trusted();
     cfg.graphs.mermaid.program = "definitely-not-installed-mmdc".into();
     match markdown_to_docx("```mermaid\ngraph TD; A-->B\n```\n", &cfg) {
         Err(CrateError::MissingExternalCLI { program }) => assert_eq!(program, "definitely-not-installed-mmdc"),
         other => panic!("expected MissingExternalCLI, got {other:?}"),
     }
-    let mut cfg = Config::default();
+    let mut cfg = Config::trusted();
     cfg.math.engine = MathImageEngine::LatexDvipng {
         latex: "no-such-latex".into(),
         dvipng: "no-such-dvipng".into(),
@@ -98,11 +98,11 @@ fn missing_cli_is_reported_by_name() {
 #[test]
 fn invalid_input_is_rejected_not_panicked_on() {
     assert!(matches!(
-        markdown_to_docx("```mermaid\n   \n```\n", &Config::default()),
+        markdown_to_docx("```mermaid\n   \n```\n", &Config::trusted()),
         Err(CrateError::InvalidMarkdown(m)) if m.contains("line 1")
     ));
     assert!(matches!(
-        markdown_to_docx("a\0b", &Config::default()),
+        markdown_to_docx("a\0b", &Config::trusted()),
         Err(CrateError::InvalidMarkdown(_))
     ));
     let err = markdown_to_docx("ok\n\n$$\\left( x$$\n", &Config::native_math()).unwrap_err();
@@ -146,7 +146,7 @@ Plain **bold** *italic* ~~gone~~ `code` and a [link](https://example.com/a?b=1&c
 fn main() {}
 ```
 ";
-    let docx = markdown_to_docx(md, &Config::default()).unwrap();
+    let docx = markdown_to_docx(md, &Config::trusted()).unwrap();
     let body = zip_text(&docx, "word/document.xml");
     assert_well_formed(&body);
 
@@ -170,7 +170,7 @@ fn main() {}
 #[test]
 fn local_images_are_embedded_relative_to_base_dir() {
     let fx = Fixture::new();
-    let cfg = Config::default().with_base_dir(fx.dir.path());
+    let cfg = Config::trusted().with_base_dir(fx.dir.path());
     let docx = markdown_to_docx("![logo](fixture.png) and ![remote](https://example.com/x.png)", &cfg).unwrap();
     assert_eq!(media_count(&docx), 1);
     assert!(zip_text(&docx, "word/document.xml").contains("[remote]"));
@@ -183,7 +183,7 @@ fn local_images_are_embedded_relative_to_base_dir() {
 
 #[test]
 fn output_is_a_complete_docx_package() {
-    let docx = markdown_to_docx("hello", &Config::default()).unwrap();
+    let docx = markdown_to_docx("hello", &Config::trusted()).unwrap();
     let names = zip_entries(&docx);
     for required in [
         "[Content_Types].xml",

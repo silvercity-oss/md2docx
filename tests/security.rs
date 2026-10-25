@@ -78,7 +78,7 @@ fn every_limit_is_enforced() {
         err("$$\\frac{aaaaaaaaaa}{b}$$", &small(|l| l.max_formula_bytes = 8)),
         CrateError::LimitExceeded(m) if m.contains("formula")
     ));
-    let mut with_graphs = Config::default();
+    let mut with_graphs = Config::trusted();
     with_graphs.limits.max_graph_source_bytes = 10;
     assert!(matches!(
         err("```mermaid\ngraph TD; A-->B-->C-->D\n```\n", &with_graphs),
@@ -316,7 +316,7 @@ fn huge_claimed_image_dimensions_are_rejected_cheaply() {
 #[test]
 fn tex_that_touches_the_host_is_refused_before_latex_runs() {
     // `latex` points at a program that does not exist: reaching it would be MissingExternalCLI.
-    let mut cfg = Config::default();
+    let mut cfg = Config::trusted();
     cfg.math.engine = silvercity_oss::MathImageEngine::LatexDvipng {
         latex: "latex-that-must-never-run".into(),
         dvipng: "dvipng-that-must-never-run".into(),

@@ -7,7 +7,7 @@ Dolphin diagrams** that plain Word writers cannot express natively.
 ```rust
 use silvercity_oss::{markdown_to_docx, Config};
 
-let docx: Vec<u8> = markdown_to_docx("# Hi\n\n$$E = mc^2$$", &Config::native_math())?;
+let docx: Vec<u8> = markdown_to_docx("# Hi\n\n$$E = mc^2$$", &Config::default())?;
 std::fs::write("out.docx", docx)?;
 ```
 
@@ -38,10 +38,14 @@ code: start from a preset, then chain `with_*` methods or assign fields.
 
 | Preset | For |
 | --- | --- |
-| `Config::untrusted()` | User uploads, web forms, services. Native math, diagrams off, no local images, no `<a>` links, tight limits. **Starts no subprocess** |
+| `Config::default()` = `Config::untrusted()` | **The safe default**, for user uploads, web forms, services. Native math, diagrams off, no local images, no `<a>` links, tight limits. **Starts no subprocess and reads no file** |
 | `Config::untrusted_with_diagrams()` | The same, plus Mermaid diagrams via `merman-cli` (no browser). Starts one tightly bounded process per diagram; see "Diagrams from untrusted input" |
-| `Config::native_math()` | Your own documents, no external tools needed |
-| `Config::default()` | Your own documents; math as pictures via TeX (the original spec's default), diagrams via `merman-cli` |
+| `Config::trusted()` | Your own documents: math as pictures via TeX (the original spec's default), diagrams via `merman-cli`, images from `base_dir`, generous limits. **Runs external programs and reads files** |
+| `Config::native_math()` | `trusted()` with native equations, so no TeX needed. **Not an untrusted preset**: removing TeX does not remove local-file access, diagram processes or raw HTML links |
+
+TeX, external renderers and local files are therefore behind explicit, trusted
+configuration. Everything on `Config` (and any `FenceRenderer`, highlighter or
+asset resolver) is chosen by the embedding program, never by the document.
 
 `DocumentOptions` sets the page (`A4`, `Letter`, `Legal`, or `Custom` twips for
 landscape or any size), margins, body and code fonts, body size and heading
@@ -223,7 +227,7 @@ converter in a container with no network and no sensitive files.
 
 ## Math modes (`config.math.mode`)
 
-* **`MathMode::ImageFallback`** (default): each formula becomes a transparent
+* **`MathMode::ImageFallback`** (trusted input only): each formula becomes a transparent
   PNG. Default engine is `latex` + `dvipng -T tight -bg Transparent`
   (TeX Live); `MathImageEngine::Command(..)` plugs in anything else (a
   MathJax/headless-browser node script, …) that reads LaTeX from `{input}` and
@@ -325,8 +329,9 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `--highlight none\|light\|dark` | Syntax-highlight code blocks (VS Code Light+/Dark+ colours; default `none`) |
 | `--keep-failed-diagrams` | A `mermaid`/`dolphin` block that cannot be rendered (tool missing, invalid diagram) stays a code block instead of failing the conversion |
 
-Note the CLI defaults to `native` math while the library's `Config::default()`
-uses `ImageFallback`; use `Config::native_math()` for the safe mode. On Windows,
+The CLI converts files you point it at, so it starts from `Config::trusted()` (with
+`native` math unless you pass `--math-mode image`); `--untrusted` switches to the safe
+preset. On Windows,
 npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly
 through `--mermaid-command`.
 
@@ -405,8 +410,8 @@ fences left as code (no browser), no local files, smaller limits.
   swaps the file between the two steps is outside this threat model.
 * Command templates (`--dolphin-command`, ...) and `Config` values are trusted
   configuration, not document content.
-* The library default (`Config::default()`) keeps the spec'd image mode for
-  math; the CLI defaults to native.
+* The library default (`Config::default()`) is the untrusted-input policy. The CLI starts
+  from `Config::trusted()` because its input is a file you chose; use `--untrusted` otherwise.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 

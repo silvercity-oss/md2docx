@@ -196,7 +196,7 @@ fn config(args: &Args) -> Config {
             Config::untrusted()
         }
     } else {
-        let mut cfg = Config::default();
+        let mut cfg = Config::trusted();
         cfg.math.mode = match args.math_mode {
             MathMode::Native => LibMathMode::NativeOmml,
             MathMode::Image => LibMathMode::ImageFallback,

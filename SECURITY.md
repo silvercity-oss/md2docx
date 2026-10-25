@@ -28,3 +28,29 @@ Out of scope: vulnerabilities in the external tools themselves (TeX, Mermaid CLI
 Chrome) when you chose to run them on untrusted input, and settings you
 explicitly loosened (`ImageAccess::Any`, image math mode on untrusted text).
 See the README's Security section for the threat model and known limitations.
+
+## Trust model: library checks versus host isolation
+
+**Who controls what.** The Markdown is untrusted. Everything else is controlled by the
+embedding program and is trusted: `Config` (including `base_dir`, command templates,
+`scratch_dir`), `FenceRenderer`s, `ImageResolver`s and asset maps, `Highlighter`s and custom
+HTML tag styles. A document can never select a renderer, a path, a command or a limit.
+
+**`Config::default()` is the untrusted-input policy.** Native math, no diagram or TeX
+process, no local files, no raw-HTML links, tight limits. TeX, external renderers and local
+files each need an explicit, trusted opt-in (`Config::trusted()`, or setting the field).
+`Config::native_math()` is a *trusted* preset: it only removes the TeX process.
+
+**What the library enforces** (checked in-process, tested): input, element, image, output and
+workspace budgets; a bounded, normalised image decode; XML-safe output; link scheme allowlists;
+lexical and symlink-aware path containment where files are allowed; bounded external-tool
+runtime, console output and scratch space, with the tool's process tree killed on every exit
+path once it has been started.
+
+**What it cannot guarantee.** A library cannot bound the memory of its own process, interrupt
+a synchronous callback, or contain a vulnerability in a decoder or renderer it links.
+Deadlines and cancellation are cooperative. A host converting hostile documents should still
+run the conversion in a worker with an address-space/RSS limit, a CPU and wall-clock limit,
+no network, a private scratch filesystem, and a supervisor that kills the worker from
+outside; the library's checks reduce what that supervisor has to absorb, they do not replace it.
+

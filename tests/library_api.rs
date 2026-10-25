@@ -175,9 +175,9 @@ fn document_options_are_validated_before_any_work() {
 
 #[test]
 fn builder_methods_cover_the_common_settings() {
-    let mut limits = Limits::default();
+    let mut limits = Limits::trusted();
     limits.max_input_bytes = 10;
-    let cfg = Config::default()
+    let cfg = Config::trusted()
         .with_math_mode(silvercity_oss::MathMode::NativeOmml)
         .with_image_access(ImageAccess::None)
         .with_html_links(false)

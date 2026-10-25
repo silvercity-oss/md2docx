@@ -51,7 +51,7 @@ fn real_latex_renders_legitimate_formulas_through_the_whole_pipeline() {
     }
     let md = "Inline $\\alpha^2 + \\beta_i \\leq \\sqrt{x}$ text.\n\n$$\n\\int_0^1 \\frac{x^2}{1+x}\\,dx = \\sum_{k=1}^{n} \\binom{n}{k}\n$$\n\n\
               $$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$$\n";
-    let docx = markdown_to_docx(md, &Config::default()).expect("default (image) mode must work with a real TeX");
+    let docx = markdown_to_docx(md, &Config::trusted()).expect("default (image) mode must work with a real TeX");
     assert!(media_count(&docx) >= 3, "one picture per formula");
     let body = zip_text(&docx, "word/document.xml");
     assert_well_formed(&body);
@@ -63,7 +63,7 @@ fn real_latex_reports_bad_math_cleanly() {
     if !tex_available() {
         return;
     }
-    match markdown_to_docx("$\\undefinedcommandxyz$", &Config::default()) {
+    match markdown_to_docx("$\\undefinedcommandxyz$", &Config::trusted()) {
         Err(CrateError::ExternalToolFailed { program, detail }) => {
             assert_eq!(program, "latex");
             assert!(detail.contains("Undefined control sequence"), "{detail}");

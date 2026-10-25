@@ -224,7 +224,7 @@ fn html_attribute_lookup_ignores_text_inside_quoted_values() {
 
 #[test]
 fn a_replaced_fence_does_not_swallow_the_next_line() {
-    let cfg = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Ok(png_bytes(40, 20))
     });
     for md in [
@@ -318,7 +318,7 @@ fn non_xml_characters_are_refused_in_config_and_in_the_public_converter() {
     let mut doc = silvercity_oss::DocumentOptions::default();
     doc.body_font = "Cali\u{fffe}bri".into();
     assert!(matches!(
-        markdown_to_docx("x", &Config::default().with_document(doc)),
+        markdown_to_docx("x", &Config::trusted().with_document(doc)),
         Err(CrateError::InvalidConfig(_))
     ));
     assert!(silvercity_oss::omml::latex_to_omml("a\u{1}b").is_err());
@@ -348,7 +348,7 @@ fn untrusted_conversion_does_not_need_a_scratch_directory() {
 fn a_replaced_fence_keeps_its_container() {
     // The blank line after the picture must not end the quote or the list item that the
     // following text belongs to.
-    let cfg = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Ok(png_bytes(40, 20))
     });
     let pre = |md: &str| silvercity_oss::__internals::preprocess(md, &cfg).unwrap().markdown;

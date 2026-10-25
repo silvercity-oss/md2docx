@@ -61,7 +61,7 @@ fn diagram_count_is_capped_before_anything_runs() {
         .map(|i| format!("```mermaid\ngraph TD; A{i}-->B\n```\n\n"))
         .collect();
     assert!(matches!(
-        markdown_to_docx(&default_many, &Config::default()),
+        markdown_to_docx(&default_many, &Config::trusted()),
         Err(CrateError::LimitExceeded(m)) if m.contains("diagrams")
     ));
 }

@@ -58,7 +58,7 @@ cp '{png}' "$OUT""#,
     }
 
     fn config(&self) -> Config {
-        let mut cfg = Config::default();
+        let mut cfg = Config::trusted();
         cfg.graphs.mermaid = CommandSpec::new(self.fake_renderer("mmdc"), ["-i", "{input}", "-o", "{output}"]);
         cfg.graphs.dolphin = CommandSpec::new(self.fake_renderer("dolphin"), ["-i", "{input}", "-o", "{output}"]);
         cfg.math.engine = MathImageEngine::Command(CommandSpec::new(
@@ -229,7 +229,7 @@ fn latex_dvipng_engine_builds_a_document_and_converts_it() {
             png = fx.path("fixture.png").display()
         ),
     );
-    let mut cfg = Config::default();
+    let mut cfg = Config::trusted();
     cfg.math.engine = MathImageEngine::LatexDvipng { latex, dvipng };
     let docx = markdown_to_docx("$$\n\\sum_{k=1}^n k\n$$\n", &cfg).unwrap();
 

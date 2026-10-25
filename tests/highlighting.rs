@@ -243,7 +243,7 @@ impl Highlighter for Todo {
 
 #[test]
 fn a_custom_highlighter_replaces_the_built_in_one() {
-    let cfg = Config::default().with_highlighting(Highlighting::new(Theme::vscode_light()).with_highlighter(Todo));
+    let cfg = Config::trusted().with_highlighting(Highlighting::new(Theme::vscode_light()).with_highlighter(Todo));
     let doc = body_with(&fenced("whatever", "x TODO y"), &cfg);
     assert!(run_with(&doc, "TODO").contains("w:val=\"0000FF\""));
     // `fn` is not coloured because the built-in lexers are not consulted.
@@ -257,7 +257,7 @@ fn per_language_highlighters_win_and_can_delegate_to_the_built_in_lexers() {
     let h = Highlighting::new(Theme::vscode_light())
         .with_language("SQL", Todo)
         .with_highlighter(delegate);
-    let cfg = Config::default().with_highlighting(h);
+    let cfg = Config::trusted().with_highlighting(h);
     let doc = body_with(&fenced("sql", "SELECT TODO"), &cfg);
     assert!(run_with(&doc, "TODO").contains("w:val=\"0000FF\""));
     assert!(!doc.contains(">SELECT</w:t>") || !run_with(&doc, "SELECT ").contains("w:val=\"0000FF\""));
@@ -273,7 +273,7 @@ fn per_language_highlighters_win_and_can_delegate_to_the_built_in_lexers() {
 fn a_returned_none_means_plain() {
     let h = Highlighting::new(Theme::vscode_light())
         .with_highlighter(|_: &str, _: &str| -> Result<Option<Vec<Span>>, FenceError> { Ok(None) });
-    let doc = body_with(&fenced("rust", "fn f() {}"), &Config::default().with_highlighting(h));
+    let doc = body_with(&fenced("rust", "fn f() {}"), &Config::trusted().with_highlighting(h));
     assert!(!doc.contains("w:val=\"0000FF\"") && doc.contains("w:fill=\"FFFFFF\""));
 }
 
@@ -281,7 +281,7 @@ fn a_returned_none_means_plain() {
 fn a_misbehaving_highlighter_is_an_error_not_a_corrupt_document() {
     let run = |f: Hl| {
         let h = Highlighting::new(Theme::vscode_light()).with_highlighter(f);
-        markdown_to_docx(&fenced("rust", "fn é() {}"), &Config::default().with_highlighting(h))
+        markdown_to_docx(&fenced("rust", "fn é() {}"), &Config::trusted().with_highlighting(h))
     };
     let bad: &[Hl] = &[
         |_, _| Err("boom".into()),
@@ -322,11 +322,11 @@ fn themes_and_languages_are_validated() {
         Theme::new("x\u{7}", "FFFFFF", "000000"),
     ];
     for t in bad_themes {
-        let cfg = Config::default().with_highlighting(Highlighting::new(t));
+        let cfg = Config::trusted().with_highlighting(Highlighting::new(t));
         assert!(matches!(markdown_to_docx("x", &cfg), Err(CrateError::InvalidConfig(_))));
     }
     let cfg =
-        Config::default().with_highlighting(Highlighting::new(Theme::vscode_dark()).with_language("has space", Todo));
+        Config::trusted().with_highlighting(Highlighting::new(Theme::vscode_dark()).with_language("has space", Todo));
     assert!(matches!(markdown_to_docx("x", &cfg), Err(CrateError::InvalidConfig(_))));
     // A custom theme with bold and italic works.
     let theme = Theme::new("mine", "FAFAFA", "111111")
@@ -334,7 +334,7 @@ fn themes_and_languages_are_validated() {
         .style(TokenClass::Comment, TokenStyle::default().italic());
     let doc = body_with(
         &fenced("rust", "fn f() {} // c"),
-        &Config::default().with_highlighting(Highlighting::new(theme)),
+        &Config::trusted().with_highlighting(Highlighting::new(theme)),
     );
     let kw = run_with(&doc, "fn");
     assert!(

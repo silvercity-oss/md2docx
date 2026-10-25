@@ -14,11 +14,12 @@ use crate::highlight::Highlighting;
 pub enum MathMode {
     /// Render each formula to a transparent PNG with an external tool and
     /// embed it as a picture. Works for any LaTeX the tool understands, but
-    /// the result is not editable in Word.
-    #[default]
+    /// the result is not editable in Word. **Runs a TeX engine on document
+    /// content**: trusted input only (see [`Config::trusted`]).
     ImageFallback,
     /// Convert LaTeX to OMML in-process and inject native, editable
-    /// `<m:oMath>` / `<m:oMathPara>` elements. No external tool required.
+    /// `<m:oMath>` / `<m:oMathPara>` elements. No external tool required (default).
+    #[default]
     NativeOmml,
 }
 
@@ -149,8 +150,10 @@ pub struct Limits {
     pub max_total_tool_time: Duration,
 }
 
-impl Default for Limits {
-    fn default() -> Self {
+impl Limits {
+    /// Ceilings for Markdown you wrote or fully trust: large inputs, many diagrams and
+    /// images. Not suitable for untrusted input.
+    pub fn trusted() -> Self {
         const MIB: u64 = 1024 * 1024;
         Limits {
             max_input_bytes: 10 * 1024 * 1024,
@@ -166,6 +169,26 @@ impl Default for Limits {
             max_elements: 500_000,
             max_uncompressed_bytes: 1024 * MIB,
             max_total_tool_time: Duration::from_secs(300),
+        }
+    }
+}
+
+/// The default limits are the tight ones suited to untrusted Markdown (the same as
+/// [`Config::untrusted`] uses); use [`Limits::trusted`] for your own documents.
+impl Default for Limits {
+    fn default() -> Self {
+        const MIB: u64 = 1024 * 1024;
+        Limits {
+            max_input_bytes: 2 * 1024 * 1024,
+            max_rendered_blocks: 200,
+            max_highlight_bytes: 64 * 1024,
+            max_formula_bytes: 4 * 1024,
+            max_image_bytes: 5 * MIB,
+            max_total_image_bytes: 25 * MIB,
+            max_output_bytes: 50 * MIB,
+            max_elements: 60_000,
+            max_uncompressed_bytes: 64 * MIB,
+            ..Limits::trusted()
         }
     }
 }
@@ -255,8 +278,9 @@ pub enum DiagramFailure {
 pub struct GraphOptions {
     /// What to do when a block's renderer fails (default: fail the conversion).
     pub on_failure: DiagramFailure,
-    /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
-    /// blocks and no diagram tool is ever started.
+    /// Render `mermaid`/`dolphin` fences with external commands. When `false` (the default)
+    /// they stay ordinary code blocks and no diagram tool is ever started; a
+    /// [`FenceRenderer`] you register for the language still applies.
     pub enabled: bool,
     /// Treat diagram text as hostile. Requires the stock `merman-cli` command
     /// ([`MermaidEngine::Merman`], optionally with a different program path):
@@ -299,7 +323,7 @@ impl Default for GraphOptions {
     fn default() -> Self {
         GraphOptions {
             on_failure: DiagramFailure::default(),
-            enabled: true,
+            enabled: false,
             hardened: false,
             mermaid: MermaidEngine::default().command(),
             dolphin: CommandSpec::new("dolphin", ["-i", "{input}", "-o", "{output}"]),
@@ -466,8 +490,8 @@ impl DocumentOptions {
 
 /// Top-level configuration for [`crate::markdown_to_docx`].
 ///
-/// The struct is `#[non_exhaustive]`: build one with [`Config::default`],
-/// [`Config::native_math`] or [`Config::untrusted`], then adjust it with the
+/// The struct is `#[non_exhaustive]`: build one with [`Config::default`]
+/// (the untrusted-input policy), [`Config::trusted`] or [`Config::native_math`], then adjust it with the
 /// `with_*` methods or by assigning to fields. New options can be added in
 /// later versions without breaking your code.
 #[derive(Debug, Clone)]
@@ -512,23 +536,12 @@ pub struct Config {
     pub fence_renderers: FenceRenderers,
 }
 
+/// The default is the **untrusted-input policy**: [`Config::untrusted`]. A host that wants
+/// anything more (TeX, external diagram renderers, local files) has to say so by starting
+/// from [`Config::trusted`] or setting the fields itself.
 impl Default for Config {
     fn default() -> Self {
-        Config {
-            math: MathOptions::default(),
-            graphs: GraphOptions::default(),
-            document: DocumentOptions::default(),
-            base_dir: None,
-            tool_timeout: Duration::from_secs(60),
-            limits: Limits::default(),
-            image_access: ImageAccess::default(),
-            allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
-            html_links: true,
-            compression_level: 6,
-            highlighting: None,
-            html_tags: BTreeMap::new(),
-            fence_renderers: FenceRenderers::default(),
-        }
+        Config::untrusted()
     }
 }
 
@@ -669,26 +682,23 @@ impl Config {
     }
 
     /// Strictest preset for Markdown from people you do not trust (uploads,
-    /// web forms, multi-tenant services): native math only, so no TeX process;
-    /// diagram fences are left as code, so no browser process; no local files
-    /// are read; tighter size limits. No subprocess is ever spawned.
+    /// web forms, multi-tenant services), and what [`Config::default`] returns: native
+    /// math only, so no TeX process; diagram fences are left as code, so no external
+    /// renderer; no local files are read; raw HTML `<a>` links are dropped; tight
+    /// limits. No subprocess is ever spawned and nothing outside the process is read.
+    ///
+    /// This is a **library-level policy**: it bounds what the converter will do with
+    /// the document. It does not isolate the process. A host that must survive hostile
+    /// input still runs the conversion in a resource-limited worker (memory, CPU, wall
+    /// clock, file descriptors, no network) and terminates it from outside; see
+    /// `SECURITY.md`.
     pub fn untrusted() -> Self {
-        let mut c = Config::native_math();
+        let mut c = Config::trusted();
+        c.math.mode = MathMode::NativeOmml;
         c.graphs.enabled = false;
         c.image_access = ImageAccess::None;
         c.html_links = false;
-        c.limits = Limits {
-            max_input_bytes: 2 * 1024 * 1024,
-            max_rendered_blocks: 200,
-            max_highlight_bytes: 64 * 1024,
-            max_formula_bytes: 4 * 1024,
-            max_image_bytes: 5 * 1024 * 1024,
-            max_total_image_bytes: 25 * 1024 * 1024,
-            max_output_bytes: 50 * 1024 * 1024,
-            max_elements: 60_000,
-            max_uncompressed_bytes: 64 * 1024 * 1024,
-            ..Limits::default()
-        };
+        c.limits = Limits::default();
         c
     }
 
@@ -699,7 +709,8 @@ impl Config {
     /// so it is bounded tighter than the default: at most 20 diagrams of 16 KiB
     /// each, 20 s per diagram and 60 s in total, run with a scrubbed
     /// environment. `dolphin` fences stay code. Prefer plain
-    /// [`Config::untrusted`] if you do not need diagrams.
+    /// [`Config::untrusted`] if you do not need diagrams, or an in-process
+    /// [`FenceRenderer`] if your worker may not spawn processes.
     pub fn untrusted_with_diagrams() -> Self {
         let mut c = Config::untrusted();
         c.graphs.enabled = true;
@@ -712,9 +723,42 @@ impl Config {
         c
     }
 
-    /// Default configuration with native, editable OMML equations.
+    /// Configuration for documents you wrote or fully trust: math as pictures through a local
+    /// TeX install (the original specification's default), diagrams through `merman-cli`,
+    /// local images from [`Config::base_dir`], raw HTML links on, generous limits.
+    ///
+    /// **Do not use this for input from other people.** It runs external programs on document
+    /// content and reads local files.
+    pub fn trusted() -> Self {
+        let mut math = MathOptions::default();
+        math.mode = MathMode::ImageFallback;
+        let mut graphs = GraphOptions::default();
+        graphs.enabled = true;
+        Config {
+            math,
+            graphs,
+            document: DocumentOptions::default(),
+            base_dir: None,
+            tool_timeout: Duration::from_secs(60),
+            limits: Limits::trusted(),
+            image_access: ImageAccess::BaseDir,
+            allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
+            html_links: true,
+            compression_level: 6,
+            highlighting: None,
+            html_tags: BTreeMap::new(),
+            fence_renderers: FenceRenderers::default(),
+        }
+    }
+
+    /// [`Config::trusted`] with native, editable OMML equations, so no TeX is needed.
+    ///
+    /// **This is not an untrusted-input preset.** Choosing native math removes the TeX
+    /// process only; this configuration still reads images from `base_dir`, renders diagrams
+    /// with external programs and accepts raw HTML links. Use [`Config::untrusted`] (the
+    /// default) for input you do not control.
     pub fn native_math() -> Self {
-        let mut c = Config::default();
+        let mut c = Config::trusted();
         c.math.mode = MathMode::NativeOmml;
         c
     }

@@ -717,7 +717,7 @@ fn large_but_legitimate_documents_are_fast() {
     let table: String = (0..1500).map(|i| format!("| {i} | cell {i} | **b** |\n")).collect();
     md.push_str(&format!("| n | text | f |\n|---|------|---|\n{table}"));
     let started = std::time::Instant::now();
-    let mut limits = silvercity_oss::Limits::default();
+    let mut limits = silvercity_oss::Limits::trusted();
     limits.max_rendered_blocks = 10_000;
     let cfg = Config::native_math().with_limits(limits);
     let docx = markdown_to_docx(&md, &cfg).unwrap();

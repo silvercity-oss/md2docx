@@ -12,7 +12,7 @@ use silvercity_oss::{markdown_to_docx, CommandSpec, Config, CrateError};
 const GRAPH: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
 fn config_with(tool: String) -> Config {
-    let mut cfg = Config::default();
+    let mut cfg = Config::trusted();
     cfg.graphs.mermaid = CommandSpec::new(tool, ["{input}", "{output}"]);
     cfg
 }

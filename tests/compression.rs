@@ -23,7 +23,7 @@ fn size_at(md: &str, level: u32) -> usize {
 
 #[test]
 fn default_level_is_6_and_compresses_the_xml() {
-    assert_eq!(Config::default().compression_level, 6);
+    assert_eq!(Config::trusted().compression_level, 6);
     assert_eq!(Config::untrusted().compression_level, 6);
     let md = repetitive_markdown();
     let default = markdown_to_docx(&md, &cfg()).unwrap().len();
@@ -181,6 +181,6 @@ fn untrusted_caps() {
     assert_eq!(l.max_elements, 60_000);
     let l = Config::untrusted_with_diagrams().limits;
     assert_eq!((l.max_output_bytes, l.max_uncompressed_bytes), (50 << 20, 64 << 20));
-    let d = Config::default().limits;
+    let d = Config::trusted().limits;
     assert!(d.max_output_bytes > 50 << 20 && d.max_uncompressed_bytes > 64 << 20 && d.max_elements > 60_000);
 }

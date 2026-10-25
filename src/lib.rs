@@ -12,7 +12,7 @@
 //! use silvercity_oss::{markdown_to_docx, Config};
 //!
 //! # fn main() -> Result<(), silvercity_oss::CrateError> {
-//! let docx: Vec<u8> = markdown_to_docx("# Hello\n\nEuler: $e^{i\\pi} + 1 = 0$", &Config::native_math())?;
+//! let docx: Vec<u8> = markdown_to_docx("# Hello\n\nEuler: $e^{i\\pi} + 1 = 0$", &Config::default())?;
 //! assert_eq!(&docx[..2], b"PK"); // a zip archive, i.e. a .docx file
 //! # Ok(()) }
 //! ```

@@ -153,7 +153,7 @@ fn bad_properties_are_refused() {
         opts.title = title;
         opts.author = author;
         assert!(matches!(
-            markdown_to_docx("x", &Config::default().with_document(opts)),
+            markdown_to_docx("x", &Config::trusted().with_document(opts)),
             Err(CrateError::InvalidConfig(_))
         ));
     }
@@ -225,7 +225,7 @@ fn broken_mermaid(cfg: Config) -> Config {
 #[test]
 fn a_diagram_that_cannot_be_rendered_can_stay_code() {
     let md = "before\n\n```mermaid\ngraph TD; A-->B\n```\n\nafter\n";
-    let strict = broken_mermaid(Config::default());
+    let strict = broken_mermaid(Config::trusted());
     assert!(matches!(
         markdown_to_docx(md, &strict),
         Err(CrateError::MissingExternalCLI { .. })
@@ -242,7 +242,7 @@ fn a_diagram_that_cannot_be_rendered_can_stay_code() {
 
     // A registered renderer that fails is treated the same way.
     let failing = |on: DiagramFailure| {
-        let mut c = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+        let mut c = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
             Err("bad data".into())
         });
         c.graphs.on_failure = on;
@@ -285,10 +285,10 @@ fn errors_say_whose_fault_they_are() {
     assert!(input("$\\left( x$", &Config::native_math()));
     assert!(input(&"x".repeat(3 << 20), &Config::untrusted()));
     assert!(input("![x](/etc/passwd)", &Config::native_math()));
-    let mut bad = Config::default();
+    let mut bad = Config::trusted();
     bad.compression_level = 99;
     assert!(!input("x", &bad));
-    assert!(!input("```mermaid\ng\n```\n", &broken_mermaid(Config::default())));
+    assert!(!input("```mermaid\ng\n```\n", &broken_mermaid(Config::trusted())));
 }
 
 // ---- single paragraph budget

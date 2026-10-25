@@ -14,7 +14,7 @@ fn png() -> Vec<u8> {
 }
 
 fn chart_cfg() -> Config {
-    Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> { Ok(png()) })
+    Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> { Ok(png()) })
 }
 
 // ---- fence renderers
@@ -23,7 +23,7 @@ fn chart_cfg() -> Config {
 fn a_registered_renderer_turns_a_fence_into_a_picture() {
     let seen = Arc::new(Mutex::new(Vec::<String>::new()));
     let log = Arc::clone(&seen);
-    let cfg = Config::default().with_fence_renderer("chart", move |src: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", move |src: &str| -> Result<Vec<u8>, FenceError> {
         log.lock().unwrap().push(src.to_string());
         Ok(png())
     });
@@ -40,7 +40,7 @@ fn a_registered_renderer_turns_a_fence_into_a_picture() {
 fn language_matching_ignores_case_and_attributes() {
     let n = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&n);
-    let cfg = Config::default().with_fence_renderer("Chart", move |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("Chart", move |_: &str| -> Result<Vec<u8>, FenceError> {
         counter.fetch_add(1, Ordering::SeqCst);
         Ok(png())
     });
@@ -63,7 +63,7 @@ fn language_matching_ignores_case_and_attributes() {
 fn identical_blocks_are_rendered_once() {
     let n = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&n);
-    let cfg = Config::default().with_fence_renderer("chart", move |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", move |_: &str| -> Result<Vec<u8>, FenceError> {
         counter.fetch_add(1, Ordering::SeqCst);
         Ok(png())
     });
@@ -88,7 +88,7 @@ fn renderers_work_in_the_untrusted_preset_and_can_replace_mermaid() {
 
     // With the command line pointed at nothing, the renderer still wins.
     let mut cfg =
-        Config::default().with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, FenceError> { Ok(png()) });
+        Config::trusted().with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, FenceError> { Ok(png()) });
     cfg.graphs.mermaid.program = "/nonexistent/never-run".into();
     assert_eq!(
         media_count(&markdown_to_docx("```mermaid\ngraph TD; A-->B\n```\n", &cfg).unwrap()),
@@ -106,7 +106,7 @@ fn renderers_work_in_the_untrusted_preset_and_can_replace_mermaid() {
 
 #[test]
 fn a_failing_renderer_aborts_with_its_message() {
-    let cfg = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Err("no data in block".into())
     });
     match markdown_to_docx("```chart\nx\n```\n", &cfg) {
@@ -120,7 +120,7 @@ fn a_failing_renderer_aborts_with_its_message() {
 
 #[test]
 fn a_panicking_renderer_is_an_error_not_an_unwind() {
-    let cfg = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let cfg = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         panic!("renderer bug")
     });
     assert!(matches!(
@@ -131,7 +131,7 @@ fn a_panicking_renderer_is_an_error_not_an_unwind() {
 
 #[test]
 fn renderer_output_is_checked_like_any_other_image() {
-    let not_png = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let not_png = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Ok(b"<svg/>".to_vec())
     });
     assert!(matches!(
@@ -147,7 +147,7 @@ fn renderer_output_is_checked_like_any_other_image() {
     ));
 
     // A PNG whose header claims an absurd size is not embedded as a huge picture.
-    let bomb = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+    let bomb = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Ok(png_claiming(60_000, 60_000))
     });
     let docx = markdown_to_docx("```chart\nx\n```\n", &bomb);
@@ -200,7 +200,7 @@ fn fence_renderer_names_are_validated() {
 
 #[test]
 fn inline_tag_styles_apply_to_their_content_only() {
-    let cfg = Config::default()
+    let cfg = Config::trusted()
         .with_html_tag("mark", TagStyle::new().highlight("FFFF00"))
         .with_html_tag("warn", TagStyle::new().bold().color("C00000"))
         .with_html_tag("call-out", TagStyle::new().italic().strike().underline().monospace());
@@ -276,14 +276,14 @@ fn block_tags_make_laid_out_paragraphs() {
 
 #[test]
 fn custom_styles_can_override_builtin_tags() {
-    let cfg = Config::default().with_html_tag("b", TagStyle::new().italic());
+    let cfg = Config::trusted().with_html_tag("b", TagStyle::new().italic());
     let b = body_with("<b>word</b>\n", &cfg);
     assert!(b.contains("<w:i/>") && !b.contains("<w:b/>"), "{b}");
 }
 
 #[test]
 fn a_document_cannot_choose_its_own_styling() {
-    let cfg = Config::default().with_html_tag("mark", TagStyle::new().highlight("FFFF00"));
+    let cfg = Config::trusted().with_html_tag("mark", TagStyle::new().highlight("FFFF00"));
     let b = body_with(
         "<mark style=\"background:red;color:blue\" class=\"x\" fill=\"00FF00\">t</mark>\n",
         &cfg,
@@ -294,7 +294,7 @@ fn a_document_cannot_choose_its_own_styling() {
 
 #[test]
 fn runaway_custom_tags_are_bounded() {
-    let cfg = Config::default()
+    let cfg = Config::trusted()
         .with_html_tag("x", TagStyle::new().bold())
         .with_html_tag("blk", TagStyle::new().block(BlockStyle::new().fill("EEEEEE")));
     for md in [
@@ -325,7 +325,7 @@ fn tag_styles_are_validated_before_any_work() {
         &"a".repeat(33),
     ];
     for name in bad_names {
-        let cfg = Config::default().with_html_tag(name, TagStyle::new().bold());
+        let cfg = Config::trusted().with_html_tag(name, TagStyle::new().bold());
         assert!(
             matches!(markdown_to_docx("x", &cfg), Err(CrateError::InvalidConfig(_))),
             "`{name}` should be rejected"
@@ -343,13 +343,13 @@ fn tag_styles_are_validated_before_any_work() {
         TagStyle::new().block(BlockStyle::new().label("x".repeat(65))),
     ];
     for style in bad_styles {
-        let cfg = Config::default().with_html_tag("ok", style.clone());
+        let cfg = Config::trusted().with_html_tag("ok", style.clone());
         assert!(
             matches!(markdown_to_docx("x", &cfg), Err(CrateError::InvalidConfig(_))),
             "{style:?} should be rejected"
         );
     }
-    let mut many = Config::default();
+    let mut many = Config::trusted();
     for i in 0..65 {
         many = many.with_html_tag(format!("t{i}"), TagStyle::new());
     }
@@ -361,7 +361,7 @@ fn tag_styles_are_validated_before_any_work() {
 
 #[test]
 fn labels_are_escaped() {
-    let cfg = Config::default().with_html_tag("n", TagStyle::new().block(BlockStyle::new().label("<&> ")));
+    let cfg = Config::trusted().with_html_tag("n", TagStyle::new().block(BlockStyle::new().label("<&> ")));
     let b = body_with("<n>x</n>\n", &cfg);
     assert_well_formed(&b);
     assert!(visible_text(&b).contains("<&> x"));
@@ -375,7 +375,7 @@ fn document_colours_are_configurable_and_validated() {
     doc.code_background = "E8F0FE".into();
     doc.link_color = "AA0000".into();
     doc.quote_bar_color = "00AA00".into();
-    let cfg = Config::default().with_document(doc.clone());
+    let cfg = Config::trusted().with_document(doc.clone());
     let docx = markdown_to_docx("```\ncode\n```\n\n`in`\n\n> quote\n\n[l](https://e.com/)\n", &cfg).unwrap();
     let b = zip_text(&docx, "word/document.xml");
     assert_eq!(b.matches("w:fill=\"E8F0FE\"").count(), 2, "block and inline code: {b}");
@@ -391,7 +391,7 @@ fn document_colours_are_configurable_and_validated() {
             _ => &mut bad.quote_bar_color,
         };
         *slot = "not-hex".into();
-        let cfg = Config::default().with_document(bad);
+        let cfg = Config::trusted().with_document(bad);
         assert!(matches!(markdown_to_docx("x", &cfg), Err(CrateError::InvalidConfig(_))));
     }
 }

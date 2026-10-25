@@ -115,7 +115,7 @@ fn the_default_layout_is_unchanged() {
         CodeBlockLayout::LinePerParagraph
     );
     assert_eq!(
-        code_paragraphs(&body_with(&fenced("a\nb"), &Config::default())).len(),
+        code_paragraphs(&body_with(&fenced("a\nb"), &Config::trusted())).len(),
         2
     );
 }
