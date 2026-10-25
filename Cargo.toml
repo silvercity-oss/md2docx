@@ -5,6 +5,9 @@ edition = "2021"
 description = "Convert Markdown (with LaTeX math and Mermaid/Dolphin graphs) into high-fidelity Word .docx files"
 license = "MIT"
 readme = "README.md"
+keywords = ["markdown", "docx", "word", "latex", "mermaid"]
+categories = ["text-processing", "command-line-utilities"]
+exclude = [".github/", ".gitattributes"]
 
 [lib]
 name = "silvercity_oss"

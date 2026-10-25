@@ -147,3 +147,10 @@ on Linux, macOS and Windows).
 
 The produced documents were also opened and rendered with LibreOffice during
 development; Word itself was not available.
+
+## License
+
+MIT. Use it for anything, commercial or not; the only requirement is to keep
+the copyright and licence notice (see [LICENSE](LICENSE)) with copies of the
+code. Dependencies are all under permissive licences (MIT, Apache-2.0, BSD,
+Zlib, Unlicense).
