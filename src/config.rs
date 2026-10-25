@@ -96,6 +96,8 @@ pub struct Limits {
     pub max_input_bytes: usize,
     /// Number of diagrams plus formulas.
     pub max_rendered_blocks: usize,
+    /// Number of diagrams (```` ```mermaid ````/```` ```dolphin ```` blocks).
+    pub max_diagrams: usize,
     /// Size of one diagram's source text.
     pub max_graph_source_bytes: usize,
     /// Size of one formula's LaTeX source.
@@ -117,6 +119,7 @@ impl Default for Limits {
         Limits {
             max_input_bytes: 10 * 1024 * 1024,
             max_rendered_blocks: 500,
+            max_diagrams: 100,
             max_graph_source_bytes: 64 * 1024,
             max_formula_bytes: 16 * 1024,
             max_image_bytes: 25 * MIB,
@@ -173,6 +176,9 @@ impl MermaidEngine {
                     "-b",
                     "transparent",
                     "-q",
+                    // Always treat the input as Mermaid source, never as an SVG document.
+                    "--input-kind",
+                    "mermaid",
                     // The default (deterministic) text metrics are approximate and clip
                     // labels in some boxes; measuring with real fonts fixes that.
                     "--font-measurement",
@@ -194,6 +200,14 @@ pub struct GraphOptions {
     /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
     /// blocks and no diagram tool is ever started.
     pub enabled: bool,
+    /// Treat diagram text as hostile. Requires the stock `merman-cli` command
+    /// ([`MermaidEngine::Merman`], optionally with a different program path):
+    /// no browser is involved, and merman's raster pipeline loads neither local
+    /// files nor the network (verified, see the README). In this mode the tool
+    /// also runs with a scrubbed environment, and `dolphin` fences (an
+    /// arbitrary external command) stay code. Set by
+    /// [`Config::untrusted_with_diagrams`].
+    pub hardened: bool,
     /// Renderer for ```` ```mermaid ```` blocks. Default:
     /// [`MermaidEngine::Merman`]; use [`GraphOptions::use_engine`] to switch,
     /// or assign any [`CommandSpec`] that writes a PNG.
@@ -208,6 +222,15 @@ pub struct GraphOptions {
 }
 
 impl GraphOptions {
+    /// True when [`GraphOptions::mermaid`] is the stock merman command line,
+    /// possibly with a different program path (e.g. `/opt/bin/merman-cli`).
+    pub fn is_stock_merman(&self) -> bool {
+        let stock = MermaidEngine::Merman.command();
+        let base = self.mermaid.program.rsplit(['/', '\\']).next().unwrap_or("");
+        let stem = base.strip_suffix(".exe").unwrap_or(base);
+        stem == "merman-cli" && self.mermaid.args == stock.args
+    }
+
     /// Render Mermaid with `engine` (replaces [`GraphOptions::mermaid`]).
     pub fn use_engine(&mut self, engine: MermaidEngine) {
         self.mermaid = engine.command();
@@ -218,6 +241,7 @@ impl Default for GraphOptions {
     fn default() -> Self {
         GraphOptions {
             enabled: true,
+            hardened: false,
             mermaid: MermaidEngine::default().command(),
             dolphin: CommandSpec::new("dolphin", ["-i", "{input}", "-o", "{output}"]),
             dpi: 288,
@@ -387,6 +411,13 @@ impl Config {
         if !(1..=2400).contains(&self.math.dpi) || !(1..=2400).contains(&self.graphs.dpi) {
             return Err(bad("dpi values must be between 1 and 2400".into()));
         }
+        if self.graphs.enabled && self.graphs.hardened && !self.graphs.is_stock_merman() {
+            return Err(bad(
+                "hardened diagram mode requires the stock merman-cli command line; \
+                 use `use_engine(MermaidEngine::Merman)` (a different program path is fine)"
+                    .into(),
+            ));
+        }
         if self
             .allowed_link_schemes
             .iter()
@@ -467,6 +498,26 @@ impl Config {
         c
     }
 
+    /// [`Config::untrusted`] plus Mermaid diagrams rendered by `merman-cli`.
+    ///
+    /// Still no browser, no local files, no network. This does start one
+    /// external process per diagram (`merman-cli`, which must be installed),
+    /// so it is bounded tighter than the default: at most 20 diagrams of 16 KiB
+    /// each, 20 s per diagram and 60 s in total, run with a scrubbed
+    /// environment. `dolphin` fences stay code. Prefer plain
+    /// [`Config::untrusted`] if you do not need diagrams.
+    pub fn untrusted_with_diagrams() -> Self {
+        let mut c = Config::untrusted();
+        c.graphs.enabled = true;
+        c.graphs.hardened = true;
+        c.graphs.use_engine(MermaidEngine::Merman);
+        c.tool_timeout = Duration::from_secs(20);
+        c.limits.max_diagrams = 20;
+        c.limits.max_graph_source_bytes = 16 * 1024;
+        c.limits.max_total_tool_time = Duration::from_secs(60);
+        c
+    }
+
     /// Default configuration with native, editable OMML equations.
     pub fn native_math() -> Self {
         let mut c = Config::default();
@@ -478,6 +529,41 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hardened_diagram_preset_is_tight_and_validated() {
+        let c = Config::untrusted_with_diagrams();
+        assert!(c.graphs.enabled && c.graphs.hardened && c.graphs.is_stock_merman());
+        assert!(c.validate().is_ok());
+        assert_eq!(c.math.mode, MathMode::NativeOmml);
+        assert_eq!(c.image_access, ImageAccess::None);
+        assert!(!c.html_links);
+        assert_eq!(
+            (c.limits.max_diagrams, c.limits.max_graph_source_bytes),
+            (20, 16 * 1024)
+        );
+        assert!(c.tool_timeout <= Duration::from_secs(20));
+        // A different path to the same tool is fine; a different command is not.
+        let mut ok = c.clone();
+        ok.graphs.mermaid.program = "/opt/tools/merman-cli".into();
+        assert!(ok.validate().is_ok());
+        let mut win = c.clone();
+        win.graphs.mermaid.program = "C:\\tools\\merman-cli.exe".into();
+        assert!(win.validate().is_ok());
+        for evil in ["mmdc", "sh", "merman-cli-fork"] {
+            let mut bad = c.clone();
+            bad.graphs.mermaid.program = evil.into();
+            assert!(
+                matches!(bad.validate(), Err(crate::CrateError::InvalidConfig(_))),
+                "{evil}"
+            );
+        }
+        let mut extra = c.clone();
+        extra.graphs.mermaid.args.push("--allow-network".into());
+        assert!(extra.validate().is_err(), "extra flags change what the tool may do");
+        // Plain untrusted has diagrams off, so nothing to check.
+        assert!(!Config::untrusted().graphs.enabled);
+    }
 
     #[test]
     fn mermaid_defaults_to_merman_with_native_fonts_and_can_switch() {

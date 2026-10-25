@@ -3,6 +3,11 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  # Weekly: re-run the merman confinement tests against the *latest* merman-cli,
+  # so a release that starts fetching files or URLs is noticed (see `merman-latest`).
+  schedule:
+    - cron: "17 5 * * 1"
 
 env:
   CARGO_TERM_COLOR: always
@@ -99,6 +104,26 @@ jobs:
         if: steps.merman-cache.outputs.cache-hit != 'true'
         run: cargo install merman-cli --version "$MERMAN_CLI_VERSION" --locked
       - name: Test against the real renderer
-        run: cargo test --test merman_real --locked
+        run: cargo test --test merman_real --test merman_hardened --locked
+        env:
+          REQUIRE_MERMAN: "1"
+
+  # Not a gate on pushes: the newest merman-cli, weekly (or on demand). The
+  # hardened diagram mode relies on merman never loading local files or URLs,
+  # which is a property of a particular release, so check each new one.
+  merman-latest:
+    name: merman-cli (latest release, weekly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the latest merman-cli
+        run: cargo install merman-cli --locked
+      - name: Show the version under test
+        run: merman-cli --version
+      - name: Confinement and rendering tests
+        run: cargo test --test merman_real --test merman_hardened --locked
         env:
           REQUIRE_MERMAN: "1"

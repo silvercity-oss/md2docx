@@ -97,6 +97,13 @@ pub struct Args {
 
     #[arg(
         long,
+        requires = "untrusted",
+        help = "With --untrusted: also render Mermaid diagrams with merman-cli (no browser; install with `cargo install merman-cli`). Starts one tightly bounded process per diagram"
+    )]
+    pub diagrams: bool,
+
+    #[arg(
+        long,
         value_enum,
         default_value_t = ImageAccess::BaseDir,
         help = "Which local images may be embedded"
@@ -111,11 +118,10 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value_t = 60,
         value_name = "SECONDS",
-        help = "Kill an external renderer after this long"
+        help = "Kill an external renderer after this long [default: 60; 20 with --untrusted --diagrams]"
     )]
-    pub timeout: u64,
+    pub timeout: Option<u64>,
 }
 
 /// Split a command template with POSIX shell rules (via `shlex`) and check it
@@ -135,7 +141,11 @@ fn parse_command(template: &str) -> Result<CommandSpec, String> {
 
 fn config(args: &Args) -> Config {
     let mut cfg = if args.untrusted {
-        Config::untrusted()
+        if args.diagrams {
+            Config::untrusted_with_diagrams()
+        } else {
+            Config::untrusted()
+        }
     } else {
         let mut cfg = Config::default();
         cfg.math.mode = match args.math_mode {
@@ -163,7 +173,9 @@ fn config(args: &Args) -> Config {
         }
         cfg
     };
-    cfg.tool_timeout = Duration::from_secs(args.timeout);
+    if let Some(seconds) = args.timeout {
+        cfg.tool_timeout = Duration::from_secs(seconds);
+    }
     cfg
 }
 

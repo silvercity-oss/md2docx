@@ -36,6 +36,18 @@ First release.
   devices and directories.
 - `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
 
+### Diagrams for untrusted input
+- `Config::untrusted_with_diagrams()` / `md2docx --untrusted --diagrams`: Mermaid
+  rendered by `merman-cli` (no browser) with a locked-down command (stock merman
+  line only, `--input-kind mermaid`), a scrubbed environment, at most 20
+  diagrams of 16 KiB, 20 s each and 60 s in total; `dolphin` fences stay code.
+  `Limits::max_diagrams` (default 100) applies to every configuration.
+- Verified against merman-cli 0.9.2 that hostile diagrams (file/URL image
+  references in labels, `@{ img }` nodes, CSS `url()`, `themeCSS` `@import`,
+  raw SVG as the diagram) neither read local files nor use the network, with
+  positive controls; the tests run on every push and weekly against the latest
+  merman-cli.
+
 ### Raw HTML
 - `<a href>` hyperlinks (safe schemes only; off in `--untrusted`), alignment via
   `align`/`text-align`/`<center>`, real lists (`<ol start>`), tables, `<pre>`,

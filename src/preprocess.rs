@@ -148,7 +148,11 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
         match event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                 // With diagrams disabled the fence stays an ordinary code block.
-                if let Some(kind) = GraphKind::from_info(&info).filter(|_| cfg.graphs.enabled) {
+                if let Some(kind) = GraphKind::from_info(&info)
+                    .filter(|_| cfg.graphs.enabled)
+                    // Hardened mode renders Mermaid only; Dolphin is an arbitrary command.
+                    .filter(|k| !(cfg.graphs.hardened && *k == GraphKind::Dolphin))
+                {
                     open_graph = Some((range, kind, String::new()));
                 }
             }
@@ -199,6 +203,13 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 },
             )),
             _ => {}
+        }
+        let diagrams = found.iter().filter(|(_, f)| matches!(f, Found::Graph(..))).count();
+        if diagrams > limits.max_diagrams {
+            return Err(CrateError::LimitExceeded(format!(
+                "more than {} diagrams in one document",
+                limits.max_diagrams
+            )));
         }
         if found.len() > limits.max_rendered_blocks {
             return Err(too_many());

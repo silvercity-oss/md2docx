@@ -40,6 +40,7 @@ code: start from a preset, then chain `with_*` methods or assign fields.
 | Preset | For |
 | --- | --- |
 | `Config::untrusted()` | User uploads, web forms, services. Native math, diagrams off, no local images, no `<a>` links, tight limits. **Starts no subprocess** |
+| `Config::untrusted_with_diagrams()` | The same, plus Mermaid diagrams via `merman-cli` (no browser). Starts one tightly bounded process per diagram; see "Diagrams from untrusted input" |
 | `Config::native_math()` | Your own documents, no external tools needed |
 | `Config::default()` | Your own documents; math as pictures via TeX (the original spec's default), diagrams via `merman-cli` |
 
@@ -126,6 +127,45 @@ Dolphin CLI; the default `dolphin -i {input} -o {output}` is a guess, so set
 plus arguments with `{input}`, `{output}` and `{dpi}` placeholders. Identical
 diagrams are rendered once. On a headless/root host `mmdc` usually needs a
 Puppeteer config (`-p puppeteer.json` with `--no-sandbox`); add it to `args`.
+
+### Diagrams from untrusted input
+
+`Config::untrusted()` leaves diagram fences as code, so it never starts a
+process. If your users need diagrams, `Config::untrusted_with_diagrams()`
+(CLI: `md2docx --untrusted --diagrams`) renders **Mermaid only**, with
+`merman-cli`, under these rules:
+
+* The only accepted command is the stock merman command line (you may change the
+  program *path*); anything else, including `mmdc`, is an `InvalidConfig` error.
+  `dolphin` fences stay code.
+* The tool always gets `--input-kind mermaid`, so diagram text is never taken to
+  be an SVG document, and runs in the private scratch directory with a scrubbed
+  environment (only `PATH`; `HOME`/`TMPDIR` point at the scratch directory).
+* At most 20 diagrams of 16 KiB each, 20 s per diagram, 60 s in total, plus the
+  usual console, disk and output-size caps. Oversized layouts are also refused
+  by merman itself.
+
+**Local files and the network.** The worry with any renderer is a diagram that
+makes it fetch `file:///etc/...` or a URL. We tested merman 0.9.2 with a
+magenta marker image and a local web server, across: `<img>` in HTML labels,
+the `@{ img: ... }` image-node syntax (file, plain path and URL), CSS `url()` in
+`style`/`classDef`, `%%{init}%%` `themeCSS` with `@import`, Markdown-string
+labels, `<iframe>`/`<script>`, `click` callbacks, and raw SVG pasted in as the
+diagram. **None embedded the file or made a connection.** The controls matter:
+given an SVG *as SVG* it still did not load `file://`, plain-path or `http://`
+images, while it did render an embedded `data:` image (14,400 marker pixels), so
+the detector can see a leak when there is one. In other words merman's
+rasterizer accepts only embedded `data:` images, so there is no local-file
+fetching to trim out. That is a property of the version tested, not a promise
+the crate can make, so these checks are tests (`tests/merman_hardened.rs`): CI
+runs them against the pinned version on every push and against the **latest**
+merman-cli every week, to catch a release that changes the behaviour.
+
+What remains is what any external program brings: a third-party binary parsing
+hostile text (memory-safe Rust, but not audited by us), CPU and memory use
+(bounded by the caps above), and supply chain (pin the version you have
+tested). If that is still too much, keep `Config::untrusted()` and run the
+converter in a container with no network and no sensitive files.
 
 ## Math modes (`config.math.mode`)
 
@@ -214,6 +254,7 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `-o, --output` | Output path (default: `<input>.docx`; refuses to overwrite the input) |
 | `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
 | `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it |
+| `--diagrams` | Only with `--untrusted`: also render Mermaid diagrams with `merman-cli` (hardened, bounded; see "Diagrams from untrusted input"). Needs `cargo install merman-cli` |
 | `--image-access none\|base-dir\|any` | Default `base-dir`: only images inside the input file's directory |
 | `--mermaid-engine merman\|mmdc` | Mermaid renderer; default `merman` (Rust, no browser) |
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
@@ -273,19 +314,15 @@ fences left as code (no browser), no local files, smaller limits.
 
 ### What is not covered
 
-* **Diagram tools are not sandboxed.** With the default `merman` engine the
-  risk is small: it is a Rust program with no browser, and when tested with
-  hostile diagrams (labels referencing a local image and a local web server,
-  `javascript:` clicks, `<script>`, `%%{init}%%` overrides of the security level)
-  it neither embedded the local file nor made a network connection, and it
-  refuses oversized diagrams by itself (`max_layout_work_units`). That was
-  checked with a positive control and is part of the test suite
-  (`tests/merman_real.rs`), but it is a property of the version tested (0.9.2),
-  not a guarantee. `mmdc` drives a headless browser with the diagram text and
-  is a much larger surface. A custom `--dolphin-command` is whatever you
-  configure. If untrusted users may trigger diagram rendering, run the converter
-  itself inside a container with no network and no sensitive files, or leave
-  diagrams disabled (`--untrusted`).
+* **Diagram tools are not sandboxed.** There is no seccomp/landlock/chroot around
+  them; the protections are the ones listed above (no browser, scrubbed
+  environment, caps, kill-on-timeout) plus what the tool itself refuses.
+  `mmdc` drives a headless browser with the diagram text and is a much larger
+  surface; a custom `--dolphin-command` is whatever you configure. Neither is
+  allowed in `untrusted_with_diagrams()`. See "Diagrams from untrusted input"
+  for what was verified about merman and what that does and does not promise.
+  For stronger isolation run the converter in a container with no network and no
+  sensitive files.
 * On **Windows** a timed-out tool is killed but its descendants are not (Unix
   uses process groups; a Job Object is not implemented).
 * Local-image checks resolve the path and then open it; a hostile process that
@@ -313,6 +350,10 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
   results, and descendants of a timed-out tool.
 * `tests/tex_real.rs` (Unix): the pipeline and the TeX hardening against a real
   `latex` (skipped when absent; CI installs it and requires it).
+* `tests/hardened_diagrams.rs`, `tests/cli_diagrams.rs`: the hardened diagram mode
+  (command lock-down, limits, scrubbed environment with a control, CLI switch).
+* `tests/merman_hardened.rs`: hostile diagrams against a real `merman-cli`, with
+  network and pixel-detector positive controls.
 * `tests/merman_real.rs`: the default Mermaid engine against a real `merman-cli`
   (skipped when absent; a dedicated CI job installs and requires it).
 * `tests/pipeline.rs`, `tests/pipeline_mock_tools.rs`, `tests/cli.rs`: end-to-end

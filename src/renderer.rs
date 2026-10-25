@@ -129,6 +129,10 @@ pub struct ToolGuard<'a> {
     /// Kill the tool (and refuse to start new ones) after this instant: the
     /// conversion's total time budget for external tools.
     pub overall_deadline: Option<Instant>,
+    /// Run with a scrubbed environment: only `PATH` (and the few variables a
+    /// process needs on Windows) are inherited, and `HOME`/`TMPDIR` point at this
+    /// directory, so nothing from the host's environment reaches the tool.
+    pub scrub_env_to: Option<&'a Path>,
 }
 
 fn dir_size(dir: &Path, depth: u8) -> u64 {
@@ -189,6 +193,25 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))
             .stderr(Stdio::from(err));
+        if let Some(home) = guard.scrub_env_to {
+            cmd.env_clear();
+            for k in [
+                "PATH",
+                "PATHEXT",
+                "SystemRoot",
+                "SYSTEMROOT",
+                "WINDIR",
+                "LANG",
+                "LC_ALL",
+            ] {
+                if let Some(v) = std::env::var_os(k) {
+                    cmd.env(k, v);
+                }
+            }
+            for k in ["HOME", "TMPDIR", "TEMP", "TMP"] {
+                cmd.env(k, home);
+            }
+        }
         for (k, v) in guard.env {
             cmd.env(k, v);
         }
@@ -294,25 +317,35 @@ fn guard<'a>(ws: &Workspace, cfg: &Config, env: &'a [(&'a str, &'a str)]) -> Too
         env,
         max_dir_bytes: cfg.limits.max_workspace_bytes,
         overall_deadline: ws.deadline,
+        scrub_env_to: None,
     }
 }
 
-fn run_spec(
-    spec: &CommandSpec,
-    ws: &Workspace,
-    input: &Path,
-    output: &Path,
+/// One external render: a command template plus what to substitute into it.
+struct RenderJob<'a> {
+    spec: &'a CommandSpec,
+    input: &'a Path,
+    output: &'a Path,
     dpi: u32,
+    /// `{display}` placeholder: display math (true) or inline (false).
     display: bool,
-    cfg: &Config,
-) -> Result<()> {
-    let args: Vec<String> = spec
+    /// Run with a scrubbed environment (hardened diagram mode).
+    scrub_env: bool,
+}
+
+fn run_spec(ws: &Workspace, cfg: &Config, job: &RenderJob<'_>) -> Result<()> {
+    let args: Vec<String> = job
+        .spec
         .args
         .iter()
-        .map(|a| substitute(a, input, output, dpi, display))
+        .map(|a| substitute(a, job.input, job.output, job.dpi, job.display))
         .collect();
-    run_tool(&spec.program, &args, ws.path(), cfg.tool_timeout, &guard(ws, cfg, &[]))?;
-    check_png(&spec.program, output, cfg.limits.max_image_bytes)
+    let mut g = guard(ws, cfg, &[]);
+    if job.scrub_env {
+        g.scrub_env_to = Some(ws.path());
+    }
+    run_tool(&job.spec.program, &args, ws.path(), cfg.tool_timeout, &g)?;
+    check_png(&job.spec.program, job.output, cfg.limits.max_image_bytes)
 }
 
 /// Render a Mermaid/Dolphin source to `<workspace>/graph_<hash>.png`.
@@ -334,7 +367,15 @@ pub fn render_graph(ws: &Workspace, kind: GraphKind, source: &str, cfg: &Config)
         GraphKind::Mermaid => &cfg.graphs.mermaid,
         GraphKind::Dolphin => &cfg.graphs.dolphin,
     };
-    run_spec(spec, ws, &input, &output, cfg.graphs.dpi, false, cfg)?;
+    let job = RenderJob {
+        spec,
+        input: &input,
+        output: &output,
+        dpi: cfg.graphs.dpi,
+        display: false,
+        scrub_env: cfg.graphs.hardened,
+    };
+    run_spec(ws, cfg, &job)?;
     Ok(output)
 }
 
@@ -405,7 +446,15 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
         MathImageEngine::Command(spec) => {
             let input = ws.path().join(format!("{stem}.tex"));
             fs::write(&input, latex).map_err(|e| CrateError::io(&input, e))?;
-            run_spec(spec, ws, &input, &output, dpi, display, cfg)?;
+            let job = RenderJob {
+                spec,
+                input: &input,
+                output: &output,
+                dpi,
+                display,
+                scrub_env: false,
+            };
+            run_spec(ws, cfg, &job)?;
         }
     }
     Ok(output)
