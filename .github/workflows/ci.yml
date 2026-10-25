@@ -9,6 +9,9 @@ on:
   schedule:
     - cron: "17 5 * * 1"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   # The CommonMark corpus is in the repo (not the published crate): never skip it in CI.

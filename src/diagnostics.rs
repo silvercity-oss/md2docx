@@ -252,14 +252,15 @@ impl Collector {
             Loc::Prepared(r) => Some((1u8, r.start, r.end)),
             Loc::Rewritten(r) => Some((2u8, r.start, r.end)),
         };
+        if self.items.len() >= MAX_FINDINGS {
+            // Past the cap nothing more is stored, `seen` included.
+            self.suppressed += 1;
+            return;
+        }
         if let Some((kind, start, end)) = key {
             if !self.seen.insert((code, kind, start, end)) {
                 return;
             }
-        }
-        if self.items.len() >= MAX_FINDINGS {
-            self.suppressed += 1;
-            return;
         }
         self.items.push(Raw {
             code,

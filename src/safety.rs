@@ -127,7 +127,9 @@ pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
     // Browsers and Word ignore ASCII whitespace/control characters inside the
     // scheme (`java\tscript:`), so judge the URL with them removed.
     let url: String = url.chars().filter(|c| !c.is_control() && !c.is_whitespace()).collect();
-    if url.is_empty() || url.len() > 2048 {
+    // Characters that cannot appear in XML (U+FFFE and U+FFFF, which a numeric reference in the
+    // destination can produce) would make the relationships part unreadable.
+    if url.is_empty() || url.len() > 2048 || !url.chars().all(is_xml_char) {
         return None;
     }
     let colon = url.find(':')?;
@@ -139,7 +141,7 @@ pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
     // A drive letter ("C:\\x") parses as a one-letter scheme and is not allowed.
     if valid && allowed.iter().any(|a| a.eq_ignore_ascii_case(scheme)) {
         if scheme.eq_ignore_ascii_case("mailto") {
-            return Some(clean_mailto(&url));
+            return clean_mailto(&url);
         }
         Some(url)
     } else {
@@ -150,14 +152,19 @@ pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
 /// A `mailto:` link keeps its address and the header fields a person would expect a link to
 /// prefill (`subject`, `body`, `cc`, `bcc`). Anything else in the query (`attach=`, `from=`,
 /// private extension headers that a few mail clients act on) is dropped.
-fn clean_mailto(url: &str) -> String {
-    let Some((head, query)) = url.split_once('?') else {
-        return url.to_string();
+///
+/// There is no fragment (a mail client may read `#` text as more of the query), and an address
+/// that hides `?` or `&` behind a percent escape is refused (`None`: the text stays, unlinked).
+fn clean_mailto(url: &str) -> Option<String> {
+    let url = url.split_once('#').map_or(url, |(u, _)| u);
+    let (head, query) = match url.split_once('?') {
+        Some((h, q)) => (h, q),
+        None => (url, ""),
     };
-    let (query, fragment) = match query.split_once('#') {
-        Some((q, f)) => (q, Some(f)),
-        None => (query, None),
-    };
+    let lower = head.to_ascii_lowercase();
+    if lower.contains("%3f") || lower.contains("%26") {
+        return None;
+    }
     let kept: Vec<&str> = query
         .split('&')
         .filter(|pair| {
@@ -173,11 +180,7 @@ fn clean_mailto(url: &str) -> String {
         out.push('?');
         out.push_str(&kept.join("&"));
     }
-    if let Some(f) = fragment {
-        out.push('#');
-        out.push_str(f);
-    }
-    out
+    Some(out)
 }
 
 // -------------------------------------------------------------- images

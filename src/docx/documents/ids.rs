@@ -18,6 +18,7 @@ struct Counters {
     header: usize,
     history: usize,
     toc: usize,
+    para: usize,
 }
 
 const FRESH: Counters = Counters {
@@ -29,6 +30,7 @@ const FRESH: Counters = Counters {
     header: 1,
     history: 0,
     toc: 0,
+    para: 1,
 };
 
 thread_local! {
@@ -83,4 +85,7 @@ pub(crate) fn history() -> usize {
 }
 pub(crate) fn toc() -> usize {
     next(|c| &mut c.toc)
+}
+pub(crate) fn para() -> usize {
+    next(|c| &mut c.para)
 }

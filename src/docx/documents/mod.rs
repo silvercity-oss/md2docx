@@ -356,10 +356,6 @@ impl Docx {
         }
     }
 
-    fn reset(&self) {
-        crate::docx::reset_para_id();
-    }
-
     /// Expands automatically generated tables of contents before dependency
     /// collection.
     ///
@@ -396,7 +392,6 @@ impl Docx {
 
     /// Prepares the complete document tree for package-part rendering.
     fn prepare_for_build(&mut self) -> bool {
-        self.reset();
         let has_toc = self.expand_auto_tocs();
         self.refresh_duplicate_para_ids();
         self.update_dependencies();

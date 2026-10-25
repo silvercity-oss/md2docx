@@ -1,18 +1,7 @@
-use std::cell::Cell;
+use super::ids;
 
-thread_local! {
-    static PARA_ID: Cell<u32> = const { Cell::new(1) };
-}
-
+/// The next `w14:paraId`, from the conversion's own counter (see [`ids`]). Word requires a value
+/// below 0x80000000.
 pub fn generate_para_id() -> String {
-    let id = PARA_ID.with(|next| {
-        let id = next.get();
-        next.set(id.checked_add(1).expect("paragraph ID space exhausted"));
-        id
-    });
-    format!("{id:08x}")
-}
-
-pub fn reset_para_id() {
-    PARA_ID.set(1);
+    format!("{:08x}", ids::para() & 0x7fff_ffff)
 }

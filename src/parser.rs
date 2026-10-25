@@ -416,6 +416,9 @@ struct Builder<'a> {
     next_num_id: usize,
     table: Option<TableState>,
     omml: Vec<OmmlSlot>,
+    /// Total size of the equation bodies in `omml`: a footnote that holds one is expanded again
+    /// by every reference, so the sum is charged against `Limits::max_uncompressed_bytes`.
+    omml_bytes: usize,
 }
 
 enum UrlPiece<'t> {
@@ -587,6 +590,8 @@ enum LinkTarget {
 const HTML_ANCHOR_BASE: usize = 1 << 20;
 /// Most HTML anchors one document may define.
 const MAX_HTML_ANCHORS: usize = 10_000;
+/// Open aligned HTML blocks (`<center>`, `align=`) tracked at once; deeper ones keep the outer alignment.
+const MAX_ALIGN_DEPTH: usize = 64;
 
 fn bookmark_name(n: usize) -> String {
     if n >= HTML_ANCHOR_BASE {
@@ -626,6 +631,7 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Ve
     let mut headings: Vec<HeadingInfo> = Vec::new();
     let mut number = 0;
     let mut html_found: Vec<String> = Vec::new();
+    let mut html_known: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (event, _) in merged_events(markdown, sup_sub) {
         match event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
@@ -655,8 +661,7 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Ve
                             }
                         });
                         if let Some(target) = target.filter(|t| !t.is_empty() && t.len() <= 200) {
-                            let k = html_found.len();
-                            if k < MAX_HTML_ANCHORS && !html_found.contains(&target) {
+                            if html_found.len() < MAX_HTML_ANCHORS && html_known.insert(target.clone()) {
                                 html_found.push(target);
                             }
                         }
@@ -930,6 +935,7 @@ impl<'a> Builder<'a> {
             next_num_id: BULLET_NUM_ID + 1,
             table: None,
             omml: Vec::new(),
+            omml_bytes: 0,
         }
     }
 
@@ -1013,7 +1019,10 @@ impl<'a> Builder<'a> {
         for (label, range) in found {
             self.diags.push(
                 Code::FootnoteUnreferenced,
-                format!("footnote [^{label}] is defined but never referenced, so its content is not in the document"),
+                format!(
+                    "footnote [^{lbl}] is defined but never referenced, so its content is not in the document",
+                    lbl = short(&label)
+                ),
                 Loc::Rewritten(range),
             );
         }
@@ -1620,6 +1629,13 @@ impl<'a> Builder<'a> {
             AssetSource::Bytes(bytes) => (Arc::clone(bytes), "renderer output".to_string()),
             AssetSource::Omml(body) => {
                 let display = asset.kind == AssetKind::DisplayMath;
+                self.omml_bytes = self.omml_bytes.saturating_add(body.len());
+                if self.omml_bytes as u64 > self.cfg.limits.max_uncompressed_bytes {
+                    return Err(CrateError::LimitExceeded(format!(
+                        "equations expand to more than {} bytes (Limits::max_uncompressed_bytes)",
+                        self.cfg.limits.max_uncompressed_bytes
+                    )));
+                }
                 self.omml.push(OmmlSlot {
                     xml: body.clone(),
                     block: false,
@@ -1751,9 +1767,12 @@ impl<'a> Builder<'a> {
                 format!("the content of a raw HTML <{name}> element is never shown and was dropped"),
             );
         }
-        for piece in pieces {
+        for (n, piece) in pieces.into_iter().enumerate() {
             if self.budget_error.is_some() {
                 break;
+            }
+            if n % 256 == 255 {
+                self.pre.ctl.check()?;
             }
             match piece {
                 Piece::Text(t) if self.code.is_some() => {
@@ -1906,8 +1925,10 @@ impl<'a> Builder<'a> {
             if let Some(i) = self.align_stack.iter().rposition(|(n, _)| n == name) {
                 self.align_stack.truncate(i);
             }
-        } else if let Some(a) = html_align(name, attrs) {
-            self.align_stack.push((name.to_string(), a));
+        } else if self.align_stack.len() < MAX_ALIGN_DEPTH {
+            if let Some(a) = html_align(name, attrs) {
+                self.align_stack.push((name.to_string(), a));
+            }
         }
     }
 
@@ -2107,7 +2128,10 @@ impl<'a> Builder<'a> {
                 };
                 self.diags.push(
                     Code::FootnoteUndefined,
-                    format!("the footnote reference [^{label}] has no definition and was left as text"),
+                    format!(
+                        "the footnote reference [^{lbl}] has no definition and was left as text",
+                        lbl = short(label)
+                    ),
                     Loc::Rewritten(at),
                 );
             }
@@ -2124,12 +2148,15 @@ impl<'a> Builder<'a> {
                 if self.in_footnote {
                     self.note(
                         Code::FootnoteNested,
-                        format!("the reference [^{label}] inside a footnote was left as text"),
+                        format!(
+                            "the reference [^{lbl}] inside a footnote was left as text",
+                            lbl = short(label)
+                        ),
                     );
                 } else {
                     self.note(
                         Code::FootnoteUndefined,
-                        format!("the footnote reference [^{label}] has no definition"),
+                        format!("the footnote reference [^{lbl}] has no definition", lbl = short(label)),
                     );
                 }
                 self.text(&format!("[^{label}]"));
@@ -2161,6 +2188,7 @@ impl<'a> Builder<'a> {
         sub.images = std::mem::take(&mut self.images);
         sub.resolved = std::mem::take(&mut self.resolved);
         sub.omml = std::mem::take(&mut self.omml);
+        sub.omml_bytes = self.omml_bytes;
         let fed = (|| -> Result<()> {
             for (ev, range) in events {
                 sub.at = range;
@@ -2173,6 +2201,7 @@ impl<'a> Builder<'a> {
         self.images = std::mem::take(&mut sub.images);
         self.resolved = std::mem::take(&mut sub.resolved);
         self.omml = std::mem::take(&mut sub.omml);
+        self.omml_bytes = sub.omml_bytes;
         fed?;
         if let Some(e) = sub.budget_error.take() {
             return Err(e);
