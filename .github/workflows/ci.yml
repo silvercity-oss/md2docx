@@ -51,10 +51,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended dvipng
 
-      # A real word processor for the open / save / reopen round trip of the fixtures.
+      # A real word processor for the open / save / reopen round trip of the fixtures (Math keeps the
+      # equations as equations when LibreOffice saves).
       - name: Install LibreOffice (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y --no-install-recommends libreoffice-writer
+        run: sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-math
 
       # Most integration tests use stand-in renderers, so no mmdc is needed.
       # Tests that rely on POSIX shell scripts or a real TeX are Unix-only and
