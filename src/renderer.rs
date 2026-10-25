@@ -46,15 +46,26 @@ impl GraphKind {
 #[derive(Debug)]
 pub struct Workspace {
     dir: TempDir,
+    /// When the conversion's total external-tool time is used up.
+    deadline: Option<Instant>,
 }
 
 impl Workspace {
     pub fn new() -> Result<Self> {
+        Self::with_budget(None)
+    }
+
+    /// A workspace whose tools may run for `budget` in total (`None`: only the
+    /// per-tool timeout applies).
+    pub fn with_budget(budget: Option<Duration>) -> Result<Self> {
         let dir = tempfile::Builder::new()
             .prefix("silvercity-")
             .tempdir()
             .map_err(|e| CrateError::io(std::env::temp_dir(), e))?;
-        Ok(Workspace { dir })
+        Ok(Workspace {
+            dir,
+            deadline: budget.map(|b| Instant::now() + b),
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -115,6 +126,9 @@ pub struct ToolGuard<'a> {
     pub env: &'a [(&'a str, &'a str)],
     /// Kill the tool if `cwd` grows beyond this many bytes.
     pub max_dir_bytes: u64,
+    /// Kill the tool (and refuse to start new ones) after this instant: the
+    /// conversion's total time budget for external tools.
+    pub overall_deadline: Option<Instant>,
 }
 
 fn dir_size(dir: &Path, depth: u8) -> u64 {
@@ -140,6 +154,10 @@ fn kill_tree(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
+fn budget_exhausted() -> CrateError {
+    CrateError::LimitExceeded("the document's total time budget for external tools was used up".into())
+}
+
 /// Run `program args...` in `cwd`.
 ///
 /// No shell is involved: arguments are passed as an argv list. The tool is
@@ -153,6 +171,9 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         detail,
     };
 
+    if guard.overall_deadline.is_some_and(|d| Instant::now() >= d) {
+        return Err(budget_exhausted());
+    }
     let mut log = tempfile::tempfile_in(cwd).map_err(|e| CrateError::io(cwd, e))?;
 
     let mut attempt = 0u32;
@@ -188,12 +209,17 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         }
     };
 
-    let deadline = Instant::now() + timeout;
+    let own_deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
-                if Instant::now() >= deadline {
+                let now = Instant::now();
+                if guard.overall_deadline.is_some_and(|d| now >= d) {
+                    kill_tree(&mut child);
+                    return Err(budget_exhausted());
+                }
+                if now >= own_deadline {
                     kill_tree(&mut child);
                     return Err(tool_err(format!("timed out after {}s", timeout.as_secs())));
                 }
@@ -263,10 +289,11 @@ fn check_png(program: &str, path: &Path, max_bytes: u64) -> Result<()> {
     }
 }
 
-fn guard<'a>(cfg: &Config, env: &'a [(&'a str, &'a str)]) -> ToolGuard<'a> {
+fn guard<'a>(ws: &Workspace, cfg: &Config, env: &'a [(&'a str, &'a str)]) -> ToolGuard<'a> {
     ToolGuard {
         env,
         max_dir_bytes: cfg.limits.max_workspace_bytes,
+        overall_deadline: ws.deadline,
     }
 }
 
@@ -284,7 +311,7 @@ fn run_spec(
         .iter()
         .map(|a| substitute(a, input, output, dpi, display))
         .collect();
-    run_tool(&spec.program, &args, ws.path(), cfg.tool_timeout, &guard(cfg, &[]))?;
+    run_tool(&spec.program, &args, ws.path(), cfg.tool_timeout, &guard(ws, cfg, &[]))?;
     check_png(&spec.program, output, cfg.limits.max_image_bytes)
 }
 
@@ -353,7 +380,7 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
                 ],
                 ws.path(),
                 cfg.tool_timeout,
-                &guard(cfg, TEX_ENV),
+                &guard(ws, cfg, TEX_ENV),
             )?;
             let dvi = ws.path().join(format!("{stem}.dvi"));
             run_tool(
@@ -371,7 +398,7 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
                 ],
                 ws.path(),
                 cfg.tool_timeout,
-                &guard(cfg, &[]),
+                &guard(ws, cfg, &[]),
             )?;
             check_png(dvipng, &output, cfg.limits.max_image_bytes)?;
         }

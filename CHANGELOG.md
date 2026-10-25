@@ -14,7 +14,8 @@ First release.
   (native Word footnotes), definition lists, GitHub alerts, raw HTML (common
   inline and block tags), YAML/TOML front matter (skipped).
 - `mermaid` and `dolphin` fences rendered to PNG by configurable external
-  commands and embedded as pictures.
+  commands and embedded as pictures. Mermaid defaults to `merman-cli` (Rust, no
+  browser); `--mermaid-engine mmdc` / `MermaidEngine::Mmdc` selects the official CLI.
 - LaTeX math in two modes: native, editable OMML equations (no external tool),
   or transparent PNGs via `latex` + `dvipng` or a custom command.
 - Dependency-free LaTeX to OMML converter.
@@ -34,7 +35,8 @@ First release.
   policy (`ImageAccess`), regular-file and size checks, decompression-bomb guard.
 - `Limits` for input size, block counts, formula/diagram size, image and
   workspace bytes, footnote expansion.
-- Tool supervision: console and disk caps, process-group kill on Unix.
+- Tool supervision: console and disk caps (also enforced after the tool exits),
+  a total tool-time budget per document, process-group kill on Unix.
 - OMML parser: nesting limit and no-progress guard (fixed an infinite loop in
   `\sqrt[...]` and stack overflow on deeply nested input).
 - Control characters stripped so output is always valid XML.

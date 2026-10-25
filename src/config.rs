@@ -93,6 +93,9 @@ pub struct Limits {
     pub max_total_image_bytes: u64,
     /// Total size of the scratch directory while external tools run.
     pub max_workspace_bytes: u64,
+    /// Total wall-clock time one conversion may spend in external tools, on top
+    /// of the per-tool [`Config::tool_timeout`].
+    pub max_total_tool_time: Duration,
 }
 
 impl Default for Limits {
@@ -106,6 +109,7 @@ impl Default for Limits {
             max_image_bytes: 25 * MIB,
             max_total_image_bytes: 150 * MIB,
             max_workspace_bytes: 256 * MIB,
+            max_total_tool_time: Duration::from_secs(300),
         }
     }
 }
@@ -123,31 +127,83 @@ pub enum ImageAccess {
     Any,
 }
 
+/// Which program renders ```` ```mermaid ```` blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MermaidEngine {
+    /// `merman-cli`: a headless Rust implementation of Mermaid. No browser and
+    /// no JavaScript; it enforces its own layout and raster ceilings and does
+    /// not read local files or use the network for diagrams. Install with
+    /// `cargo install merman-cli`.
+    #[default]
+    Merman,
+    /// `mmdc`, the official Mermaid CLI. It drives a headless Chrome, so it is
+    /// the reference renderer but a much larger attack surface.
+    Mmdc,
+}
+
+impl MermaidEngine {
+    /// The command line for this engine: PNG at 3x scale (288 dpi) on a
+    /// transparent background.
+    pub fn command(self) -> CommandSpec {
+        match self {
+            MermaidEngine::Merman => CommandSpec::new(
+                "merman-cli",
+                [
+                    "render",
+                    "{input}",
+                    "-o",
+                    "{output}",
+                    "-f",
+                    "png",
+                    "-s",
+                    "3",
+                    "-b",
+                    "transparent",
+                    "-q",
+                    // The default (deterministic) text metrics are approximate and clip
+                    // labels in some boxes; measuring with real fonts fixes that.
+                    "--font-measurement",
+                    "native",
+                ],
+            ),
+            MermaidEngine::Mmdc => CommandSpec::new(
+                "mmdc",
+                ["-i", "{input}", "-o", "{output}", "-s", "3", "-b", "transparent"],
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GraphOptions {
     /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
     /// blocks and no diagram tool is ever started.
     pub enabled: bool,
-    /// Renderer for ```` ```mermaid ```` blocks. Default: `mmdc` at 3x scale
-    /// with a transparent background.
+    /// Renderer for ```` ```mermaid ```` blocks. Default:
+    /// [`MermaidEngine::Merman`]; use [`GraphOptions::use_engine`] to switch,
+    /// or assign any [`CommandSpec`] that writes a PNG.
     pub mermaid: CommandSpec,
     /// Renderer for ```` ```dolphin ```` blocks. There is no de-facto standard
     /// Dolphin CLI, so this default (`dolphin -i {input} -o {output}`) is an
     /// assumption; override it for your tool.
     pub dolphin: CommandSpec,
     /// Effective resolution of the rendered PNGs, used to size them in the
-    /// page. `mmdc -s 3` produces 3 x 96 = 288 dpi.
+    /// page. A 3x render (`-s 3` for both engines) is 3 x 96 = 288 dpi.
     pub dpi: u32,
+}
+
+impl GraphOptions {
+    /// Render Mermaid with `engine` (replaces [`GraphOptions::mermaid`]).
+    pub fn use_engine(&mut self, engine: MermaidEngine) {
+        self.mermaid = engine.command();
+    }
 }
 
 impl Default for GraphOptions {
     fn default() -> Self {
         GraphOptions {
             enabled: true,
-            mermaid: CommandSpec::new(
-                "mmdc",
-                ["-i", "{input}", "-o", "{output}", "-s", "3", "-b", "transparent"],
-            ),
+            mermaid: MermaidEngine::default().command(),
             dolphin: CommandSpec::new("dolphin", ["-i", "{input}", "-o", "{output}"]),
             dpi: 288,
         }
@@ -213,5 +269,33 @@ impl Config {
         let mut c = Config::default();
         c.math.mode = MathMode::NativeOmml;
         c
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mermaid_defaults_to_merman_with_native_fonts_and_can_switch() {
+        let mut g = GraphOptions::default();
+        assert_eq!(g.mermaid.program, "merman-cli");
+        for needed in ["render", "{input}", "{output}", "png", "transparent", "native"] {
+            assert!(
+                g.mermaid.args.iter().any(|a| a == needed),
+                "missing `{needed}`: {:?}",
+                g.mermaid.args
+            );
+        }
+        g.use_engine(MermaidEngine::Mmdc);
+        assert_eq!(g.mermaid.program, "mmdc");
+        assert!(g.mermaid.args.windows(2).any(|w| w == ["-s", "3"]));
+        g.use_engine(MermaidEngine::Merman);
+        assert_eq!(g.mermaid, MermaidEngine::Merman.command());
+        // Both engines render at 3x, which is what `GraphOptions::dpi` assumes (3 x 96).
+        for e in [MermaidEngine::Merman, MermaidEngine::Mmdc] {
+            assert!(e.command().args.windows(2).any(|w| w == ["-s", "3"]), "{e:?}");
+        }
+        assert_eq!(GraphOptions::default().dpi, 288);
     }
 }

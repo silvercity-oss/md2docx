@@ -27,7 +27,9 @@ mod safety;
 use std::fs;
 use std::path::Path;
 
-pub use config::{CommandSpec, Config, GraphOptions, ImageAccess, Limits, MathImageEngine, MathMode, MathOptions};
+pub use config::{
+    CommandSpec, Config, GraphOptions, ImageAccess, Limits, MathImageEngine, MathMode, MathOptions, MermaidEngine,
+};
 pub use error::{CrateError, Result};
 pub use preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
 

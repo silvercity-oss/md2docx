@@ -9,7 +9,7 @@ use std::path::PathBuf;
 pub enum CrateError {
     /// A required external program (e.g. `mmdc`, `latex`, `dvipng`) is not on
     /// `PATH` (or the configured path does not exist).
-    #[error("external CLI `{program}` was not found; install it or point the configuration at it")]
+    #[error("external CLI `{program}` was not found{}", install_hint(program))]
     MissingExternalCLI { program: String },
 
     /// The Markdown input could not be processed (not UTF-8, empty graph
@@ -54,3 +54,37 @@ impl CrateError {
 }
 
 pub type Result<T> = std::result::Result<T, CrateError>;
+
+/// How to get a tool that is commonly missing, appended to the error message.
+pub(crate) fn install_hint(program: &str) -> &'static str {
+    // Split on both separators so a Windows path is understood on any host.
+    let base = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    let name = base
+        .strip_suffix(".exe")
+        .or_else(|| base.strip_suffix(".cmd"))
+        .or_else(|| base.strip_suffix(".bat"))
+        .unwrap_or(base);
+    match name {
+        "merman-cli" => "; install it with `cargo install merman-cli`, or use the `mmdc` engine instead",
+        "mmdc" => "; install it with `npm install -g @mermaid-js/mermaid-cli`, or use the `merman` engine instead",
+        "latex" | "dvipng" => {
+            "; install a TeX distribution (TeX Live: texlive-latex-base and dvipng), or use native math"
+        }
+        _ => "; install it or point the configuration at it",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_tool_messages_say_how_to_fix_it() {
+        let msg = |p: &str| CrateError::MissingExternalCLI { program: p.into() }.to_string();
+        assert!(msg("merman-cli").contains("cargo install merman-cli") && msg("merman-cli").contains("mmdc"));
+        assert!(msg("/opt/bin/mmdc").contains("npm install -g @mermaid-js/mermaid-cli"));
+        assert!(msg("latex").contains("native math"));
+        assert!(msg("dolphin").contains("point the configuration at it"));
+        assert!(msg("C:\\tools\\merman-cli.exe").contains("cargo install"));
+    }
+}

@@ -72,3 +72,28 @@ jobs:
       - run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # The default Mermaid engine, against the real renderer. Separate job because
+  # building merman-cli takes minutes; the binary is cached by version.
+  merman:
+    name: merman-cli (real renderer)
+    runs-on: ubuntu-latest
+    env:
+      MERMAN_CLI_VERSION: "0.9.2"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache merman-cli
+        id: merman-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/merman-cli
+          key: merman-cli-${{ env.MERMAN_CLI_VERSION }}-${{ runner.os }}
+      - name: Install merman-cli
+        if: steps.merman-cache.outputs.cache-hit != 'true'
+        run: cargo install merman-cli --version "$MERMAN_CLI_VERSION" --locked
+      - name: Test against the real renderer
+        run: cargo test --test merman_real --locked
+        env:
+          REQUIRE_MERMAN: "1"

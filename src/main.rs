@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 use silvercity_oss::{
-    markdown_file_to_docx, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine, MathMode as LibMathMode,
+    markdown_file_to_docx, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine,
+    MathMode as LibMathMode, MermaidEngine as LibMermaidEngine,
 };
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +16,14 @@ pub enum MathMode {
     Native,
     /// Transparent PNGs rendered with a local TeX install (`latex` + `dvipng`).
     Image,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MermaidEngine {
+    /// `merman-cli`: headless Rust renderer, no browser (`cargo install merman-cli`).
+    Merman,
+    /// `mmdc`: the official Mermaid CLI; drives a headless Chrome.
+    Mmdc,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,14 +74,23 @@ pub struct Args {
 
     #[arg(
         long,
+        value_enum,
+        default_value_t = MermaidEngine::Merman,
+        help = "Renderer for ```mermaid blocks: merman (Rust, no browser) or mmdc (official CLI, drives Chrome)"
+    )]
+    pub mermaid_engine: MermaidEngine,
+
+    #[arg(
+        long,
         value_parser = parse_command,
-        help = "Custom CLI command layout for Mermaid graphs [default: mmdc -i {input} -o {output} -s 3 -b transparent]"
+        conflicts_with = "mermaid_engine",
+        help = "Custom CLI command layout for Mermaid graphs, replacing --mermaid-engine (e.g., 'mmdc -i {input} -o {output} -p puppeteer.json')"
     )]
     pub mermaid_command: Option<CommandSpec>,
 
     #[arg(
         long,
-        conflicts_with_all = ["math_mode", "dolphin_command", "mermaid_command", "latex", "dvipng", "image_access"],
+        conflicts_with_all = ["math_mode", "dolphin_command", "mermaid_command", "mermaid_engine", "latex", "dvipng", "image_access"],
         help = "Strictest preset for untrusted Markdown: native math, diagram fences stay code, no local images, tight size limits. Starts no subprocess"
     )]
     pub untrusted: bool,
@@ -133,6 +151,10 @@ fn config(args: &Args) -> Config {
             ImageAccess::BaseDir => LibImageAccess::BaseDir,
             ImageAccess::Any => LibImageAccess::Any,
         };
+        cfg.graphs.use_engine(match args.mermaid_engine {
+            MermaidEngine::Merman => LibMermaidEngine::Merman,
+            MermaidEngine::Mmdc => LibMermaidEngine::Mmdc,
+        });
         if let Some(spec) = &args.mermaid_command {
             cfg.graphs.mermaid = spec.clone();
         }
@@ -213,9 +235,36 @@ mod tests {
                 "{extra:?}"
             );
         }
+        assert!(Args::try_parse_from(["md2docx", "in.md", "--untrusted", "--mermaid-engine", "mmdc"]).is_err());
         // Defaults for the normal mode keep images inside the input's directory.
         let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
         assert_eq!(config(&d).image_access, LibImageAccess::BaseDir);
+    }
+
+    #[test]
+    fn mermaid_engine_defaults_to_merman_and_can_switch_to_mmdc() {
+        let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
+        assert_eq!(config(&d).graphs.mermaid.program, "merman-cli");
+        let m = Args::try_parse_from(["md2docx", "in.md", "--mermaid-engine", "mmdc"]).unwrap();
+        assert_eq!(config(&m).graphs.mermaid.program, "mmdc");
+        // An explicit command wins, and cannot be combined with the engine switch.
+        let c = Args::try_parse_from([
+            "md2docx",
+            "in.md",
+            "--mermaid-command",
+            "my-mmdc -i {input} -o {output}",
+        ])
+        .unwrap();
+        assert_eq!(config(&c).graphs.mermaid.program, "my-mmdc");
+        assert!(Args::try_parse_from([
+            "md2docx",
+            "in.md",
+            "--mermaid-engine",
+            "mmdc",
+            "--mermaid-command",
+            "x -i {input} -o {output}"
+        ])
+        .is_err());
     }
 
     #[test]

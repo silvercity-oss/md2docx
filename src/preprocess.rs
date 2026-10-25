@@ -200,7 +200,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     }
 
     // Pass 2: render and build replacements.
-    let workspace = Workspace::new()?;
+    let workspace = Workspace::with_budget(Some(limits.max_total_tool_time))?;
     let nonce = asset_stem("", &[markdown.as_bytes()]);
     let mut assets = HashMap::new();
     let mut replacements: Vec<(Range<usize>, String)> = Vec::new();

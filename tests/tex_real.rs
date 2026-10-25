@@ -38,6 +38,7 @@ fn latex(dir: &Path, file: &str, env: &[(&str, &str)]) -> Result<(), CrateError>
         &ToolGuard {
             env,
             max_dir_bytes: 64 << 20,
+            overall_deadline: None,
         },
     )
 }

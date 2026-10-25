@@ -35,13 +35,35 @@ returns, on success and on every error path.
 
 ## Diagrams
 
-`mermaid` fences are rendered with `mmdc` (`-s 3 -b transparent`), `dolphin`
-fences with the configured Dolphin command. Both are `CommandSpec`s: a program
-plus arguments with `{input}`, `{output}` and `{dpi}` placeholders.
-There is no standard Dolphin CLI; the default `dolphin -i {input} -o {output}`
-is a guess, so set `config.graphs.dolphin` for your tool. Identical diagrams
-are rendered once. On a headless/root host Mermaid usually needs a Puppeteer
-config (`-p puppeteer.json` with `--no-sandbox`); add it to `args`.
+`mermaid` fences are rendered to PNG by an external command; you choose which:
+
+| Engine | What it is | Choose it when |
+| --- | --- | --- |
+| **`merman`** (default) | [`merman-cli`](https://github.com/Latias94/merman), a headless Rust implementation of Mermaid. `cargo install merman-cli` | Almost always: no browser or JavaScript runtime, ~0.1-1 s per diagram, and it enforces its own layout and raster limits |
+| `mmdc` | The official [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli); drives a headless Chrome. `npm install -g @mermaid-js/mermaid-cli` | You need exact Mermaid.js output, or a diagram type merman does not support yet |
+
+Switch with `md2docx --mermaid-engine mmdc` or, in code,
+`config.graphs.use_engine(MermaidEngine::Mmdc)`. `--mermaid-command` /
+`config.graphs.mermaid` replaces the command entirely (any `CommandSpec`
+that writes a PNG).
+
+merman is an independent project, not affiliated with Mermaid, and it
+re-implements the renderer, so output can differ from `mmdc`. We run it with
+`--font-measurement native`: its default text metrics are approximate and
+clip labels in some boxes (class and ER diagrams showed "Anima", "boo"), while
+measuring with real installed fonts fixed that. That costs about a second per
+diagram for font discovery, and the layout depends on the fonts installed on
+the machine. We rendered flowchart, sequence, class, state, ER, Gantt, pie and
+architecture diagrams; check yours, and fall back to `mmdc` if one does not
+look right. If a tool is missing, the error says how to install it or which
+switch to use.
+
+`dolphin` fences use the configured Dolphin command. There is no standard
+Dolphin CLI; the default `dolphin -i {input} -o {output}` is a guess, so set
+`config.graphs.dolphin` for your tool. Commands are `CommandSpec`s: a program
+plus arguments with `{input}`, `{output}` and `{dpi}` placeholders. Identical
+diagrams are rendered once. On a headless/root host `mmdc` usually needs a
+Puppeteer config (`-p puppeteer.json` with `--no-sandbox`); add it to `args`.
 
 ## Math modes (`config.math.mode`)
 
@@ -97,6 +119,7 @@ is kept), math inside footnotes (shown as source text).
 md2docx notes.md                                  # -> notes.docx, native equations
 md2docx notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
 md2docx notes.md --dolphin-command 'dolphin -i {input} -o {output}'
+md2docx notes.md --mermaid-engine mmdc          # official Mermaid CLI instead of merman
 md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppeteer.json'
 ```
 
@@ -107,13 +130,15 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
 | `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it |
 | `--image-access none\|base-dir\|any` | Default `base-dir`: only images inside the input file's directory |
+| `--mermaid-engine merman\|mmdc` | Mermaid renderer; default `merman` (Rust, no browser) |
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
 | `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
 | `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
 
 Note the CLI defaults to `native` math while the library's `Config::default()`
 uses `ImageFallback`; use `Config::native_math()` for the safe mode. On Windows,
-npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly.
+npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly
+through `--mermaid-command`.
 
 ## Security
 
@@ -154,8 +179,8 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
 | Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
-| A renderer that hangs, floods output, fills the disk or leaves helpers behind | Timeout, 1 MiB console cap, scratch-directory cap, output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
-| Script/style/iframe content in raw HTML | Dropped, including when split across inline events |
+| A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
+| Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist**: only presentation tags (`b i u s sup sub code kbd br hr h1-6 li p div ...` and `<img>`) have any effect, everything else contributes at most its text, and attributes are never interpreted except `<img src/alt>`, which goes through the image policy. So `<a>` is stripped (its text stays), scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. Same in `--untrusted`, which still renders the safe subset |
 | `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |
 
 `Config::untrusted()` turns the strict settings on together: native math, diagram
@@ -163,11 +188,19 @@ fences left as code (no browser), no local files, smaller limits.
 
 ### What is not covered
 
-* **Diagram tools are not sandboxed.** `mmdc` drives a headless browser with the
-  diagram text, and a custom `--dolphin-command` is whatever you configure. If
-  untrusted users may trigger diagram rendering, run the converter itself inside
-  a container with no network and no sensitive files, or leave diagrams disabled
-  (`--untrusted`).
+* **Diagram tools are not sandboxed.** With the default `merman` engine the
+  risk is small: it is a Rust program with no browser, and when tested with
+  hostile diagrams (labels referencing a local image and a local web server,
+  `javascript:` clicks, `<script>`, `%%{init}%%` overrides of the security level)
+  it neither embedded the local file nor made a network connection, and it
+  refuses oversized diagrams by itself (`max_layout_work_units`). That was
+  checked with a positive control and is part of the test suite
+  (`tests/merman_real.rs`), but it is a property of the version tested (0.9.2),
+  not a guarantee. `mmdc` drives a headless browser with the diagram text and
+  is a much larger surface. A custom `--dolphin-command` is whatever you
+  configure. If untrusted users may trigger diagram rendering, run the converter
+  itself inside a container with no network and no sensitive files, or leave
+  diagrams disabled (`--untrusted`).
 * On **Windows** a timed-out tool is killed but its descendants are not (Unix
   uses process groups; a Job Object is not implemented).
 * Local-image checks resolve the path and then open it; a hostile process that
@@ -193,6 +226,8 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
   results, and descendants of a timed-out tool.
 * `tests/tex_real.rs` (Unix): the pipeline and the TeX hardening against a real
   `latex` (skipped when absent; CI installs it and requires it).
+* `tests/merman_real.rs`: the default Mermaid engine against a real `merman-cli`
+  (skipped when absent; a dedicated CI job installs and requires it).
 * `tests/pipeline.rs`, `tests/pipeline_mock_tools.rs`, `tests/cli.rs`: end-to-end
   conversion, stand-in `mmdc`/`latex`/`dvipng` scripts, and the `md2docx` binary.
 

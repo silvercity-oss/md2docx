@@ -255,3 +255,28 @@ fn oversized_input_is_refused_with_a_clear_message() {
     assert!(stderr(&out).contains("limit exceeded"), "{}", stderr(&out));
     assert!(!fx.path("big.docx").exists());
 }
+
+#[test]
+fn mermaid_engine_flag_names_the_missing_tool_and_how_to_get_it() {
+    if have("merman-cli") || have("mmdc") {
+        return; // the point is the error for a missing tool
+    }
+    let fx = Fixture::new();
+    let input = fx.path("d.md");
+    std::fs::write(&input, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
+    let default = md2docx(&[path_str(&input)]);
+    assert_eq!(default.status.code(), Some(1));
+    assert!(
+        stderr(&default).contains("merman-cli") && stderr(&default).contains("cargo install merman-cli"),
+        "{}",
+        stderr(&default)
+    );
+    let mmdc = md2docx(&[path_str(&input), "--mermaid-engine", "mmdc"]);
+    assert_eq!(mmdc.status.code(), Some(1));
+    assert!(
+        stderr(&mmdc).contains("`mmdc`") && stderr(&mmdc).contains("mermaid-cli"),
+        "{}",
+        stderr(&mmdc)
+    );
+    assert!(!fx.path("d.docx").exists());
+}

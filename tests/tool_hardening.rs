@@ -141,3 +141,29 @@ fn failing_tool_does_not_leave_helpers_running() {
     }
     assert!(!survived, "helper process {pid} outlived a failed tool");
 }
+
+#[test]
+fn total_tool_time_is_budgeted_across_the_whole_document() {
+    let fx = Fixture::new();
+    let png = fx.path("fixture.png");
+    // Each distinct diagram takes ~0.4 s; ten of them would take ~4 s.
+    let mut cfg = config_with(script(
+        fx.dir.path(),
+        "slowish",
+        &format!("sleep 0.4\ncp '{}' \"$2\"", png.display()),
+    ));
+    cfg.limits.max_total_tool_time = Duration::from_millis(1500);
+    let md: String = (0..10)
+        .map(|i| format!("```mermaid\ngraph TD; A{i}-->B\n```\n\n"))
+        .collect();
+    let t = Instant::now();
+    match markdown_to_docx(&md, &cfg) {
+        Err(CrateError::LimitExceeded(m)) => assert!(m.contains("total time budget"), "{m}"),
+        other => panic!("expected the budget to run out, got {:?}", other.map(|d| d.len())),
+    }
+    assert!(t.elapsed() < Duration::from_secs(3), "stopped after {:?}", t.elapsed());
+
+    // The same document fits in a generous budget.
+    cfg.limits.max_total_tool_time = Duration::from_secs(60);
+    assert!(markdown_to_docx(&md, &cfg).is_ok());
+}
