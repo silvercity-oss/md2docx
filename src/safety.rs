@@ -162,7 +162,9 @@ fn clean_mailto(url: &str) -> String {
         .split('&')
         .filter(|pair| {
             let key = pair.split('=').next().unwrap_or("");
-            let key = percent_encoding::percent_decode_str(key).decode_utf8_lossy().to_ascii_lowercase();
+            let key = percent_encoding::percent_decode_str(key)
+                .decode_utf8_lossy()
+                .to_ascii_lowercase();
             matches!(key.as_str(), "subject" | "body" | "cc" | "bcc")
         })
         .collect();
@@ -366,9 +368,18 @@ mod tests {
         let allowed = vec!["mailto".to_string()];
         let c = |u: &str| safe_link(u, &allowed).unwrap();
         assert_eq!(c("mailto:a@b.example"), "mailto:a@b.example");
-        assert_eq!(c("mailto:a@b.example?subject=Hi&body=Text"), "mailto:a@b.example?subject=Hi&body=Text");
-        assert_eq!(c("mailto:a@b.example?attach=/etc/passwd&subject=Hi"), "mailto:a@b.example?subject=Hi");
-        assert_eq!(c("mailto:a@b.example?%61ttach=/x&cc=c@d.example"), "mailto:a@b.example?cc=c@d.example");
+        assert_eq!(
+            c("mailto:a@b.example?subject=Hi&body=Text"),
+            "mailto:a@b.example?subject=Hi&body=Text"
+        );
+        assert_eq!(
+            c("mailto:a@b.example?attach=/etc/passwd&subject=Hi"),
+            "mailto:a@b.example?subject=Hi"
+        );
+        assert_eq!(
+            c("mailto:a@b.example?%61ttach=/x&cc=c@d.example"),
+            "mailto:a@b.example?cc=c@d.example"
+        );
         assert_eq!(c("mailto:a@b.example?attach=/etc/passwd"), "mailto:a@b.example");
         assert_eq!(c("MAILTO:a@b.example?Attachment=x&BODY=y"), "MAILTO:a@b.example?BODY=y");
     }

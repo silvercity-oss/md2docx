@@ -92,6 +92,8 @@ const EMU_PER_INCH: u64 = 914_400;
 const BULLET_ABSTRACT_ID: usize = 10;
 const ORDERED_ABSTRACT_ID: usize = 11;
 const BULLET_NUM_ID: usize = 10;
+const HEADING_ABSTRACT_ID: usize = 12;
+const HEADING_NUM_ID: usize = 9;
 const MAX_LIST_LEVEL: usize = 8;
 
 // ------------------------------------------------------------------ styles
@@ -150,6 +152,27 @@ fn base_docx(o: &crate::config::DocumentOptions, g: &Geometry) -> Docx {
         style.run_property = style.run_property.vert_align(VertAlignType::SuperScript);
         style
     })
+}
+
+/// Multilevel numbering for headings: `1.`, `1.1.`, `1.1.1.`, ... one level per heading level.
+fn heading_numbering() -> AbstractNumbering {
+    let mut numbering = AbstractNumbering::new(HEADING_ABSTRACT_ID);
+    for lvl in 0..6usize {
+        let text: String = (1..=lvl + 1).map(|i| format!("%{i}.")).collect();
+        let text = text.trim_end_matches('.').to_string();
+        let left = 567 + 284 * lvl as i32;
+        numbering = numbering.add_level(
+            Level::new(
+                lvl,
+                Start::new(1),
+                NumberFormat::new("decimal"),
+                LevelText::new(text),
+                LevelJc::new("left"),
+            )
+            .indent(Some(left), Some(SpecialIndentType::Hanging(left)), None, None),
+        );
+    }
+    numbering
 }
 
 fn numbering_definitions() -> (AbstractNumbering, AbstractNumbering) {
@@ -411,17 +434,24 @@ fn split_bare_urls(text: &str) -> Vec<UrlPiece<'_>> {
     while i < bytes.len() {
         let rest = &text[i..];
         let starts = rest.starts_with("http://") || rest.starts_with("https://") || rest.starts_with("www.");
-        let boundary = i == 0 || !text[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '/');
+        let boundary = i == 0
+            || !text[..i]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '/');
         if starts && boundary {
             let mut end = rest.find(|c: char| c.is_whitespace() || c == '<').unwrap_or(rest.len());
             // Trailing punctuation belongs to the sentence, not the address.
-            let (opens, mut closes) = rest[..end]
-                .bytes()
-                .fold((0usize, 0usize), |(o, c), b| (o + usize::from(b == b'('), c + usize::from(b == b')')));
+            let (opens, mut closes) = rest[..end].bytes().fold((0usize, 0usize), |(o, c), b| {
+                (o + usize::from(b == b'('), c + usize::from(b == b')'))
+            });
             loop {
-                let Some(last) = rest[..end].chars().next_back() else { break };
+                let Some(last) = rest[..end].chars().next_back() else {
+                    break;
+                };
                 let unbalanced_paren = last == ')' && closes > opens;
-                if matches!(last, '?' | '!' | '.' | ',' | ':' | '*' | '_' | '~' | '\'' | '"' | ';') || unbalanced_paren {
+                if matches!(last, '?' | '!' | '.' | ',' | ':' | '*' | '_' | '~' | '\'' | '"' | ';') || unbalanced_paren
+                {
                     closes -= usize::from(last == ')');
                     end -= last.len_utf8();
                 } else {
@@ -585,11 +615,18 @@ fn github_slug(text: &str) -> String {
 
 /// Anchor name -> number of the heading, for every Markdown heading outside footnotes, in
 /// document order. An explicit `{#id}` is used as written; repeated names get `-1`, `-2`...
-fn heading_anchors(markdown: &str, sup_sub: bool) -> HashMap<String, usize> {
+/// A Markdown heading as the pre-pass saw it: level and plain text.
+struct HeadingInfo {
+    level: u8,
+    text: String,
+}
+
+fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Vec<HeadingInfo>) {
     let mut anchors = HashMap::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut in_definition = false;
-    let mut open: Option<(Option<String>, String)> = None;
+    let mut open: Option<(Option<String>, String, u8)> = None;
+    let mut headings: Vec<HeadingInfo> = Vec::new();
     let mut number = 0;
     let mut html_found: Vec<String> = Vec::new();
     for (event, _) in merged_events(markdown, sup_sub) {
@@ -597,17 +634,29 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> HashMap<String, usize> {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
             Event::End(TagEnd::FootnoteDefinition) => in_definition = false,
             _ if in_definition => {}
-            Event::Start(Tag::Heading { id, .. }) => open = Some((id.map(|i| i.to_string()), String::new())),
+            Event::Start(Tag::Heading { id, level, .. }) => {
+                open = Some((id.map(|i| i.to_string()), String::new(), heading_level(level)));
+            }
             Event::Text(t) | Event::Code(t) => {
-                if let Some((_, text)) = open.as_mut() {
+                if let Some((_, text, _)) = open.as_mut() {
                     text.push_str(&t);
                 }
             }
             Event::Html(h) | Event::InlineHtml(h) => {
                 for piece in html::tokenize(&h) {
-                    if let Piece::Tag { closing: false, attrs, name } = piece {
-                        let target = html::attr(&attrs, "id")
-                            .or_else(|| if name == "a" { html::attr(&attrs, "name") } else { None });
+                    if let Piece::Tag {
+                        closing: false,
+                        attrs,
+                        name,
+                    } = piece
+                    {
+                        let target = html::attr(&attrs, "id").or_else(|| {
+                            if name == "a" {
+                                html::attr(&attrs, "name")
+                            } else {
+                                None
+                            }
+                        });
                         if let Some(target) = target.filter(|t| !t.is_empty() && t.len() <= 200) {
                             let k = html_found.len();
                             if k < MAX_HTML_ANCHORS && !html_found.contains(&target) {
@@ -618,7 +667,11 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> HashMap<String, usize> {
                 }
             }
             Event::End(TagEnd::Heading(_)) => {
-                if let Some((id, text)) = open.take() {
+                if let Some((id, text, level)) = open.take() {
+                    headings.push(HeadingInfo {
+                        level,
+                        text: text.clone(),
+                    });
                     let base: String = id.unwrap_or_else(|| github_slug(&text)).chars().take(200).collect();
                     let times = seen.entry(base.clone()).or_insert(0);
                     let name = if *times == 0 { base } else { format!("{base}-{times}") };
@@ -634,7 +687,18 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> HashMap<String, usize> {
     for (k, name) in html_found.into_iter().enumerate() {
         anchors.entry(name).or_insert(HTML_ANCHOR_BASE + k);
     }
-    anchors
+    (anchors, headings)
+}
+
+fn heading_level(level: HeadingLevel) -> u8 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
 }
 
 /// Put the footnote number in front of each note's first paragraph (docx-rs writes none, so
@@ -872,6 +936,63 @@ impl<'a> Builder<'a> {
         }
     }
 
+    // ---- table of contents
+
+    /// The paragraphs of a static table of contents: a title, then one linked line per heading.
+    fn contents_blocks(
+        &mut self,
+        toc: &crate::config::TableOfContents,
+        headings: &[HeadingInfo],
+    ) -> Result<Vec<Block>> {
+        const MAX_ENTRY_CHARS: usize = 200;
+        let mut blocks = Vec::new();
+        if !toc.title.is_empty() {
+            let mut run = Run::new().add_text(sanitize_xml_chars(&toc.title)).bold();
+            run.run_property = run.run_property.size(32);
+            let title = Paragraph::new()
+                .line_spacing(LineSpacing::new().before(0).after(200))
+                .add_run(run);
+            self.charge(2);
+            blocks.push(Block::Para(Box::new(title)));
+        }
+        // Word numbers headings with one counter per level; the contents repeats those numbers.
+        let mut counters = [0usize; 6];
+        for (n, h) in headings.iter().enumerate() {
+            let level = usize::from(h.level).clamp(1, 6);
+            counters[level - 1] += 1;
+            counters[level..].fill(0);
+            if level > usize::from(toc.max_level) || h.text.trim().is_empty() {
+                continue;
+            }
+            let mut label = String::new();
+            if self.cfg.document.number_headings {
+                let nums: Vec<String> = counters[..level].iter().map(usize::to_string).collect();
+                label = format!("{} ", nums.join("."));
+            }
+            let text: String = h.text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let mut text: String = text.chars().take(MAX_ENTRY_CHARS).collect();
+            if h.text.chars().count() > MAX_ENTRY_CHARS {
+                text.push('\u{2026}');
+            }
+            let link = Hyperlink::new(bookmark_name(n), HyperlinkType::Anchor)
+                .add_run(Run::new().add_text(sanitize_xml_chars(&format!("{label}{text}"))));
+            let entry = Paragraph::new()
+                .line_spacing(LineSpacing::new().before(0).after(60))
+                .indent(Some(indent_twips(360 * (level - 1))), None, None, None)
+                .add_hyperlink(link);
+            self.charge(3);
+            if let Some(e) = self.budget_error.take() {
+                return Err(e);
+            }
+            self.stats.hyperlinks += 1;
+            blocks.push(Block::Para(Box::new(entry)));
+        }
+        if let Some(e) = self.budget_error.take() {
+            return Err(e);
+        }
+        Ok(blocks)
+    }
+
     // ---- findings
 
     /// Record something that could not be carried over, at the event being handled.
@@ -988,7 +1109,11 @@ impl<'a> Builder<'a> {
             match piece {
                 UrlPiece::Text(text) => self.text(text),
                 UrlPiece::Url(raw) => {
-                    let target = if raw.starts_with("www.") { format!("https://{raw}") } else { raw.to_string() };
+                    let target = if raw.starts_with("www.") {
+                        format!("https://{raw}")
+                    } else {
+                        raw.to_string()
+                    };
                     match safe_link(&target, &self.cfg.allowed_link_schemes) {
                         Some(url) => {
                             self.link = Some(LinkCtx {
@@ -1074,6 +1199,14 @@ impl<'a> Builder<'a> {
         }
         if let Some(n) = heading {
             p = p.add_bookmark_start(n, bookmark_name(n));
+            // Only Markdown headings are numbered, so the numbers in the contents (which lists
+            // exactly those) agree with Word's.
+            if let (true, ParaKind::Heading(level)) = (self.cfg.document.number_headings, kind) {
+                p = p.numbering(
+                    NumberingId::new(HEADING_NUM_ID),
+                    IndentLevel::new(usize::from(level) - 1),
+                );
+            }
         }
 
         let mut task = None;
@@ -2619,7 +2752,8 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown, cfg.superscript_subscript);
-    b.anchors = Arc::new(heading_anchors(&pre.markdown, cfg.superscript_subscript));
+    let (anchors, headings) = heading_anchors(&pre.markdown, cfg.superscript_subscript);
+    b.anchors = Arc::new(anchors);
 
     let mut in_definition = false;
     let mut events = 0usize;
@@ -2644,6 +2778,10 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     }
     b.finish_html();
     b.report_unreferenced_footnotes();
+    if let Some(toc) = &cfg.document.table_of_contents {
+        let blocks = b.contents_blocks(toc, &headings)?;
+        b.blocks.splice(0..0, blocks);
+    }
 
     let (bullets, ordered) = numbering_definitions();
     let now = now_rfc3339();
@@ -2653,6 +2791,11 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
         .add_abstract_numbering(bullets)
         .add_abstract_numbering(ordered)
         .add_numbering(Numbering::new(BULLET_NUM_ID, BULLET_ABSTRACT_ID));
+    if cfg.document.number_headings {
+        docx = docx
+            .add_abstract_numbering(heading_numbering())
+            .add_numbering(Numbering::new(HEADING_NUM_ID, HEADING_ABSTRACT_ID));
+    }
     for n in b.ordered_numberings.drain(..) {
         docx = docx.add_numbering(n);
     }
@@ -2757,12 +2900,25 @@ mod tests {
                 })
                 .collect()
         }
-        assert_eq!(show("see https://example.com/a?b=1."), ["t:see ", "u:https://example.com/a?b=1", "t:."]);
+        assert_eq!(
+            show("see https://example.com/a?b=1."),
+            ["t:see ", "u:https://example.com/a?b=1", "t:."]
+        );
         assert_eq!(show("(http://x.org/a_(b))"), ["t:(", "u:http://x.org/a_(b)", "t:)"]);
-        assert_eq!(show("go to www.example.com, now"), ["t:go to ", "u:www.example.com", "t:, now"]);
-        assert_eq!(show("fooshttps://x.org no"), ["t:fooshttps://x.org no"], "needs a word boundary");
+        assert_eq!(
+            show("go to www.example.com, now"),
+            ["t:go to ", "u:www.example.com", "t:, now"]
+        );
+        assert_eq!(
+            show("fooshttps://x.org no"),
+            ["t:fooshttps://x.org no"],
+            "needs a word boundary"
+        );
         assert_eq!(show("www. alone and http:// alone"), ["t:www. alone and http:// alone"]);
-        assert_eq!(show("日本語 https://例え.jp/ok 終"), ["t:日本語 ", "u:https://例え.jp/ok", "t: 終"]);
+        assert_eq!(
+            show("日本語 https://例え.jp/ok 終"),
+            ["t:日本語 ", "u:https://例え.jp/ok", "t: 終"]
+        );
         assert_eq!(show(""), Vec::<String>::new());
     }
 

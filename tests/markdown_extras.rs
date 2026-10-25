@@ -33,7 +33,10 @@ fn table_columns_follow_their_content() {
     assert_eq!(g.len(), 3);
     assert!(g[1] > 3 * g[0] && g[1] > 3 * g[2], "{g:?}");
     let total: usize = g.iter().sum();
-    assert!((total as i64 - 9026).abs() < 400, "the table keeps the text width: {g:?}");
+    assert!(
+        (total as i64 - 9026).abs() < 400,
+        "the table keeps the text width: {g:?}"
+    );
 }
 
 #[test]
@@ -51,7 +54,10 @@ fn bare_addresses_become_links_only_when_asked_and_only_to_allowed_schemes() {
     assert!(visible_text(&body).contains("ftp://example.net/f"), "the text stays");
     // Not inside an explicit link, or in code.
     let inside = rels_with("[https://a.example/x](https://b.example/y) `https://c.example`", &cfg);
-    assert!(inside.contains("b.example") && !inside.contains("a.example") && !inside.contains("c.example"), "{inside}");
+    assert!(
+        inside.contains("b.example") && !inside.contains("a.example") && !inside.contains("c.example"),
+        "{inside}"
+    );
 }
 
 #[test]
@@ -61,7 +67,10 @@ fn superscript_and_subscript_are_opt_in() {
     assert!(!off.contains("w:vertAlign"), "{off}");
     assert!(off.contains("<w:strike"), "single tildes stay strikethrough by default");
     let on = body_with(md, &Config::default().with_superscript_subscript(true));
-    assert!(on.contains("w:val=\"subscript\"") && on.contains("w:val=\"superscript\""), "{on}");
+    assert!(
+        on.contains("w:val=\"subscript\"") && on.contains("w:val=\"superscript\""),
+        "{on}"
+    );
     assert!(on.contains("<w:strike"), "double tildes still strike");
 }
 
@@ -71,10 +80,16 @@ fn html_anchors_are_link_targets() {
     let b = body_with(md, &Config::default());
     assert!(b.contains("<w:bookmarkStart w:id=\"1048576\" w:name=\"md_a0\""), "{b}");
     assert!(b.matches("w:anchor=\"md_a0\"").count() == 2, "{b}");
-    assert!(b.contains("w:anchor=\"md_a1\""), "the id of any element is a target: {b}");
+    assert!(
+        b.contains("w:anchor=\"md_a1\""),
+        "the id of any element is a target: {b}"
+    );
     assert!(!b.contains("md_a2"));
     let diags = silvercity_oss::convert(md, &Config::default()).unwrap().diagnostics;
-    assert!(diags.iter().any(|d| d.code == silvercity_oss::Code::LinkAnchorMissing), "{diags:?}");
+    assert!(
+        diags.iter().any(|d| d.code == silvercity_oss::Code::LinkAnchorMissing),
+        "{diags:?}"
+    );
 }
 
 #[test]
@@ -89,4 +104,72 @@ fn mailto_links_lose_everything_but_the_prefill_fields() {
     let rels = rels_with("[m](mailto:a@b.example?subject=Hi&attach=/etc/passwd)", &cfg);
     assert!(rels.contains("mailto:a@b.example?subject=Hi\""), "{rels}");
     assert!(!rels.contains("attach"));
+}
+
+// ---- table of contents and heading numbers
+
+use silvercity_oss::{DocumentOptions, TableOfContents};
+
+fn with_doc(f: impl FnOnce(&mut DocumentOptions)) -> Config {
+    let mut d = DocumentOptions::default();
+    f(&mut d);
+    Config::default().with_document(d)
+}
+
+const OUTLINE: &str = "# Alpha\n\n## Beta\n\n### Gamma\n\n#### Delta\n\n# Epsilon <b>bold</b>\n\ntext\n";
+
+#[test]
+fn a_table_of_contents_lists_headings_as_links_to_their_bookmarks() {
+    let cfg = with_doc(|d| d.table_of_contents = Some(TableOfContents::new()));
+    let b = body_with(OUTLINE, &cfg);
+    let text = visible_text(&b);
+    assert!(text.starts_with("Contents"), "{text}");
+    for entry in ["Alpha", "Beta", "Gamma", "Epsilon"] {
+        assert!(
+            text.matches(entry).count() >= 2,
+            "{entry} appears in the contents and as a heading"
+        );
+    }
+    // Level 4 is deeper than the default max_level 3: heading only.
+    assert_eq!(text.matches("Delta").count(), 1, "{text}");
+    for n in 0..5 {
+        assert!(b.contains(&format!("w:anchor=\"md_h{n}\"")) == (n != 3), "entry {n}");
+    }
+    // The contents comes first.
+    assert!(b.find("Contents").unwrap() < b.find("md_h0\"/>").unwrap_or(usize::MAX).min(b.find("Alpha").unwrap()));
+}
+
+#[test]
+fn contents_options_are_validated_and_can_drop_the_title() {
+    let none = with_doc(|d| d.table_of_contents = Some(TableOfContents::new().title("").max_level(1)));
+    let text = visible_text(&body_with(OUTLINE, &none));
+    assert!(text.starts_with("Alpha"), "{text}");
+    assert_eq!(text.matches("Beta").count(), 1, "level 2 is not listed at max_level 1");
+    let bad = with_doc(|d| d.table_of_contents = Some(TableOfContents::new().max_level(7)));
+    assert!(matches!(
+        markdown_to_docx("# x", &bad),
+        Err(silvercity_oss::CrateError::InvalidConfig(_))
+    ));
+}
+
+#[test]
+fn numbered_headings_use_word_multilevel_numbering_and_the_contents_repeats_the_numbers() {
+    let cfg = with_doc(|d| {
+        d.number_headings = true;
+        d.table_of_contents = Some(TableOfContents::new().max_level(4));
+    });
+    let docx = markdown_to_docx(OUTLINE, &cfg).unwrap();
+    let body = zip_text(&docx, "word/document.xml");
+    assert!(
+        body.matches("<w:numPr>").count() >= 5,
+        "every Markdown heading carries the numbering"
+    );
+    let numbering = zip_text(&docx, "word/numbering.xml");
+    assert!(numbering.contains("%1.%2.%3"), "{numbering}");
+    let text = visible_text(&body);
+    for label in ["1 Alpha", "1.1 Beta", "1.1.1 Gamma", "1.1.1.1 Delta", "2 Epsilon"] {
+        assert!(text.contains(label), "contents line `{label}` in {text}");
+    }
+    let plain = body_with(OUTLINE, &Config::default());
+    assert!(!plain.contains("<w:numPr>"), "off by default");
 }

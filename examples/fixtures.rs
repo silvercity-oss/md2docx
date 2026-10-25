@@ -18,14 +18,13 @@ use silvercity_oss::{convert, LossPolicy};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).unwrap_or_else(|| "target/fixtures".into());
     std::fs::create_dir_all(&dir)?;
-    let cfg = fixtures::config();
     for (stem, markdown, strict_ok) in fixtures::SOURCES {
         let policy = if *strict_ok {
             LossPolicy::Reject
         } else {
             LossPolicy::Allow
         };
-        let done = convert(markdown, &cfg.clone().with_loss_policy(policy))?;
+        let done = convert(markdown, &fixtures::config_for(stem).with_loss_policy(policy))?;
         let path = std::path::Path::new(&dir).join(format!("{stem}.docx"));
         std::fs::write(&path, &done.docx)?;
         println!("{}  ({} bytes)", path.display(), done.docx.len());

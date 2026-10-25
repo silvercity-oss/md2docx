@@ -131,7 +131,7 @@ use std::path::Path;
 
 pub use config::{
     CodeBlockLayout, CommandSpec, Config, DiagramFailure, DocumentOptions, GraphOptions, ImageAccess, Limits,
-    MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize,
+    MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize, TableOfContents,
 };
 pub use control::{CancelToken, Registration};
 pub use diagnostics::{Code, Diagnostic, LossPolicy, Report, Severity, SourceSpan, Stats};

@@ -17,6 +17,7 @@ pub const SOURCES: &[(&str, &str, bool)] = &[
     ("04-footnotes", include_str!("../fixtures/04-footnotes.md"), true),
     ("05-diagram", include_str!("../fixtures/05-diagram.md"), true),
     ("06-lossy", include_str!("../fixtures/06-lossy.md"), false),
+    ("07-contents", include_str!("../fixtures/07-contents.md"), true),
 ];
 
 fn png(width: u32, height: u32, hue: u8) -> Vec<u8> {
@@ -45,6 +46,20 @@ pub fn assets() -> AssetMap {
     a.insert("assets/architecture", png(480, 240, 30));
     a.insert("assets/chart", png(320, 200, 140));
     a
+}
+
+/// The configuration for one fixture: the common one, plus what that fixture is about.
+pub fn config_for(stem: &str) -> Config {
+    let cfg = config();
+    if stem != "07-contents" {
+        return cfg;
+    }
+    let mut doc = silvercity_oss::DocumentOptions::default();
+    doc.number_headings = true;
+    doc.table_of_contents = Some(silvercity_oss::TableOfContents::new());
+    cfg.with_document(doc)
+        .with_autolink_bare_urls(true)
+        .with_superscript_subscript(true)
 }
 
 /// The configuration the fixtures are built with: the untrusted-input default, plus the host's

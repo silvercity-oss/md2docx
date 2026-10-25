@@ -425,6 +425,49 @@ pub enum CodeBlockLayout {
     SingleParagraph,
 }
 
+/// A table of contents placed at the start of the document.
+///
+/// It is **static**: one line per heading, each a link to the heading, indented by level, with no
+/// page numbers. Word does not have to update fields, ask a question when the file opens, or
+/// disagree with another word processor about pagination, and the entries stay correct however
+/// the file is re-saved. (A field-based contents with page numbers needs Word to compute it.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TableOfContents {
+    /// Title line above the entries; empty for none (default `Contents`).
+    pub title: String,
+    /// Deepest heading level listed, 1 to 6 (default 3).
+    pub max_level: u8,
+}
+
+impl TableOfContents {
+    /// A contents titled `Contents`, listing headings down to level 3.
+    pub fn new() -> Self {
+        TableOfContents {
+            title: "Contents".into(),
+            max_level: 3,
+        }
+    }
+
+    /// Set the title line.
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    /// Set the deepest heading level listed.
+    pub fn max_level(mut self, level: u8) -> Self {
+        self.max_level = level;
+        self
+    }
+}
+
+impl Default for TableOfContents {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Look of the generated document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -451,6 +494,10 @@ pub struct DocumentOptions {
     pub code_blocks: CodeBlockLayout,
     /// Show the page number, centred in the footer (default off).
     pub page_numbers: bool,
+    /// Number headings `1`, `1.1`, `1.1.1`, ... with Word's multilevel numbering (default off).
+    pub number_headings: bool,
+    /// A static, linked table of contents at the start (default none). See [`TableOfContents`].
+    pub table_of_contents: Option<TableOfContents>,
     /// Document title for the file's properties. Falls back to `title:` in the
     /// document's front matter. At most 200 printable characters.
     pub title: Option<String>,
@@ -473,6 +520,8 @@ impl Default for DocumentOptions {
             quote_bar_color: "A6A6A6".into(),
             code_blocks: CodeBlockLayout::default(),
             page_numbers: false,
+            number_headings: false,
+            table_of_contents: None,
             title: None,
             author: None,
         }
@@ -482,6 +531,22 @@ impl Default for DocumentOptions {
 impl DocumentOptions {
     /// Check the values; the error text names the offending option.
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if let Some(toc) = &self.table_of_contents {
+            if !(1..=6).contains(&toc.max_level) {
+                return Err(format!(
+                    "table of contents max_level {} must be between 1 and 6",
+                    toc.max_level
+                ));
+            }
+            if toc.title.chars().count() > 200
+                || toc
+                    .title
+                    .chars()
+                    .any(|c| c.is_control() || !crate::safety::is_xml_char(c))
+            {
+                return Err("table of contents title must be at most 200 printable characters".into());
+            }
+        }
         let (w, h) = self.page.twips();
         if !(2880..=31680).contains(&w) || !(2880..=31680).contains(&h) {
             return Err(format!(

@@ -65,7 +65,6 @@ fn libreoffice_opens_saves_and_reopens_every_fixture() {
     };
     let work = tempfile::tempdir().unwrap();
     let profile = work.path().join("profile");
-    let cfg = fixtures::config();
     let deadline = Instant::now() + Duration::from_secs(600);
 
     for (stem, markdown, strict_ok) in fixtures::SOURCES {
@@ -75,8 +74,8 @@ fn libreoffice_opens_saves_and_reopens_every_fixture() {
         } else {
             LossPolicy::Allow
         };
-        let original =
-            convert(markdown, &cfg.clone().with_loss_policy(policy)).unwrap_or_else(|e| panic!("{stem}: {e}"));
+        let original = convert(markdown, &fixtures::config_for(stem).with_loss_policy(policy))
+            .unwrap_or_else(|e| panic!("{stem}: {e}"));
         let src_dir = work.path().join("src");
         let out_dir = work.path().join("saved");
         let again_dir = work.path().join("text");
@@ -165,6 +164,11 @@ fn libreoffice_opens_saves_and_reopens_every_fixture() {
                     document.contains("Login flow: the user submits credentials"),
                     "{stem}: the diagram's description was lost"
                 );
+            }
+            "07-contents" => {
+                assert!(text.contains("Contents") && text.contains("1 Handbook"), "{text}");
+                assert!(document.contains("w:anchor") && document.contains("<w:tbl>"));
+                assert!(zip_text(&saved_bytes, "word/_rels/document.xml.rels").contains("https://example.com/handbook"));
             }
             _ => {
                 assert!(text.contains("relative link") && text.contains("remote photo"));
