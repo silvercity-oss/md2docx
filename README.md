@@ -1,11 +1,11 @@
-# ReqMech Companion
+# silvercity-oss
 
 A pure-Rust library (plus the `md2docx` CLI) that converts Markdown into
 high-fidelity Word `.docx` files, including **LaTeX math** and **Mermaid /
 Dolphin diagrams** that `docx-rs` cannot express natively.
 
 ```rust
-use reqmech_companion::{markdown_to_docx, Config};
+use silvercity_oss::{markdown_to_docx, Config};
 
 let docx: Vec<u8> = markdown_to_docx("# Hi\n\n$$E = mc^2$$", &Config::native_math())?;
 std::fs::write("out.docx", docx)?;

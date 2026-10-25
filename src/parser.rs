@@ -218,7 +218,7 @@ struct Builder<'a> {
 }
 
 fn marker(nonce: &str, slot: usize) -> String {
-    format!("REQMECHOMML{nonce}X{slot}X")
+    format!("SILVERCITYOMML{nonce}X{slot}X")
 }
 
 /// Decode `%XX` escapes in an image path. `percent-encoding` works on bytes and

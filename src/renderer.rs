@@ -51,7 +51,7 @@ pub struct Workspace {
 impl Workspace {
     pub fn new() -> Result<Self> {
         let dir = tempfile::Builder::new()
-            .prefix("reqmech-")
+            .prefix("silvercity-")
             .tempdir()
             .map_err(|e| CrateError::io(std::env::temp_dir(), e))?;
         Ok(Workspace { dir })

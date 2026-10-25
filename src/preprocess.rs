@@ -171,7 +171,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                                 line_of(markdown, range.start)
                             ))
                         })?;
-                        let dest = format!("reqmech-omml{nonce}:{omml_count}");
+                        let dest = format!("silvercity-omml{nonce}:{omml_count}");
                         omml_count += 1;
                         (
                             dest,
@@ -222,8 +222,8 @@ mod tests {
     #[test]
     fn escaped_destinations_round_trip_through_the_parser() {
         for path in [
-            r"/tmp/reqmech-abc/graph_1.png",
-            r"C:\Users\me\AppData\Local\Temp\reqmech-.x\graph_1.png",
+            r"/tmp/silvercity-abc/graph_1.png",
+            r"C:\Users\me\AppData\Local\Temp\silvercity-.x\graph_1.png",
             r"C:\temp\.hidden\_under\(paren)\graph.png",
             "/tmp/with space/graph.png",
         ] {

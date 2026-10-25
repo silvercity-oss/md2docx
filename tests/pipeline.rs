@@ -5,7 +5,7 @@
 mod common;
 
 use common::*;
-use reqmech_companion::{markdown_to_docx, preprocess, CommandSpec, Config, CrateError, MathImageEngine};
+use silvercity_oss::{markdown_to_docx, preprocess, CommandSpec, Config, CrateError, MathImageEngine};
 
 #[test]
 fn native_omml_mode_injects_editable_equations_without_external_tools() {
@@ -29,7 +29,7 @@ fn native_omml_mode_injects_editable_equations_without_external_tools() {
     assert!(body.contains("<m:sSubSup>"));
     assert!(body.contains("α") && body.contains("≤"));
     // Placeholders are gone and surrounding text survives.
-    assert!(!body.contains("REQMECHOMML"));
+    assert!(!body.contains("SILVERCITYOMML"));
     assert!(body.contains("Inline ") && body.contains(" here.") && body.contains("Tail."));
     // The two forms: exactly one display paragraph, two equations in total.
     assert_eq!(body.matches("<m:oMathPara>").count(), 1);
@@ -53,7 +53,7 @@ fn omml_equation_inside_table_list_and_heading_survives() {
     let docx = markdown_to_docx(md, &cfg).unwrap();
     let body = zip_text(&docx, "word/document.xml");
     assert_well_formed(&body);
-    assert!(!body.contains("REQMECHOMML"));
+    assert!(!body.contains("SILVERCITYOMML"));
     assert_eq!(body.matches("<m:oMathPara>").count(), 1, "solo display cell paragraph");
     assert_eq!(
         body.matches("<m:oMath>").count(),

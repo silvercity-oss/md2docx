@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use reqmech_companion::{markdown_file_to_docx, CommandSpec, Config, MathImageEngine, MathMode as LibMathMode};
+use silvercity_oss::{markdown_file_to_docx, CommandSpec, Config, MathImageEngine, MathMode as LibMathMode};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MathMode {

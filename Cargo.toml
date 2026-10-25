@@ -1,5 +1,5 @@
 [package]
-name = "reqmech_companion"
+name = "silvercity-oss"
 version = "0.1.0"
 edition = "2021"
 description = "Convert Markdown (with LaTeX math and Mermaid/Dolphin graphs) into high-fidelity Word .docx files"
@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 
 [lib]
-name = "reqmech_companion"
+name = "silvercity_oss"
 path = "src/lib.rs"
 
 [[bin]]
