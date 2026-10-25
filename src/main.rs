@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 use silvercity_oss::{
-    markdown_file_to_docx, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine,
+    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine,
     MathMode as LibMathMode, MermaidEngine as LibMermaidEngine,
 };
 
@@ -24,6 +24,14 @@ pub enum MermaidEngine {
     Merman,
     /// `mmdc`: the official Mermaid CLI; drives a headless Chrome.
     Mmdc,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CodeBlocks {
+    /// One paragraph per source line (default).
+    Lines,
+    /// One paragraph per block, lines separated by line breaks: easy to select and copy.
+    Single,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +139,14 @@ pub struct Args {
         help = "Compression of the .docx: 0 stores it uncompressed, 1 is fastest, 9 smallest"
     )]
     pub compression_level: u32,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = CodeBlocks::Lines,
+        help = "Code block layout: one paragraph per line, or the whole block as one paragraph (triple-click selects it)"
+    )]
+    pub code_blocks: CodeBlocks,
 }
 
 /// Split a command template with POSIX shell rules (via `shlex`) and check it
@@ -183,6 +199,10 @@ fn config(args: &Args) -> Config {
         cfg
     };
     cfg.compression_level = args.compression_level;
+    cfg.document.code_blocks = match args.code_blocks {
+        CodeBlocks::Lines => CodeBlockLayout::LinePerParagraph,
+        CodeBlocks::Single => CodeBlockLayout::SingleParagraph,
+    };
     if let Some(seconds) = args.timeout {
         cfg.tool_timeout = Duration::from_secs(seconds);
     }

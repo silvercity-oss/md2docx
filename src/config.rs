@@ -298,6 +298,21 @@ impl PageSize {
     }
 }
 
+/// How a code block (fenced, indented or HTML `<pre>`) is laid out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CodeBlockLayout {
+    /// One shaded paragraph per source line. Pasted into a plain-text editor,
+    /// each line becomes a line.
+    #[default]
+    LinePerParagraph,
+    /// The whole block is one shaded paragraph, lines separated by line breaks.
+    /// Triple-click selects the entire block, which makes it easy to copy; the
+    /// text is the raw source with spaces and tabs kept. Word puts a plain
+    /// newline on the clipboard for each line break, but some applications
+    /// show it as a vertical-tab character: try it with your readers' tools.
+    SingleParagraph,
+}
+
 /// Look of the generated document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -320,6 +335,8 @@ pub struct DocumentOptions {
     pub link_color: String,
     /// Colour of the bar beside block quotes, six hex digits (default `A6A6A6`).
     pub quote_bar_color: String,
+    /// Layout of code blocks (default one paragraph per line).
+    pub code_blocks: CodeBlockLayout,
 }
 
 impl Default for DocumentOptions {
@@ -334,6 +351,7 @@ impl Default for DocumentOptions {
             code_background: "F2F2F2".into(),
             link_color: "0563C1".into(),
             quote_bar_color: "A6A6A6".into(),
+            code_blocks: CodeBlockLayout::default(),
         }
     }
 }

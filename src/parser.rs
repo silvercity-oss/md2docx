@@ -19,7 +19,7 @@ use pulldown_cmark::{
     Alignment, BlockQuoteKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd, TextMergeStream,
 };
 
-use crate::config::{Config, ImageAccess, MathMode};
+use crate::config::{CodeBlockLayout, Config, ImageAccess, MathMode};
 use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
 use crate::html::{self, Piece};
@@ -703,7 +703,7 @@ impl<'a> Builder<'a> {
             (_, q) if q > 0 => Some(360 * q as i32),
             _ => None,
         };
-        for line in body.split('\n') {
+        let new_paragraph = || {
             let mut p = Paragraph::new().style("CodeBlock");
             p.property = p
                 .property
@@ -711,9 +711,11 @@ impl<'a> Builder<'a> {
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
-            // A raw tab inside `<w:t>` is not reliably shown by Word; use a real tab element.
+            p
+        };
+        // A raw tab inside `<w:t>` is not reliably shown by Word; use a real tab element.
+        let add_line = |mut run: Run, line: &str| {
             let line = sanitize_xml_chars(line.trim_end_matches('\r'));
-            let mut run = Run::new();
             for (i, part) in line.split('\t').enumerate() {
                 if i > 0 {
                     run = run.add_tab();
@@ -722,8 +724,26 @@ impl<'a> Builder<'a> {
                     run = run.add_text(part);
                 }
             }
-            p = p.add_run(run);
-            self.emit(p);
+            run
+        };
+        match self.cfg.document.code_blocks {
+            CodeBlockLayout::LinePerParagraph => {
+                for line in body.split('\n') {
+                    let p = new_paragraph().add_run(add_line(Run::new(), line));
+                    self.emit(p);
+                }
+            }
+            CodeBlockLayout::SingleParagraph => {
+                let mut run = Run::new();
+                for (i, line) in body.split('\n').enumerate() {
+                    if i > 0 {
+                        run = run.add_break(BreakType::TextWrapping);
+                    }
+                    run = add_line(run, line);
+                }
+                let p = new_paragraph().add_run(run);
+                self.emit(p);
+            }
         }
     }
 

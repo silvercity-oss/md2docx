@@ -44,7 +44,9 @@ First release.
 - `Config::with_html_tag(name, TagStyle)`: style custom or built-in HTML tags
   (inline formatting, colour, highlight, or a block with fill, bar, indent, label).
   Attributes in the document are ignored. Tag names may contain `-`.
-- `DocumentOptions::{code_background, link_color, quote_bar_color}`.
+- `DocumentOptions::{code_background, link_color, quote_bar_color}` and
+  `DocumentOptions::code_blocks` (`CodeBlockLayout::SingleParagraph`: a code block as
+  one paragraph with line breaks, easy to select and copy; `md2docx --code-blocks single`).
 - `Config::compression_level` / `with_compression_level` / `md2docx --compression-level`
   (0 to 9, default **6**): docx-rs stores archives uncompressed, so the finished
   file is now rewritten with deflate (about 10x smaller; pictures stay stored).

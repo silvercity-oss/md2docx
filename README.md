@@ -244,7 +244,7 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 | Block quotes (nested), GitHub alerts `> [!NOTE]` | Indented with a bar; alerts get a bold label line |
 | Bullet / ordered / nested / task lists, start numbers | Native Word numbering (each ordered list restarts); `☐`/`☑` for tasks |
 | Tables (alignment, inline formatting) | Word tables |
-| Fenced, tilde and indented code | One monospace shaded paragraph per line, spaces and tabs kept, indented inside lists and quotes. The language after the fence is not shown and there is no syntax highlighting (`mermaid`, `dolphin` and math fences are handled as described above) |
+| Fenced, tilde and indented code | By default one monospace shaded paragraph per line (`DocumentOptions::code_blocks`: `CodeBlockLayout::SingleParagraph` makes the whole block one paragraph with line breaks, so a triple-click selects it for copying; `--code-blocks single`), spaces and tabs kept, indented inside lists and quotes. The language after the fence is not shown and there is no syntax highlighting (`mermaid`, `dolphin` and math fences are handled as described above) |
 | Thematic breaks | A rule |
 | Footnotes `[^1]` | Native Word footnotes (unknown labels stay literal) |
 | Definition lists | Bold term, indented definitions |
@@ -302,6 +302,7 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
 | `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
 | `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
+| `--code-blocks <lines\|single>` | Code block layout: a paragraph per line (default) or one paragraph per block, easy to select and copy |
 | `--compression-level <0-9>` | Deflate level of the `.docx`: 0 stores it, 9 is smallest (default 6) |
 
 Note the CLI defaults to `native` math while the library's `Config::default()`
@@ -392,6 +393,8 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
   pulldown-cmark upgrade cannot add one silently); `tests/pathological.rs`: deep
   nesting, wide/tall tables, huge lines, delimiter runs, runaway HTML under a
   time budget.
+* `tests/code_blocks.rs`: both code layouts give back exactly the source text
+  (spaces, tabs, blank lines, markup characters, Unicode), indentation, huge blocks.
 * `tests/extensions.rs`: fence renderers, tag styles, document colours, the
   output limit.
 * `tests/library_api.rs`: the public API as a downstream crate sees it: page/font

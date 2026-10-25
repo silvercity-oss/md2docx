@@ -311,3 +311,34 @@ fn compression_level_flag() {
     let (bad, _) = run(&["--compression-level", "10"]);
     assert_eq!(bad.status.code(), Some(2));
 }
+
+#[test]
+fn code_blocks_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("c.md");
+    std::fs::write(&input, "```\none\ntwo\nthree\n```\n").unwrap();
+    let docx_for = |extra: &[&str]| {
+        let out = dir.path().join(format!("c{}.docx", extra.join("")));
+        let run = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .arg("-o")
+            .arg(&out)
+            .args(extra)
+            .output()
+            .unwrap();
+        (run, out)
+    };
+    let paragraphs = |path: &Path| {
+        zip_text(&std::fs::read(path).unwrap(), "word/document.xml")
+            .matches("w:val=\"CodeBlock\"")
+            .count()
+    };
+    let (run, out) = docx_for(&[]);
+    assert!(run.status.success());
+    assert_eq!(paragraphs(&out), 3);
+    let (run, out) = docx_for(&["--code-blocks", "single"]);
+    assert!(run.status.success());
+    assert_eq!(paragraphs(&out), 1);
+    let (run, _) = docx_for(&["--code-blocks", "wat"]);
+    assert_eq!(run.status.code(), Some(2));
+}
