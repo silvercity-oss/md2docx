@@ -265,6 +265,12 @@ struct FootnoteDef<'a> {
     range: Range<usize>,
 }
 
+/// A footnote definition that is still being read.
+struct OpenDefinition<'a> {
+    label: String,
+    def: FootnoteDef<'a>,
+}
+
 /// `Parser` events with their source ranges and adjacent text merged (escapes, entities and stray
 /// delimiters become one run, not one each), like `pulldown_cmark::TextMergeStream` does without
 /// ranges.
@@ -621,6 +627,15 @@ fn fit_to_page(g: &Geometry, mut we: u128, mut he: u128) -> Option<(u32, u32)> {
     }
     // Never a zero-sized drawing; both values are now bounded by the page.
     Some((u32::try_from(we.max(1)).ok()?, u32::try_from(he.max(1)).ok()?))
+}
+
+/// How a picture is drawn: its resolution, a requested width, and its accessible description.
+struct Placement<'t> {
+    dpi: u32,
+    width: Option<ImgWidth>,
+    alt: &'t str,
+    title: &'t str,
+    kind: AssetKind,
 }
 
 /// A destination shortened for a message (they can be long, and they are untrusted text).
@@ -1183,16 +1198,14 @@ impl<'a> Builder<'a> {
 
     /// Decode and normalise `bytes` and embed them, or show `alt` when they are not an image
     /// this crate embeds. Every image limit is enforced in [`ImagePipeline::normalize`].
-    fn embed(
-        &mut self,
-        bytes: &[u8],
-        origin: &str,
-        dpi: u32,
-        width: Option<ImgWidth>,
-        alt: &str,
-        title: &str,
-        kind: AssetKind,
-    ) -> Result<Option<Unsupported>> {
+    fn embed(&mut self, bytes: &[u8], origin: &str, how: Placement<'_>) -> Result<Option<Unsupported>> {
+        let Placement {
+            dpi,
+            width,
+            alt,
+            title,
+            kind,
+        } = how;
         match self.images.normalize(&self.cfg.limits, &self.pre.ctl, bytes, origin)? {
             Outcome::Picture(pic) => {
                 let pic = place_picture(&self.geo, &pic, dpi, origin, width, alt, title)?;
@@ -1240,7 +1253,17 @@ impl<'a> Builder<'a> {
         if !self.in_footnote {
             if let Some(bytes) = self.resolve_asset(dest)? {
                 let origin = format!("asset `{}`", sanitize_xml_chars(dest));
-                if let Some(why) = self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
+                if let Some(why) = self.embed(
+                    &bytes,
+                    &origin,
+                    Placement {
+                        dpi: 96,
+                        width: ctx.width,
+                        alt: &ctx.alt,
+                        title: &ctx.title,
+                        kind: AssetKind::Graph,
+                    },
+                )? {
                     self.note(
                         Code::ImageUnsupported,
                         format!("image `{}` was not embedded: {}", short(dest), why.describe()),
@@ -1281,7 +1304,17 @@ impl<'a> Builder<'a> {
             self.cfg.limits.max_image_bytes,
         )?;
         let origin = path.display().to_string();
-        if let Some(why) = self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
+        if let Some(why) = self.embed(
+            &bytes,
+            &origin,
+            Placement {
+                dpi: 96,
+                width: ctx.width,
+                alt: &ctx.alt,
+                title: &ctx.title,
+                kind: AssetKind::Graph,
+            },
+        )? {
             // A format we cannot embed (SVG, WebP, corrupt data): keep the alt text.
             self.note(
                 Code::ImageUnsupported,
@@ -1340,7 +1373,14 @@ impl<'a> Builder<'a> {
             }
         };
         let title = asset.title.clone().unwrap_or_default();
-        match self.embed(&bytes, &origin, dpi, None, &alt, &title, asset.kind)? {
+        let how = Placement {
+            dpi,
+            width: None,
+            alt: &alt,
+            title: &title,
+            kind: asset.kind,
+        };
+        match self.embed(&bytes, &origin, how)? {
             None => Ok(()),
             Some(_) => Err(CrateError::ExternalToolFailed {
                 program: "renderer".into(),
@@ -2352,18 +2392,26 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
 /// Footnote bodies by label (the first definition of a label wins).
 fn collect_footnotes(markdown: &str) -> HashMap<String, FootnoteDef<'_>> {
     let mut map = HashMap::new();
-    let mut open: Option<(String, Vec<(Event<'_>, Range<usize>)>, Range<usize>)> = None;
+    let mut open: Option<OpenDefinition<'_>> = None;
     for (ev, range) in merged_events(markdown) {
         match ev {
-            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_lowercase(), Vec::new(), range)),
+            Event::Start(Tag::FootnoteDefinition(label)) => {
+                open = Some(OpenDefinition {
+                    label: label.to_lowercase(),
+                    def: FootnoteDef {
+                        events: Vec::new(),
+                        range,
+                    },
+                });
+            }
             Event::End(TagEnd::FootnoteDefinition) => {
-                if let Some((label, events, whole)) = open.take() {
-                    map.entry(label).or_insert(FootnoteDef { events, range: whole });
+                if let Some(OpenDefinition { label, def }) = open.take() {
+                    map.entry(label).or_insert(def);
                 }
             }
             other => {
-                if let Some((_, events, _)) = open.as_mut() {
-                    events.push((other, range));
+                if let Some(o) = open.as_mut() {
+                    o.def.events.push((other, range));
                 }
             }
         }
@@ -2420,7 +2468,7 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
         }
         if !in_definition {
             events += 1;
-            if events % 256 == 0 {
+            if events.is_multiple_of(256) {
                 pre.ctl.check()?;
             }
             b.at = range;

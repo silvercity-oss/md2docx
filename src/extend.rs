@@ -43,7 +43,11 @@ pub type FenceError = Box<dyn std::error::Error + Send + Sync>;
 ///   deadline. A host that needs a *hard* deadline must run the whole conversion in a worker it
 ///   can terminate from outside.
 /// * A panic is caught and reported as an error; an `Err` aborts the conversion
-///   with [`CrateError::ExternalToolFailed`](crate::CrateError).
+///   with [`CrateError::ExternalToolFailed`](crate::CrateError) (or, under
+///   [`DiagramFailure::KeepAsCode`](crate::DiagramFailure), keeps the block as code). To report
+///   that the *document* exceeded a limit, return a boxed
+///   [`CrateError::LimitExceeded`](crate::CrateError): it is passed through unchanged and never
+///   softened.
 /// * The PNG is kept in memory; nothing is written to the scratch directory.
 /// * It is called at most once per distinct block per conversion, on the
 ///   calling thread, and must be `Send + Sync` because a [`Config`](crate::Config)
@@ -69,6 +73,7 @@ pub struct RenderContext {
     deadline: Option<std::time::Instant>,
     max_image_bytes: u64,
     max_image_pixels: u64,
+    max_image_dimension: u32,
 }
 
 impl RenderContext {
@@ -78,6 +83,7 @@ impl RenderContext {
             deadline: ctl.deadline(),
             max_image_bytes: cfg.limits.max_image_bytes,
             max_image_pixels: cfg.limits.max_image_pixels,
+            max_image_dimension: cfg.limits.max_image_dimension,
         }
     }
 
@@ -89,12 +95,20 @@ impl RenderContext {
             deadline: None,
             max_image_bytes: u64::MAX,
             max_image_pixels: u64::MAX,
+            max_image_dimension: u32::MAX,
         }
     }
 
     /// True once the host cancelled the conversion.
     pub fn is_cancelled(&self) -> bool {
         self.cancel.as_ref().is_some_and(crate::CancelToken::is_cancelled)
+    }
+
+    /// The conversion's [`CancelToken`](crate::CancelToken), if the host set one. A renderer that wraps a
+    /// library with its own cancellation handle can bridge the two with
+    /// [`CancelToken::register`](crate::CancelToken::register).
+    pub fn cancel_token(&self) -> Option<&crate::CancelToken> {
+        self.cancel.as_ref()
     }
 
     /// When the conversion's time limit ends, if it has one.
@@ -128,6 +142,11 @@ impl RenderContext {
     /// The most pixels the returned image may have ([`Limits::max_image_pixels`](crate::Limits)).
     pub fn max_image_pixels(&self) -> u64 {
         self.max_image_pixels
+    }
+
+    /// The longest side the returned image may have ([`Limits::max_image_dimension`](crate::Limits)).
+    pub fn max_image_dimension(&self) -> u32 {
+        self.max_image_dimension
     }
 }
 

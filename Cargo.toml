@@ -24,6 +24,12 @@ required-features = ["cli"]
 # `default-features = false` to avoid compiling clap and shlex.
 default = ["cli"]
 cli = ["dep:clap", "dep:shlex"]
+# Mermaid diagrams rendered *inside the process* by `merman` (a pure-Rust Mermaid): no child
+# process, no browser, no JavaScript, nothing written to disk. Needs Rust 1.95 (merman's MSRV);
+# the rest of the crate still builds with 1.88. The tested merman version is pinned exactly.
+mermaid = ["dep:merman"]
+# Every diagram family merman has, not just the common ones `mermaid` enables.
+mermaid-all-diagrams = ["mermaid", "merman/all-diagrams"]
 
 [dependencies]
 smallvec = "1.15"
@@ -39,6 +45,27 @@ shlex = { version = "2", optional = true }
 # Reads and writes the .docx archive (also used by the vendored writer in src/docx).
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
+[dependencies.merman]
+version = "=0.9.2"
+optional = true
+default-features = false
+# PNG export and the common diagram families only: no ELK (EPL-2.0), no math labels, no system
+# font queries, no analysis/editor/ASCII/PDF/JPEG code.
+features = [
+    "png",
+    "diagram-flowchart",
+    "diagram-sequence",
+    "diagram-class",
+    "diagram-state",
+    "diagram-er",
+    "diagram-pie",
+    "diagram-gantt",
+    "diagram-journey",
+    "diagram-mindmap",
+    "diagram-timeline",
+    "diagram-git-graph",
+]
+
 [dev-dependencies]
 
 [target."cfg(unix)".dependencies]
@@ -49,4 +76,15 @@ rustix = { version = "1", features = ["process"] }
 [profile.dev.package.miniz_oxide]
 opt-level = 3
 [profile.dev.package.zlib-rs]
+opt-level = 3
+# Diagram layout and rasterising are the same story when the `mermaid` feature is on.
+[profile.dev.package.merman-render]
+opt-level = 3
+[profile.dev.package.merman-export]
+opt-level = 3
+[profile.dev.package.resvg]
+opt-level = 3
+[profile.dev.package.tiny-skia]
+opt-level = 3
+[profile.dev.package.usvg]
 opt-level = 3

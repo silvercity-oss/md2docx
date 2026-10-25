@@ -78,6 +78,7 @@ jobs:
       - run: cargo audit
 
   # Oldest toolchain we promise to support (Cargo.toml `rust-version`; set by our dependencies).
+  # The optional `mermaid` feature needs a newer one (merman's own MSRV): see the `mermaid` job.
   msrv:
     name: MSRV 1.88
     runs-on: ubuntu-latest
@@ -86,6 +87,31 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets --locked
+      - run: cargo check --no-default-features --locked
+
+  # The in-process Mermaid renderer (`mermaid` feature, merman pinned exactly). It needs Rust 1.95,
+  # so the minimum is tested explicitly; stable is tested on Windows too (no process is spawned,
+  # which is the point of the feature).
+  mermaid:
+    name: in-process Mermaid (${{ matrix.toolchain }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, toolchain: "1.95.0" }
+          - { os: ubuntu-latest, toolchain: stable }
+          - { os: windows-latest, toolchain: stable }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --no-default-features --features mermaid --all-targets --locked -- -D warnings
+      - run: cargo test --features mermaid --locked --no-fail-fast
+      - run: cargo test --doc --features mermaid --locked
 
   # What `cargo publish` would upload must build on its own, and the docs must be warning-free.
   package:
@@ -97,6 +123,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo package --locked
       - run: cargo doc --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --no-deps --features mermaid --locked
         env:
           RUSTDOCFLAGS: -D warnings
 

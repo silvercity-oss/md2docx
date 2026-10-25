@@ -1,6 +1,8 @@
 //! Helpers shared by the integration test files.
 #![allow(dead_code)]
 
+pub mod fixtures;
+
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 

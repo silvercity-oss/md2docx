@@ -91,6 +91,8 @@ mod highlight;
 mod html;
 mod images;
 mod lexers;
+#[cfg(feature = "mermaid")]
+pub mod mermaid;
 pub mod omml;
 mod pack;
 mod parser;
@@ -114,7 +116,7 @@ pub use config::{
     CodeBlockLayout, CommandSpec, Config, DiagramFailure, DocumentOptions, GraphOptions, ImageAccess, Limits,
     MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize,
 };
-pub use control::CancelToken;
+pub use control::{CancelToken, Registration};
 pub use diagnostics::{Code, Diagnostic, LossPolicy, Report, Severity, SourceSpan, Stats};
 pub use error::{CrateError, Result};
 pub use extend::{

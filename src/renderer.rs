@@ -522,7 +522,12 @@ pub fn render_custom(ctl: &Ctl, lang: &str, source: &str, cfg: &Config) -> Resul
     };
     let bytes = match result {
         Ok(Ok(bytes)) => bytes,
-        Ok(Err(e)) => return Err(failed(e.to_string())),
+        // A renderer reports "the document is over a limit" by returning that error itself.
+        Ok(Err(e)) => match e.downcast::<CrateError>() {
+            Ok(inner) if matches!(*inner, CrateError::LimitExceeded(_)) => return Err(*inner),
+            Ok(inner) => return Err(failed(inner.to_string())),
+            Err(other) => return Err(failed(other.to_string())),
+        },
         Err(_) => return Err(failed("the renderer panicked".into())),
     };
     if bytes.len() as u64 > cfg.limits.max_image_bytes {

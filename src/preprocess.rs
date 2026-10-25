@@ -120,6 +120,9 @@ fn fence_attrs(info: &str) -> FenceAttrs {
     attrs
 }
 
+/// A fence language and its source text.
+type RenderKey = (String, String);
+
 /// Who renders a fenced block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Fence {
@@ -441,7 +444,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
 
     let mut byte_assets = 0usize;
     // An identical block is rendered once: renderer output is held in memory, keyed by what asked.
-    let mut rendered_once: HashMap<(String, String), (String, Arc<[u8]>)> = HashMap::new();
+    let mut rendered_once: HashMap<RenderKey, (String, Arc<[u8]>)> = HashMap::new();
     for (range, item) in found {
         ctl.check()?;
         let is_fence = matches!(item, Found::Graph(..));

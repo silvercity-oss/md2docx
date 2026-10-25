@@ -825,13 +825,15 @@ impl Config {
     /// **Do not use this for input from other people.** It runs external programs on document
     /// content and reads local files.
     pub fn trusted() -> Self {
-        let mut math = MathOptions::default();
-        math.mode = MathMode::ImageFallback;
-        let mut graphs = GraphOptions::default();
-        graphs.enabled = true;
         Config {
-            math,
-            graphs,
+            math: MathOptions {
+                mode: MathMode::ImageFallback,
+                ..MathOptions::default()
+            },
+            graphs: GraphOptions {
+                enabled: true,
+                ..GraphOptions::default()
+            },
             document: DocumentOptions::default(),
             base_dir: None,
             tool_timeout: Duration::from_secs(60),

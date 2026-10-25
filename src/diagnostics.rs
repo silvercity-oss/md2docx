@@ -205,7 +205,7 @@ pub struct Stats {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Report {
-    /// The findings, in document order within each stage.
+    /// The findings, in document order (those without a place first).
     pub diagnostics: Vec<Diagnostic>,
     /// What was produced.
     pub stats: Stats,
@@ -404,6 +404,8 @@ pub(crate) fn finish(collector: &Collector, map: &OffsetMap, original: &str) -> 
             }
         })
         .collect();
+    // Document order; findings without a place (and equal places) keep the order they were made in.
+    out.sort_by_key(|d| d.span.as_ref().map_or((0, 0), |s| (s.start, s.end)));
     if collector.suppressed() > 0 {
         out.push(Diagnostic {
             code: Code::ReportTruncated,
