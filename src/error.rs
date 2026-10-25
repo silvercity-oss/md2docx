@@ -10,7 +10,7 @@ pub enum CrateError {
     /// A required external program (e.g. `mmdc`, `latex`, `dvipng`) is not on
     /// `PATH` (or the configured path does not exist).
     #[error("external CLI `{program}` was not found{}", install_hint(program))]
-    MissingExternalCLI {
+    MissingExternalCli {
         /// The program that could not be started, as configured.
         program: String,
     },
@@ -35,7 +35,7 @@ pub enum CrateError {
 
     /// The Word document could not be assembled or packed.
     #[error("docx generation failed: {0}")]
-    DocxGenerationError(String),
+    DocxGeneration(String),
 
     /// An external renderer started but failed, timed out, or produced no
     /// usable image.
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn missing_tool_messages_say_how_to_fix_it() {
-        let msg = |p: &str| CrateError::MissingExternalCLI { program: p.into() }.to_string();
+        let msg = |p: &str| CrateError::MissingExternalCli { program: p.into() }.to_string();
         assert!(msg("merman-cli").contains("cargo install merman-cli") && msg("merman-cli").contains("mmdc"));
         assert!(msg("/opt/bin/mmdc").contains("npm install -g @mermaid-js/mermaid-cli"));
         assert!(msg("latex").contains("native math"));

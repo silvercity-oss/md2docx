@@ -57,7 +57,7 @@ fn lo_convert(bin: &Path, profile: &Path, input: &Path, format: &str, outdir: &P
 fn libreoffice_opens_saves_and_reopens_every_fixture() {
     let Some(bin) = soffice() else {
         assert!(
-            std::env::var_os("REQUIRE_SOFFICE").is_none(),
+            std::env::var("REQUIRE_SOFFICE").map_or(true, |v| v.is_empty()),
             "REQUIRE_SOFFICE is set but soffice is missing"
         );
         eprintln!("soffice not installed; skipping");

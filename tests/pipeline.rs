@@ -81,8 +81,8 @@ fn missing_cli_is_reported_by_name() {
     let mut cfg = Config::trusted();
     cfg.graphs.mermaid.program = "definitely-not-installed-mmdc".into();
     match markdown_to_docx("```mermaid\ngraph TD; A-->B\n```\n", &cfg) {
-        Err(CrateError::MissingExternalCLI { program }) => assert_eq!(program, "definitely-not-installed-mmdc"),
-        other => panic!("expected MissingExternalCLI, got {other:?}"),
+        Err(CrateError::MissingExternalCli { program }) => assert_eq!(program, "definitely-not-installed-mmdc"),
+        other => panic!("expected MissingExternalCli, got {other:?}"),
     }
     let mut cfg = Config::trusted();
     cfg.math.engine = MathImageEngine::LatexDvipng {
@@ -91,7 +91,7 @@ fn missing_cli_is_reported_by_name() {
     };
     assert!(matches!(
         markdown_to_docx("$x$", &cfg),
-        Err(CrateError::MissingExternalCLI { program }) if program == "no-such-latex"
+        Err(CrateError::MissingExternalCli { program }) if program == "no-such-latex"
     ));
 }
 
@@ -175,10 +175,14 @@ fn local_images_are_embedded_relative_to_base_dir() {
     assert_eq!(media_count(&docx), 1);
     assert!(zip_text(&docx, "word/document.xml").contains("[remote]"));
 
-    match markdown_to_docx("![x](missing.png)", &cfg) {
-        Err(CrateError::Io { path, .. }) => assert!(path.ends_with("missing.png")),
-        other => panic!("expected Io error, got {other:?}"),
-    }
+    // A missing file costs one picture, not the document, and the finding names no host path.
+    let r = silvercity_oss::convert("![x](missing.png)", &cfg).unwrap();
+    assert!(r.diagnostics.iter().any(|d| d.code.as_str() == "image.unreadable"));
+    assert!(r
+        .diagnostics
+        .iter()
+        .all(|d| !d.message.contains(&*fx.dir.path().to_string_lossy())));
+    assert!(zip_text(&r.docx, "word/document.xml").contains("[x]"));
 }
 
 #[test]

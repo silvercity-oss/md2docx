@@ -263,6 +263,20 @@ pub(crate) fn front_matter_meta(md: &str) -> (Option<String>, Option<String>) {
     (title, author)
 }
 
+/// Replace every `\r` that is not followed by `\n` with `\n`.
+fn lone_cr_to_newline(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, str> {
+    let bytes = text.as_bytes();
+    let lone = |i: usize| bytes[i] == b'\r' && bytes.get(i + 1) != Some(&b'\n');
+    if !(0..bytes.len()).any(lone) {
+        return text;
+    }
+    let fixed: String = text
+        .char_indices()
+        .map(|(i, c)| if c == '\r' && lone(i) { '\n' } else { c })
+        .collect();
+    std::borrow::Cow::Owned(fixed)
+}
+
 /// Run Stage 1 over `markdown`.
 pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     preprocess_with(markdown, cfg, &Ctl::new(cfg))
@@ -300,6 +314,9 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
             first.map_or(Loc::None, Loc::Original),
         );
     }
+    // A carriage return alone ends a line in CommonMark, but the parser does not treat it so
+    // (a fence would swallow the next line); `\n` has the same length, so no position moves.
+    let sanitized = lone_cr_to_newline(sanitized);
     let meta = front_matter_meta(&sanitized);
     let (blanked, front) = blank_front_matter(&sanitized);
     if let Some(edit) = front {
@@ -437,7 +454,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
     let scratch = || {
         workspace
             .as_ref()
-            .ok_or_else(|| CrateError::DocxGenerationError("internal error: no scratch directory".into()))
+            .ok_or_else(|| CrateError::DocxGeneration("internal error: no scratch directory".into()))
     };
     let nonce = asset_stem("", &[markdown.as_bytes()]);
     let mut assets = HashMap::new();
@@ -473,7 +490,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                 let (dest, source_of) = match rendered {
                     Ok(done) => done,
                     // The block stays what it was written as: an ordinary code block.
-                    Err(e @ (CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCLI { .. }))
+                    Err(e @ (CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCli { .. }))
                         if cfg.graphs.on_failure == DiagramFailure::KeepAsCode =>
                     {
                         diags.push(

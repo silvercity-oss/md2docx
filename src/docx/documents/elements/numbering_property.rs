@@ -29,8 +29,8 @@ impl BuildXML for NumberingProperty {
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         XMLBuilder::from(stream)
             .open_numbering_property()?
-            .add_optional_child(&self.id)?
             .add_optional_child(&self.level)?
+            .add_optional_child(&self.id)?
             .close()?
             .into_inner()
     }

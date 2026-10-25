@@ -81,7 +81,7 @@ match convert(&markdown, &strict) {
 }
 ```
 
-`LossPolicy::Allow` (the default, and the behaviour of every earlier version) returns the
+`LossPolicy::Allow` (the default) returns the
 degraded document and still reports the findings through `convert`; the byte-returning
 functions then return success without them, so choose the policy explicitly. `md2docx --strict`
 does the same on the command line, printing `file:line:column: warning[code]: message`.
@@ -171,8 +171,8 @@ exposing the internal model would freeze it as public API.
   yields the same parts apart from the document's created/modified timestamps. No state
   leaks between conversions in a long-lived process.
 * **Errors** are `CrateError` (`#[non_exhaustive]`, `std::error::Error + Send +
-  Sync`): `MissingExternalCLI`, `ExternalToolFailed`, `InvalidMarkdown`,
-  `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGenerationError`,
+  Sync`): `MissingExternalCli`, `ExternalToolFailed`, `InvalidMarkdown`,
+  `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGeneration`,
   `Io`. The crate is `#![forbid(unsafe_code)]` and is tested to return errors, not panic, on hostile input (random, spec-corpus and pathological runs); a panic in a `FenceRenderer` you register is caught, though the default panic hook still prints it and `panic = "abort"` builds would still abort.
 * **Dependencies.** Library-only builds compile 80 crates (94 with the CLI).
   External tools (TeX, merman-cli, mmdc) are programs you install, never linked.
@@ -452,7 +452,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | LaTeX that reads/writes host files or runs programs | Native mode never starts TeX; image mode has the layers above |
 | Deeply nested formulas (stack overflow aborts the whole process) | Nesting limit of 128 levels in the OMML parser, plus a no-progress guard. Found by fuzzing: an infinite loop in `\sqrt[...]` |
 | `[x](javascript:...)`, `file:`, UNC `\\host\share`, `ms-excel:` and other handler links | Only `http`, `https`, `mailto` become hyperlinks (configurable via `allowed_link_schemes`); the link text is kept. Whitespace/control tricks like `java<TAB>script:` are normalised first |
-| `![x](../../secret.png)`, absolute paths, symlinks out of the tree | `ImageAccess::BaseDir` (default) resolves symlinks and refuses anything outside the base directory; `None` reads nothing; `Any` is opt-in |
+| `![x](../../secret.png)`, absolute paths, symlinks out of the tree | `ImageAccess::BaseDir` (the `trusted()` preset; `Config::default()` uses `None`) resolves symlinks and refuses anything outside the base directory; `None` reads nothing; `Any` is opt-in |
 | `![x](/dev/zero)`, FIFOs, devices | Files are inspected before opening and must be regular, size-limited files |
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
@@ -480,6 +480,10 @@ fences left as code (no browser), no local files, smaller limits.
   that does not return, reap processes after the worker is SIGKILLed, or stop a vulnerability in
   a library it links. Run hostile input in a worker with a memory limit, no network and an
   external supervisor ([docs/embedding.md](docs/embedding.md)).
+* **Pictures are re-encoded as PNG.** Every embedded image is decoded and written again, which
+  keeps the file clean and the budgets honest but makes photographs several times larger, and a
+  camera's EXIF rotation is not applied. Equations that Word's linear format cannot hold
+  (`\begin{CD}` and other unsupported environments) are an error, not a degraded formula.
 * **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB
   input to a few hundred MB while building; set `Limits::max_elements` lower, and
   run conversions in a memory-limited worker, if that matters for your service.

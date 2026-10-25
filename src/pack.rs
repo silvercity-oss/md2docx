@@ -8,10 +8,10 @@ use crate::error::{CrateError, Result};
 use crate::safety::LimitedWriter;
 
 fn fail(e: impl std::fmt::Display) -> CrateError {
-    CrateError::DocxGenerationError(e.to_string())
+    CrateError::DocxGeneration(e.to_string())
 }
 
-/// Total size of the parts docx-rs built, before any compression.
+/// Total size of the parts the writer built, before any compression.
 pub(crate) fn uncompressed_size(parts: &XMLDocx) -> u64 {
     let media: usize = parts.media.iter().map(|(_, bytes)| bytes.len()).sum::<usize>()
         + parts.extra_parts.iter().map(|(_, bytes)| bytes.len()).sum::<usize>();

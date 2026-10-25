@@ -115,36 +115,37 @@ impl BuildXML for ParagraphProperty {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
+        // Children in the order the schema's `CT_PPr` sequence requires.
         XMLBuilder::from(stream)
             .open_paragraph_property()?
-            .add_child(&self.run_property)?
             .add_optional_child(&self.style)?
-            .add_optional_child(&self.numbering_property)?
-            .add_optional_child(&self.frame_property)?
-            .add_optional_child(&self.alignment)?
-            .add_optional_child(&self.indent)?
-            .add_optional_child(&self.line_spacing)?
-            .add_optional_child(&self.outline_lvl)?
-            .add_optional_child(&self.paragraph_property_change)?
-            .add_optional_child(&self.borders)?
-            .add_optional_child(&self.shading)?
-            .add_optional_child(&self.text_alignment)?
-            .add_optional_child(&self.adjust_right_ind)?
-            .apply_opt(self.snap_to_grid, |v, b| b.snap_to_grid(v))?
-            .apply_opt(self.contextual_spacing, |v, b| b.contextual_spacing(v))?
             .apply_if(self.keep_next, |b| b.keep_next())?
             .apply_if(self.keep_lines, |b| b.keep_lines())?
             .apply_if(self.page_break_before, |b| b.page_break_before())?
-            .apply_if(self.bidi, |b| b.bidi())?
+            .add_optional_child(&self.frame_property)?
             .apply_opt(self.widow_control, |flag, b| {
                 b.widow_control(if flag { "1" } else { "0" })
             })?
+            .add_optional_child(&self.numbering_property)?
+            .add_optional_child(&self.borders)?
+            .add_optional_child(&self.shading)?
             .apply_if(!self.tabs.is_empty(), |b| {
                 b.open_tabs()?
                     .apply_each(&self.tabs, |tab, b| b.tab(tab.val, tab.leader, tab.pos))?
                     .close()
             })?
+            .apply_if(self.bidi, |b| b.bidi())?
+            .add_optional_child(&self.adjust_right_ind)?
+            .apply_opt(self.snap_to_grid, |v, b| b.snap_to_grid(v))?
+            .add_optional_child(&self.line_spacing)?
+            .add_optional_child(&self.indent)?
+            .apply_opt(self.contextual_spacing, |v, b| b.contextual_spacing(v))?
+            .add_optional_child(&self.alignment)?
+            .add_optional_child(&self.text_alignment)?
+            .add_optional_child(&self.outline_lvl)?
+            .add_child(&self.run_property)?
             .add_optional_child(&self.section_property)?
+            .add_optional_child(&self.paragraph_property_change)?
             .close()?
             .into_inner()
     }

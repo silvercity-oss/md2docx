@@ -48,7 +48,7 @@ fn config(job_dir: &std::path::Path, images: AssetMap, cancel: CancelToken) -> C
 The Markdown names a key (`![Figure](accepted/fig-3)`); your `ImageResolver` maps it to bytes you
 chose, or answers "not mine". Nothing is read from disk and nothing is fetched for a key. A key that
 looks like a URL or a path is still just a key. Unresolved keys fall back to `ImageAccess` (which
-is `None` by default), so the image is replaced by its alt text and reported as
+is `None` in `Config::default()`), so the image is replaced by its alt text and reported as
 `image.disabled` / `image.remote`.
 
 Whatever the source of the bytes, every raster is judged by the same pipeline: the header's claimed

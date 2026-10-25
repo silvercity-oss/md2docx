@@ -20,8 +20,8 @@ First release.
   or transparent PNGs via `latex` + `dvipng` or a custom command.
 - Dependency-free LaTeX to OMML converter.
 - `md2docx` command-line tool (`clap`).
-- Strict error type (`MissingExternalCLI`, `InvalidMarkdown`,
-  `DocxGenerationError`, `ExternalToolFailed`, `Io`); temp files are removed
+- Strict error type (`MissingExternalCli`, `InvalidMarkdown`,
+  `DocxGeneration`, `ExternalToolFailed`, `Io`); temp files are removed
   on every path.
 
 ### Library
@@ -42,7 +42,7 @@ First release.
 - Footnotes show their number in front of the note (the upstream writer wrote none) and the reference
   mark is a real superscript character style.
 - `DocumentOptions::{title, author, page_numbers}`; title and author fall back to the
-  front matter; the file's created/modified times are the real time (they were 1970).
+  front matter; the file's created/modified times are the real time.
 - Code blocks have no gap between lines, a gap around the block and a thin frame
   (`Theme::border`), so consecutive blocks are separate boxes and a white theme is visible.
 - `GraphOptions::on_failure` / `DiagramFailure::KeepAsCode` / `md2docx --keep-failed-diagrams`;
@@ -95,13 +95,12 @@ First release.
   (equal input gives equal parts), every drawing has its own `wp:docPr` id and accessible
   description, relationship order is deterministic, archive entries are never executable, and
   archives are written in one pass at the configured level.
-- **`Config::default()` is now the untrusted-input policy** (it was the trusted one). The
-  previous behaviour is `Config::trusted()`; `Limits::default()` is the tight set and
-  `Limits::trusted()` the old one; `MathMode` defaults to `NativeOmml` and
+- **`Config::default()` is the untrusted-input policy.** `Config::trusted()` is the permissive
+  preset; `Limits::default()` is the tight set and `Limits::trusted()` the generous one; `MathMode` defaults to `NativeOmml` and
   `GraphOptions::enabled` to `false`. `Config::native_math()` is documented as a trusted preset.
-  The `md2docx` binary is unchanged (it starts from `Config::trusted()`).
+  The `md2docx` binary starts from `Config::trusted()`.
 - **Findings and strict mode.** `convert`, `convert_to_writer`, `convert_file` and `analyze` return
-  `Diagnostic`s (18 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
+  `Diagnostic`s (20 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
   `Config::loss_policy` (`LossPolicy::Allow` default, `Reject` = `CrateError::LossyContent`);
   `md2docx --strict`, with `file:line:column` output. See docs/diagnostics.md.
 - **Host-supplied images.** `ImageResolver` / `AssetMap` / `Config::with_image_resolver`: exact
@@ -128,6 +127,15 @@ First release.
   from a `.docx`; `--reference-doc`). Always on: table columns sized by content, HTML `id=` /
   `<a name>` anchors usable as `#` link targets, `mailto:` links limited to `subject`, `body`,
   `cc` and `bcc`.
+- **Review fixes.** Footnotes: every note shows its number (also with a table or a line break),
+  lists inside them are numbered and declared, they are built in linear time and honour the
+  deadline. List markers survive in HTML table cells and when an item starts with a code block,
+  quote, table, rule or nested list; HTML tables nest. Heading anchors leave out picture alt text
+  and use a formula's source. A bare `\r` ends a line. Link targets keep spaces (as `%20`);
+  `link.modified` reports a shortened `mailto:` link, `image.unreadable` a missing local picture
+  (the document is still produced). `footnote.undefined` is now information. Common named HTML
+  entities (`&copy;`, `&mdash;`, ...) are decoded. Property elements are written in schema order.
+  `CrateError::MissingExternalCli` and `CrateError::DocxGeneration` follow the Rust naming rules.
 - A display equation that is alone in a list item, quote or task item keeps the paragraph's
   numbering, indent and checkbox (it was replaced by a bare paragraph).
 - Docs: docs/embedding.md, docs/diagnostics.md, docs/integration-test-plan.md,

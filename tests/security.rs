@@ -320,7 +320,7 @@ fn huge_claimed_image_dimensions_are_rejected_cheaply() {
 
 #[test]
 fn tex_that_touches_the_host_is_refused_before_latex_runs() {
-    // `latex` points at a program that does not exist: reaching it would be MissingExternalCLI.
+    // `latex` points at a program that does not exist: reaching it would be MissingExternalCli.
     let mut cfg = Config::trusted();
     cfg.math.engine = silvercity_oss::MathImageEngine::LatexDvipng {
         latex: "latex-that-must-never-run".into(),
@@ -346,7 +346,7 @@ fn tex_that_touches_the_host_is_refused_before_latex_runs() {
     // Ordinary math gets past the gate (and then fails only because latex is absent).
     assert!(matches!(
         markdown_to_docx(r"$\frac{a}{b}$", &cfg),
-        Err(CrateError::MissingExternalCLI { .. })
+        Err(CrateError::MissingExternalCli { .. })
     ));
 }
 
@@ -358,7 +358,7 @@ fn untrusted_preset_never_starts_a_process_or_reads_a_file() {
     let witness = fx.path("witness");
     let mut cfg = Config::untrusted();
     cfg.base_dir = Some(fx.dir.path().to_path_buf());
-    // If anything tried to run these, `MissingExternalCLI` or the witness would show it.
+    // If anything tried to run these, `MissingExternalCli` or the witness would show it.
     cfg.graphs.mermaid.program = "must-not-run-mmdc".into();
     cfg.graphs.dolphin.program = "must-not-run-dolphin".into();
 

@@ -36,10 +36,10 @@ fn dolphin_fences_stay_code_in_hardened_mode() {
 #[test]
 fn a_missing_merman_is_reported_with_install_instructions() {
     match markdown_to_docx(MERMAID, &hardened_without_tool()) {
-        Err(CrateError::MissingExternalCLI { program }) => assert_eq!(program, "/nonexistent/merman-cli"),
-        other => panic!("expected MissingExternalCLI, got {:?}", other.map(|d| d.len())),
+        Err(CrateError::MissingExternalCli { program }) => assert_eq!(program, "/nonexistent/merman-cli"),
+        other => panic!("expected MissingExternalCli, got {:?}", other.map(|d| d.len())),
     }
-    let msg = CrateError::MissingExternalCLI {
+    let msg = CrateError::MissingExternalCli {
         program: "merman-cli".into(),
     }
     .to_string();

@@ -330,7 +330,7 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         match cmd.spawn() {
             Ok(child) => break child,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Err(CrateError::MissingExternalCLI {
+                return Err(CrateError::MissingExternalCli {
                     program: program.to_string(),
                 });
             }

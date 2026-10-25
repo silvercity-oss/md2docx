@@ -123,10 +123,37 @@ pub(crate) fn check_tex(latex: &str) -> std::result::Result<(), String> {
 /// `ms-excel:`, Windows drive and UNC paths (`\\host\share` leaks credentials
 /// when opened), protocol-relative `//host`, and relative paths or `#anchors`
 /// that Word would resolve against the local disk.
+#[cfg(test)]
 pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
-    // Browsers and Word ignore ASCII whitespace/control characters inside the
-    // scheme (`java\tscript:`), so judge the URL with them removed.
-    let url: String = url.chars().filter(|c| !c.is_control() && !c.is_whitespace()).collect();
+    safe_link_checked(url, allowed).map(|(url, _)| url)
+}
+
+/// [`safe_link`], and whether parts of the target were removed to make it safe (a `mailto:`
+/// query field outside the allow-list, or its fragment).
+pub(crate) fn safe_link_checked(url: &str, allowed: &[String]) -> Option<(String, bool)> {
+    // Browsers and Word ignore ASCII whitespace/control characters inside the scheme
+    // (`java\tscript:`), so a scheme that has any is refused outright. Elsewhere in the target,
+    // control characters are removed and whitespace is percent-encoded.
+    let url = url.trim();
+    let scheme_end = url.find(':')?;
+    if url[..scheme_end].chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return None;
+    }
+    let mut encoded = String::with_capacity(url.len());
+    for c in url.chars() {
+        if c.is_control() {
+            continue;
+        }
+        if c.is_whitespace() {
+            let mut buf = [0u8; 4];
+            for b in c.encode_utf8(&mut buf).bytes() {
+                encoded.push_str(&format!("%{b:02X}"));
+            }
+        } else {
+            encoded.push(c);
+        }
+    }
+    let url = encoded;
     // Characters that cannot appear in XML (U+FFFE and U+FFFF, which a numeric reference in the
     // destination can produce) would make the relationships part unreadable.
     if url.is_empty() || url.len() > 2048 || !url.chars().all(is_xml_char) {
@@ -141,9 +168,12 @@ pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
     // A drive letter ("C:\\x") parses as a one-letter scheme and is not allowed.
     if valid && allowed.iter().any(|a| a.eq_ignore_ascii_case(scheme)) {
         if scheme.eq_ignore_ascii_case("mailto") {
-            return clean_mailto(&url);
+            return clean_mailto(&url).map(|cleaned| {
+                let changed = cleaned != url;
+                (cleaned, changed)
+            });
         }
-        Some(url)
+        Some((url, false))
     } else {
         None
     }

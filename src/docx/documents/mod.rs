@@ -250,6 +250,13 @@ impl Docx {
         self
     }
 
+    /// Declare the numbering part even if no body paragraph refers to it (a list that sits only
+    /// in a footnote).
+    pub fn enable_numbering(mut self) -> Self {
+        self.document_rels.has_numberings = true;
+        self
+    }
+
     pub fn footer(mut self, footer: Footer) -> Self {
         if footer.has_numbering {
             self.document_rels.has_numberings = true;

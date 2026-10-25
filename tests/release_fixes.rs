@@ -243,7 +243,7 @@ fn a_diagram_that_cannot_be_rendered_can_stay_code() {
     let strict = broken_mermaid(Config::trusted());
     assert!(matches!(
         markdown_to_docx(md, &strict),
-        Err(CrateError::MissingExternalCLI { .. })
+        Err(CrateError::MissingExternalCli { .. })
     ));
     let mut soft = strict.clone();
     soft.graphs.on_failure = DiagramFailure::KeepAsCode;

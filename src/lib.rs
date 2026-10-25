@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! Markdown -> [1 preprocess: render math/graphs, rewrite as images]
-//!          -> [2 pulldown-cmark events] -> [3 docx-rs writer] -> .docx bytes
+//!          -> [2 pulldown-cmark events] -> [3 docx writer] -> .docx bytes
 //! ```
 //!
 //! # Quick start
@@ -169,9 +169,10 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 }
 
 /// Convert Markdown text and write the `.docx` archive to `writer`
-/// (a `File`, a `Cursor<Vec<u8>>`, ...). Nothing is written if conversion fails
-/// before packaging. If packaging itself fails (including the result exceeding
-/// `Limits::max_output_bytes`), the writer may hold a partial archive: discard it.
+/// (a `File`, a `Cursor<Vec<u8>>`, ...). The archive is built in memory first, so nothing
+/// is written if conversion or packaging fails (including the result exceeding
+/// `Limits::max_output_bytes`). Only an I/O error from `writer` itself can leave a partial
+/// archive behind: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
     convert_to_writer(markdown, config, writer).map(|_| ())
 }

@@ -12,11 +12,13 @@ Get them with `convert` / `convert_file` (with the document), `analyze` (without
 | --- | --- | --- | --- |
 | `image.remote` | warning | A remote or inline image was not embedded. | Embed the image through an `ImageResolver`/`AssetMap` (the key may be the URL itself), or accept the alt text. |
 | `image.disabled` | warning | A local image was not embedded because image access is disabled. | Supply the bytes through an `ImageResolver`/`AssetMap`; for your own documents use `Config::trusted()`. |
+| `image.unreadable` | warning | A local image file could not be read (missing, unreadable, not a regular file); the alt text is shown. | Fix the path, or supply the bytes through an `ImageResolver`/`AssetMap`. |
 | `image.unsupported` | warning | An image could not be embedded (unsupported or corrupt). | Use PNG, JPEG or GIF; check the file is not truncated. |
 | `footnote.nested` | warning | A footnote reference inside a footnote was left as text. | Do not reference footnotes from footnotes. |
-| `footnote.undefined` | warning | A footnote reference has no definition. | Add the definition `[^label]: text`, or escape the bracket. |
+| `footnote.undefined` | info | A footnote reference has no definition, so `[^label]` stays as written (nothing is lost; a regular expression such as `[^a-z]` is legitimate text). | Add the definition `[^label]: text`, or escape the bracket. |
 | `footnote.unreferenced` | warning | A footnote definition is never referenced, so its content was dropped. | Reference it from the text, or delete the definition. |
 | `link.dropped` | warning | A link destination is not allowed, so only its text was kept. | Use an absolute `https:`/`mailto:` link (or whatever `Config::allowed_link_schemes` allows). |
+| `link.modified` | warning | A link target was shortened: a `mailto:` link keeps only the `subject`, `body`, `cc` and `bcc` fields and no fragment. | Remove the other fields from the link. |
 | `link.anchor-missing` | warning | A link points at a heading anchor that does not exist. | Fix the heading anchor (GitHub-style slug of the heading text). |
 | `link.html-dropped` | warning | A raw HTML link was not turned into a hyperlink. | Use Markdown link syntax, or set `Config::html_links` for trusted input. |
 | `list.depth-clamped` | warning | List nesting deeper than the supported levels was flattened. | Flatten the list; Word numbering defines nine levels. |

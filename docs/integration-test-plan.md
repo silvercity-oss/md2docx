@@ -18,6 +18,7 @@ here) or **Proposed** (to be run by the embedder; not executed by this repositor
 | `04-footnotes` | Native footnotes with inline formatting |
 | `05-diagram` | A diagram fence with an author-written `alt=` |
 | `06-lossy` | Remote image, relative link, missing anchor, unknown LaTeX command, raw `<script>`, unreferenced footnote: every one is a finding (strict mode must reject this file) |
+| `07-contents` | Static contents, numbered headings, content-sized columns, autolinks, a footnote with a link |
 
 ## 2. Automated checks in this repository
 

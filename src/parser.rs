@@ -1,7 +1,7 @@
 //! Stages 2 and 3: stream CommonMark events out of `pulldown-cmark` and map
-//! them onto `docx-rs` elements.
+//! them onto the document writer's elements (`crate::docx`).
 //!
-//! `docx-rs` cannot express OMML, so native equations are emitted as marker
+//! The writer cannot express OMML, so native equations are emitted as marker
 //! runs and swapped for real `<m:oMath>` XML in the rendered `document.xml`
 //! before the package is zipped (see [`inject_omml`]).
 
@@ -20,7 +20,7 @@ use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
 };
 
-use crate::config::{CodeBlockLayout, Config, ImageAccess, MathMode};
+use crate::config::{CodeBlockLayout, Config, DiagramFailure, ImageAccess, MathMode};
 use crate::diagnostics::{Code, Collector, Loc, Report, Stats};
 use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
@@ -28,7 +28,7 @@ use crate::highlight::{self, Span, Theme, TokenClass};
 use crate::html::{self, Piece};
 use crate::images::{ImagePipeline, Outcome, Picture, Unsupported};
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
-use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
+use crate::safety::{read_local_image, read_regular_file, safe_link_checked, sanitize_xml_chars};
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
 /// every formula has been rewritten, and any leftover `$` is literal text).
@@ -87,7 +87,7 @@ impl Default for Geometry {
 }
 
 const EMU_PER_INCH: u64 = 914_400;
-// docx-rs's default package already defines abstract numbering 1 / num 1, so
+// The writer's default package already defines abstract numbering 1 / num 1, so
 // ours start well clear of it.
 const BULLET_ABSTRACT_ID: usize = 10;
 const ORDERED_ABSTRACT_ID: usize = 11;
@@ -237,6 +237,12 @@ struct ListCtx {
     item_open: bool,
     first_para: bool,
     task: Option<bool>,
+    /// Tables open (including the one a cell belongs to) where the list started: the list
+    /// formats only paragraphs at that depth, so a table inside an item is left alone and a list
+    /// inside a table cell is not.
+    table_depth: usize,
+    /// Started by an HTML `<ul>`/`<ol>`.
+    html: bool,
 }
 
 struct LinkCtx {
@@ -273,6 +279,8 @@ struct TableState {
     in_head: bool,
     /// Built from HTML `<table>` tags rather than Markdown syntax.
     html: bool,
+    /// Started inside a cell of another table, which resumes when this one ends.
+    nested: bool,
     /// Widest row seen so far (HTML tables have no header to count columns).
     max_cols: usize,
     /// Characters in the cell being built, and the longest cell seen in each column.
@@ -376,6 +384,8 @@ struct Builder<'a> {
     align_stack: Vec<(String, AlignmentType)>,
     html_quotes: usize,
     html_lists: usize,
+    /// `<table>` tags ignored (nested too deep, or in a Markdown table) whose `</table>` must be too.
+    ignored_tables: usize,
     underline: usize,
     sup: usize,
     sub: usize,
@@ -414,6 +424,8 @@ struct Builder<'a> {
     lists: Vec<ListCtx>,
     ordered_numberings: Vec<Numbering>,
     next_num_id: usize,
+    /// A list was started somewhere (body or footnote): the document needs its numbering part.
+    lists_used: bool,
     table: Option<TableState>,
     omml: Vec<OmmlSlot>,
     /// Total size of the equation bodies in `omml`: a footnote that holds one is expanded again
@@ -623,7 +635,11 @@ struct HeadingInfo {
     text: String,
 }
 
-fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Vec<HeadingInfo>) {
+fn heading_anchors(
+    markdown: &str,
+    sup_sub: bool,
+    assets: &HashMap<String, Asset>,
+) -> (HashMap<String, usize>, Vec<HeadingInfo>) {
     let mut anchors = HashMap::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut in_definition = false;
@@ -631,6 +647,7 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Ve
     let mut headings: Vec<HeadingInfo> = Vec::new();
     let mut number = 0;
     let mut html_found: Vec<String> = Vec::new();
+    let mut image_depth = 0usize;
     let mut html_known: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (event, _) in merged_events(markdown, sup_sub) {
         match event {
@@ -640,7 +657,18 @@ fn heading_anchors(markdown: &str, sup_sub: bool) -> (HashMap<String, usize>, Ve
             Event::Start(Tag::Heading { id, level, .. }) => {
                 open = Some((id.map(|i| i.to_string()), String::new(), heading_level(level)));
             }
-            Event::Text(t) | Event::Code(t) => {
+            // A picture's alt text is not part of the heading's name (GitHub leaves it out); a
+            // formula stands for its source.
+            Event::Start(Tag::Image { dest_url, .. }) => {
+                image_depth += 1;
+                if let (Some((_, text, _)), Some(asset)) = (open.as_mut(), assets.get(dest_url.as_ref())) {
+                    if matches!(asset.kind, AssetKind::InlineMath | AssetKind::DisplayMath) {
+                        text.push_str(&asset.original);
+                    }
+                }
+            }
+            Event::End(TagEnd::Image) => image_depth = image_depth.saturating_sub(1),
+            Event::Text(t) | Event::Code(t) if image_depth == 0 => {
                 if let Some((_, text, _)) = open.as_mut() {
                     text.push_str(&t);
                 }
@@ -703,7 +731,7 @@ fn heading_level(level: HeadingLevel) -> u8 {
     }
 }
 
-/// Put the footnote number in front of each note's first paragraph (docx-rs writes none, so
+/// Put the footnote number in front of each note's first paragraph (the writer adds none, so
 /// Word would show the note text without its number).
 fn add_footnote_marks(xml: Vec<u8>) -> Vec<u8> {
     const MARK: &str = "<w:r><w:rPr><w:rStyle w:val=\"FootnoteReference\"/></w:rPr><w:footnoteRef/></w:r>\
@@ -729,7 +757,9 @@ fn add_footnote_marks(xml: Vec<u8>) -> Vec<u8> {
             Some(after_props)
         });
         match insert_at {
-            Some(i) if !note.contains("w:type=") => {
+            // Separator notes carry `w:type=` on the element itself; a table or a break inside a
+            // note carries it too, so look at the start tag only.
+            Some(i) if !note[..note.find('>').unwrap_or(0)].contains("w:type=") => {
                 out.push_str(&note[..i]);
                 out.push_str(MARK);
                 out.push_str(&note[i..]);
@@ -906,6 +936,7 @@ impl<'a> Builder<'a> {
             align_stack: Vec::new(),
             html_quotes: 0,
             html_lists: 0,
+            ignored_tables: 0,
             underline: 0,
             sup: 0,
             sub: 0,
@@ -933,6 +964,7 @@ impl<'a> Builder<'a> {
             lists: Vec::new(),
             ordered_numberings: Vec::new(),
             next_num_id: BULLET_NUM_ID + 1,
+            lists_used: false,
             table: None,
             omml: Vec::new(),
             omml_bytes: 0,
@@ -1120,7 +1152,7 @@ impl<'a> Builder<'a> {
                     } else {
                         raw.to_string()
                     };
-                    match safe_link(&target, &self.cfg.allowed_link_schemes) {
+                    match self.link_target(&target) {
                         Some(url) => {
                             self.link = Some(LinkCtx {
                                 url: url.clone(),
@@ -1139,6 +1171,21 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The target to link to, if the destination is allowed; a shortened one is reported.
+    fn link_target(&mut self, url: &str) -> Option<String> {
+        let (target, changed) = safe_link_checked(url, &self.cfg.allowed_link_schemes)?;
+        if changed {
+            self.note(
+                Code::LinkModified,
+                format!(
+                    "the link `{}` was shortened: only subject, body, cc and bcc may follow a mailto address",
+                    short(url)
+                ),
+            );
+        }
+        Some(target)
+    }
+
     fn start_para(&mut self, kind: ParaKind) {
         self.cur = Some(Vec::new());
         self.kind = kind;
@@ -1151,6 +1198,27 @@ impl<'a> Builder<'a> {
     }
 
     // ---- block plumbing
+
+    /// Tables open around the current position (an HTML cell can hold a Markdown table).
+    fn table_depth(&self) -> usize {
+        self.outer_tables.len() + usize::from(self.table.is_some())
+    }
+
+    /// A list item whose first block is not a paragraph (a code block, quote, table, rule or
+    /// nested list) still shows its marker: it goes on a paragraph of its own in front.
+    fn item_marker_before_block(&mut self) {
+        let depth = self.table_depth();
+        let Some(ctx) = self
+            .lists
+            .last_mut()
+            .filter(|c| c.item_open && c.first_para && c.task.is_none() && c.table_depth == depth)
+        else {
+            return;
+        };
+        ctx.first_para = false;
+        let p = Paragraph::new().numbering(NumberingId::new(ctx.num_id), IndentLevel::new(ctx.level));
+        self.emit(p);
+    }
 
     fn emit(&mut self, p: Paragraph) {
         self.charge(1);
@@ -1216,8 +1284,9 @@ impl<'a> Builder<'a> {
         }
 
         let mut task = None;
-        if kind == ParaKind::Normal && self.table.is_none() {
-            if let Some(ctx) = self.lists.last_mut().filter(|c| c.item_open) {
+        let depth = self.table_depth();
+        if kind == ParaKind::Normal {
+            if let Some(ctx) = self.lists.last_mut().filter(|c| c.item_open && c.table_depth == depth) {
                 let left = 720 * (ctx.level as i32 + 1);
                 task = ctx.task.take();
                 if ctx.first_para && task.is_none() {
@@ -1228,7 +1297,7 @@ impl<'a> Builder<'a> {
                     p = p.indent(Some(left), None, None, None);
                 }
                 ctx.first_para = false;
-            } else if self.quote_depth > 0 || self.def_depth > 0 {
+            } else if self.table.is_none() && (self.quote_depth > 0 || self.def_depth > 0) {
                 p = self.indented(p);
             }
         }
@@ -1277,7 +1346,8 @@ impl<'a> Builder<'a> {
             p.property = p.property.shading(Shading::new().fill(fill.as_str()));
         }
         // Inside a list item the numbering fixes the indent; leave it alone.
-        let in_item = self.table.is_none() && self.lists.last().is_some_and(|c| c.item_open);
+        let depth = self.table_depth();
+        let in_item = self.lists.last().is_some_and(|c| c.item_open && c.table_depth == depth);
         if b.indent_twips > 0 && !in_item {
             let base = 360usize
                 .saturating_mul(self.quote_depth)
@@ -1586,12 +1656,25 @@ impl<'a> Builder<'a> {
             self.placeholder(&ctx.alt, dest);
             return Ok(());
         }
-        let (path, bytes) = read_local_image(
+        let (path, bytes) = match read_local_image(
             dest,
             &self.base_dir,
             self.cfg.image_access,
             self.cfg.limits.max_image_bytes,
-        )?;
+        ) {
+            Ok(found) => found,
+            // A missing or unreadable file is a problem with this picture, not with the
+            // document: keep the alt text and say so (the message carries no host path).
+            Err(CrateError::Io { .. }) => {
+                self.note(
+                    Code::ImageUnreadable,
+                    format!("image `{}` could not be read; its alt text is shown", short(dest)),
+                );
+                self.placeholder(&ctx.alt, dest);
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        };
         let origin = path.display().to_string();
         if let Some(why) = self.embed(
             &bytes,
@@ -1659,6 +1742,16 @@ impl<'a> Builder<'a> {
         };
         match self.embed(&bytes, &origin, how)? {
             None => Ok(()),
+            // The diagram tool answered with something that is not an image: with `KeepAsCode`
+            // the document survives, with the alt text in its place.
+            Some(why) if self.cfg.graphs.on_failure == DiagramFailure::KeepAsCode => {
+                self.note(
+                    Code::ImageUnsupported,
+                    format!("the rendered {} could not be embedded: {}", alt, why.describe()),
+                );
+                self.placeholder(&alt, "image");
+                Ok(())
+            }
             Some(_) => Err(CrateError::ExternalToolFailed {
                 program: "renderer".into(),
                 detail: format!("{origin} is not a decodable image"),
@@ -1679,6 +1772,7 @@ impl<'a> Builder<'a> {
             );
         }
         let level = self.lists.len().min(MAX_LIST_LEVEL);
+        self.lists_used = true;
         let num_id = match first {
             None => BULLET_NUM_ID,
             Some(start) => {
@@ -1698,6 +1792,8 @@ impl<'a> Builder<'a> {
             item_open: false,
             first_para: false,
             task: None,
+            table_depth: self.table_depth(),
+            html: false,
         });
     }
 
@@ -1719,6 +1815,10 @@ impl<'a> Builder<'a> {
         if head {
             self.bold = self.bold.saturating_sub(1);
         }
+        // Lists started inside this cell end with it.
+        let depth = self.table_depth();
+        self.lists.retain(|c| c.table_depth < depth);
+        self.html_lists = self.lists.iter().filter(|c| c.html).count();
         if let Some(t) = self.table.as_mut() {
             if let Some(mut cell) = t.cell.take() {
                 if t.cell_paras == 0 {
@@ -1877,7 +1977,11 @@ impl<'a> Builder<'a> {
                             .and_then(|s| s.trim().parse::<u64>().ok())
                             .unwrap_or(1)
                     });
+                    self.item_marker_before_block();
                     self.start_list(start);
+                    if let Some(ctx) = self.lists.last_mut() {
+                        ctx.html = true;
+                    }
                     self.html_lists += 1;
                 } else if self.html_lists > 0 {
                     self.lists.pop();
@@ -1981,9 +2085,7 @@ impl<'a> Builder<'a> {
             return;
         }
         let href = html::attr(attrs, "href");
-        let url = href
-            .as_deref()
-            .and_then(|h| safe_link(h, &self.cfg.allowed_link_schemes));
+        let url = href.as_deref().and_then(|h| self.link_target(h));
         if url.is_none() {
             if let Some(h) = &href {
                 self.note(
@@ -2016,13 +2118,36 @@ impl<'a> Builder<'a> {
     fn html_table_tag(&mut self, name: &str, closing: bool) {
         if name == "table" {
             if !closing {
+                let in_cell = self.table.as_ref().is_some_and(|t| t.html && t.cell.is_some());
                 if self.table.is_none() {
                     self.flush();
                     self.table = Some(TableState {
                         html: true,
                         ..TableState::default()
                     });
+                } else if in_cell && self.outer_tables.len() < MAX_NESTED_TABLES {
+                    // A table in a cell of an HTML table: the outer one resumes when it ends.
+                    self.flush();
+                    if let Some(outer) = self.table.take() {
+                        self.outer_tables.push(outer);
+                    }
+                    self.table = Some(TableState {
+                        html: true,
+                        nested: true,
+                        ..TableState::default()
+                    });
+                } else {
+                    if in_cell {
+                        self.note(
+                            Code::TableDropped,
+                            format!("tables nested deeper than {MAX_NESTED_TABLES} levels lose their outer table"),
+                        );
+                    }
+                    // Its `</table>` must not close the table that is still open.
+                    self.ignored_tables += 1;
                 }
+            } else if self.ignored_tables > 0 {
+                self.ignored_tables -= 1;
             } else if self.table.as_ref().is_some_and(|t| t.html) {
                 self.close_html_cell();
                 self.close_html_row();
@@ -2072,7 +2197,7 @@ impl<'a> Builder<'a> {
     fn finish_table(&mut self) {
         let Some(t) = self.table.take() else { return };
         // A Markdown table that started inside a cell of an HTML table: that table resumes.
-        let mut outer = if t.html { None } else { self.outer_tables.pop() };
+        let mut outer = if t.nested { self.outer_tables.pop() } else { None };
         if !t.rows.is_empty() {
             // (Word rejects a table without rows, so an empty one is dropped.)
             let cols = t.aligns.len().max(t.max_cols).max(1);
@@ -2093,6 +2218,13 @@ impl<'a> Builder<'a> {
             }
         }
         self.table = outer;
+        let depth = self.table_depth();
+        if depth == 0 {
+            self.ignored_tables = 0;
+        }
+        // Lists a cell left open end with the table.
+        self.lists.retain(|c| c.table_depth <= depth);
+        self.html_lists = self.lists.iter().filter(|c| c.html).count();
     }
 
     /// Close anything raw HTML left open at the end of the document.
@@ -2189,8 +2321,15 @@ impl<'a> Builder<'a> {
         sub.resolved = std::mem::take(&mut self.resolved);
         sub.omml = std::mem::take(&mut self.omml);
         sub.omml_bytes = self.omml_bytes;
+        sub.next_num_id = self.next_num_id;
+        sub.emitted_anchors = std::mem::take(&mut self.emitted_anchors);
+        sub.ordered_numberings = std::mem::take(&mut self.ordered_numberings);
+        sub.lists_used = self.lists_used;
         let fed = (|| -> Result<()> {
-            for (ev, range) in events {
+            for (n, (ev, range)) in events.into_iter().enumerate() {
+                if n % 256 == 255 {
+                    sub.pre.ctl.check()?;
+                }
                 sub.at = range;
                 sub.feed(ev)?;
             }
@@ -2202,6 +2341,10 @@ impl<'a> Builder<'a> {
         self.resolved = std::mem::take(&mut sub.resolved);
         self.omml = std::mem::take(&mut sub.omml);
         self.omml_bytes = sub.omml_bytes;
+        self.next_num_id = sub.next_num_id;
+        self.emitted_anchors = std::mem::take(&mut sub.emitted_anchors);
+        self.ordered_numberings = std::mem::take(&mut sub.ordered_numberings);
+        self.lists_used |= sub.lists_used;
         fed?;
         if let Some(e) = sub.budget_error.take() {
             return Err(e);
@@ -2326,6 +2469,7 @@ impl<'a> Builder<'a> {
             }
             Event::Rule => {
                 self.flush();
+                self.item_marker_before_block();
                 self.rule();
             }
             // Math has been rewritten to images by Stage 1; nothing else carries content.
@@ -2362,6 +2506,7 @@ impl<'a> Builder<'a> {
             }
             Tag::BlockQuote(kind) => {
                 self.flush();
+                self.item_marker_before_block();
                 self.quote_depth += 1;
                 // GitHub-style alert (`> [!NOTE]`): a bold label line first.
                 if let Some(kind) = kind {
@@ -2395,6 +2540,7 @@ impl<'a> Builder<'a> {
             }
             Tag::CodeBlock(kind) => {
                 self.flush();
+                self.item_marker_before_block();
                 self.code = Some(String::new());
                 self.code_lang = match kind {
                     CodeBlockKind::Fenced(info) => highlight::fence_language(&info),
@@ -2403,6 +2549,7 @@ impl<'a> Builder<'a> {
             }
             Tag::List(first) => {
                 self.flush();
+                self.item_marker_before_block();
                 self.start_list(first);
             }
             Tag::Item => {
@@ -2445,10 +2592,13 @@ impl<'a> Builder<'a> {
             }
             Tag::Table(aligns) => {
                 self.flush();
+                self.item_marker_before_block();
                 // A Markdown table inside a cell of an HTML table: keep the outer one.
+                let mut nested = false;
                 if let Some(outer) = self.table.take() {
                     if self.outer_tables.len() < MAX_NESTED_TABLES {
                         self.outer_tables.push(outer);
+                        nested = true;
                     } else {
                         self.note(
                             Code::TableDropped,
@@ -2458,6 +2608,7 @@ impl<'a> Builder<'a> {
                 }
                 self.table = Some(TableState {
                     aligns,
+                    nested,
                     ..TableState::default()
                 });
             }
@@ -2522,7 +2673,7 @@ impl<'a> Builder<'a> {
                         self.finish_link(LinkTarget::Heading(n), link.children);
                         return Ok(());
                     }
-                    match safe_link(&link.url, &self.cfg.allowed_link_schemes) {
+                    match self.link_target(&link.url) {
                         Some(url) => self.finish_link(LinkTarget::External(url), link.children),
                         // Not an allowed destination: keep the visible text, drop the target.
                         None => {
@@ -2665,7 +2816,7 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> R
     let mut cursor = 0;
     for (idx, slot) in slots.iter().enumerate().filter(|(_, s)| s.footnote == footnotes) {
         let m = marker(nonce, idx);
-        let lost = || CrateError::DocxGenerationError(format!("equation placeholder {idx} missing from document.xml"));
+        let lost = || CrateError::DocxGeneration(format!("equation placeholder {idx} missing from document.xml"));
         let at = match doc[cursor..].find(&m) {
             Some(rel) => cursor + rel,
             None => doc.find(&m).ok_or_else(lost)?, // out of order: fall back to a full search
@@ -2684,9 +2835,22 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> R
                 .find("<w:pPr>")
                 .and_then(|a| para[a..].find("</w:pPr>").map(|b| &para[a..a + b + "</w:pPr>".len()]))
                 .unwrap_or("");
+            // A heading that is only an equation keeps its bookmark, so links to it still land.
+            let marks = |tag: &str| -> String {
+                let mut found = String::new();
+                let mut rest = para;
+                while let Some(at) = rest.find(tag) {
+                    let end = rest[at..].find("/>").map_or(rest.len(), |e| at + e + 2);
+                    found.push_str(&rest[at..end]);
+                    rest = &rest[end..];
+                }
+                found
+            };
             format!(
-                "<w:p>{props}<m:oMathPara><m:oMath>{}</m:oMath></m:oMathPara></w:p>",
-                slot.xml
+                "<w:p>{props}{}<m:oMathPara><m:oMath>{}</m:oMath></m:oMathPara>{}</w:p>",
+                marks("<w:bookmarkStart"),
+                slot.xml,
+                marks("<w:bookmarkEnd")
             )
         } else {
             format!("<m:oMath>{}</m:oMath>", slot.xml)
@@ -2699,9 +2863,7 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> R
     let mut last = 0;
     for (start, end, replacement) in &edits {
         if *start < last {
-            return Err(CrateError::DocxGenerationError(
-                "overlapping equation placeholders".into(),
-            ));
+            return Err(CrateError::DocxGeneration("overlapping equation placeholders".into()));
         }
         out.push_str(&doc[last..*start]);
         out.push_str(replacement);
@@ -2710,7 +2872,7 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> R
     out.push_str(&doc[last..]);
     // Declare the math namespace on the root, as Word does.
     crate::omml::ensure_math_namespace_in(&out, if footnotes { "<w:footnotes" } else { "<w:document" })
-        .map_err(|e| CrateError::DocxGenerationError(e.to_string()))
+        .map_err(|e| CrateError::DocxGeneration(e.to_string()))
 }
 
 // ------------------------------------------------------------------ driver
@@ -2778,7 +2940,7 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown, cfg.superscript_subscript);
-    let (anchors, headings) = heading_anchors(&pre.markdown, cfg.superscript_subscript);
+    let (anchors, headings) = heading_anchors(&pre.markdown, cfg.superscript_subscript, &pre.assets);
     b.anchors = Arc::new(anchors);
 
     let mut in_definition = false;
@@ -2825,6 +2987,9 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     for n in b.ordered_numberings.drain(..) {
         docx = docx.add_numbering(n);
     }
+    if b.lists_used {
+        docx = docx.enable_numbering();
+    }
     for block in b.blocks.drain(..) {
         docx = match block {
             Block::Para(p) => docx.add_paragraph(*p),
@@ -2845,7 +3010,7 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     let mut parts = docx.build();
     if let Some(reference) = &cfg.reference_docx {
         let generated = String::from_utf8(std::mem::take(&mut parts.styles))
-            .map_err(|e| CrateError::DocxGenerationError(format!("styles.xml is not UTF-8: {e}")))?;
+            .map_err(|e| CrateError::DocxGeneration(format!("styles.xml is not UTF-8: {e}")))?;
         parts.styles = crate::template::merge_styles(reference, &generated)?.into_bytes();
         if let Some(theme) = &reference.theme {
             crate::template::add_theme(&mut parts, theme)?;
@@ -2881,11 +3046,11 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     if !b.omml.is_empty() {
         debug_assert!(cfg.math.mode == MathMode::NativeOmml);
         let xml = String::from_utf8(std::mem::take(&mut parts.document))
-            .map_err(|e| CrateError::DocxGenerationError(format!("document.xml is not UTF-8: {e}")))?;
+            .map_err(|e| CrateError::DocxGeneration(format!("document.xml is not UTF-8: {e}")))?;
         parts.document = inject_omml(&xml, &b.nonce, &b.omml, false)?.into_bytes();
         if b.omml.iter().any(|s| s.footnote) {
             let notes = String::from_utf8(std::mem::take(&mut parts.footnotes))
-                .map_err(|e| CrateError::DocxGenerationError(format!("footnotes.xml is not UTF-8: {e}")))?;
+                .map_err(|e| CrateError::DocxGeneration(format!("footnotes.xml is not UTF-8: {e}")))?;
             parts.footnotes = inject_omml(&notes, &b.nonce, &b.omml, true)?.into_bytes();
         }
     }

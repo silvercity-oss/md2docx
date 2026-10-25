@@ -242,7 +242,8 @@ pub enum ImageAccess {
     /// Never read files; images become `[alt text]`.
     None,
     /// Only files that resolve (after symlinks) inside [`Config::base_dir`]
-    /// (default: the current directory). Anything else is an error.
+    /// (default: the current directory). Anything else is an error. This is the default of the
+    /// enum and of [`Config::trusted`]; [`Config::default`] and [`Config::untrusted`] use `None`.
     #[default]
     BaseDir,
     /// Any readable file. Only for Markdown you wrote yourself.
@@ -496,6 +497,8 @@ pub struct DocumentOptions {
     /// Show the page number, centred in the footer (default off).
     pub page_numbers: bool,
     /// Number headings `1`, `1.1`, `1.1.1`, ... with Word's multilevel numbering (default off).
+    /// Assumes the headings start at level 1: Word and LibreOffice number a skipped level
+    /// differently (`0.1` and `1.1`).
     pub number_headings: bool,
     /// A static, linked table of contents at the start (default none). See [`TableOfContents`].
     pub table_of_contents: Option<TableOfContents>,
@@ -626,7 +629,8 @@ pub struct Config {
     pub allowed_link_schemes: Vec<String>,
     /// Turn raw HTML `<a href>` into hyperlinks (still limited to
     /// [`Config::allowed_link_schemes`]). When `false` the tag is dropped and
-    /// only its text stays. Default `true`; [`Config::untrusted`] sets `false`.
+    /// only its text stays. `true` in [`Config::trusted`]; `false` in [`Config::default`] and
+    /// [`Config::untrusted`].
     pub html_links: bool,
     /// Deflate level of the finished `.docx`: 0 stores it uncompressed, 1 is
     /// fastest, 9 smallest. Default 6. Pictures are always stored (they are

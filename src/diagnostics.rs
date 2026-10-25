@@ -68,18 +68,22 @@ codes! {
     ImageRemote => ("image.remote", Warning, "a remote or inline image was not embedded"),
     /// A local image was not read because file access is off and the host supplied no bytes.
     ImageDisabled => ("image.disabled", Warning, "a local image was not embedded because image access is disabled"),
+    /// A local image file could not be read (missing, unreadable, not a regular file).
+    ImageUnreadable => ("image.unreadable", Warning, "a local image could not be read"),
     /// The bytes are not a PNG, JPEG or GIF this build can decode, or are corrupt.
     ImageUnsupported => ("image.unsupported", Warning, "an image could not be embedded (unsupported or corrupt)"),
     /// A footnote reference inside a footnote is left as written.
     FootnoteNested => ("footnote.nested", Warning, "a footnote reference inside a footnote was left as text"),
     /// `[^label]` with no definition is left as written.
-    FootnoteUndefined => ("footnote.undefined", Warning, "a footnote reference has no definition"),
+    FootnoteUndefined => ("footnote.undefined", Info, "a footnote reference has no definition"),
     /// A footnote definition that nothing references is not rendered.
     FootnoteUnreferenced => ("footnote.unreferenced", Warning, "a footnote definition is never referenced, so its content was dropped"),
     /// A link destination that is not allowed; the text stays, the target is dropped.
     LinkDropped => ("link.dropped", Warning, "a link destination is not allowed, so only its text was kept"),
     /// `[x](#anchor)` where no heading has that anchor.
     LinkAnchorMissing => ("link.anchor-missing", Warning, "a link points at a heading anchor that does not exist"),
+    /// A link target was shortened to make it safe (a `mailto:` field outside the allow-list).
+    LinkModified => ("link.modified", Warning, "a link target was shortened: parts of it are not allowed"),
     /// A raw HTML `<a>` that was not turned into a hyperlink.
     LinkHtmlDropped => ("link.html-dropped", Warning, "a raw HTML link was not turned into a hyperlink"),
     /// List nesting deeper than the document format's levels was flattened to the deepest level.

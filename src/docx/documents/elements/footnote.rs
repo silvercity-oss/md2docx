@@ -43,9 +43,8 @@ impl Footnote {
         }
     }
 
-    pub fn add_content(&mut self, p: Paragraph) -> Self {
+    pub fn add_content(&mut self, p: Paragraph) {
         self.content.push(FootnoteChild::Paragraph(p));
-        self.clone()
     }
 
     pub fn add_table(&mut self, t: Table) {
@@ -67,14 +66,17 @@ impl BuildXML for Footnote {
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         // To ensure docx compatible XML serialization for footnotes, we default to an empty paragraph.
-        let mut footnote = self.clone();
-        if self.content.is_empty() {
-            footnote.add_content(Paragraph::new());
-        }
+        let empty;
+        let content = if self.content.is_empty() {
+            empty = vec![FootnoteChild::Paragraph(Paragraph::new())];
+            &empty
+        } else {
+            &self.content
+        };
 
         XMLBuilder::from(stream)
             .open_footnote(&format!("{}", self.id))?
-            .add_children(&footnote.content)?
+            .add_children(content)?
             .close()?
             .into_inner()
     }

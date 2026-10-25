@@ -31,6 +31,10 @@ mermaid = ["dep:merman"]
 # Every diagram family merman has, not just the common ones `mermaid` enables.
 mermaid-all-diagrams = ["mermaid", "merman/all-diagrams"]
 
+# docs.rs builds with the in-process Mermaid renderer so its API is documented.
+[package.metadata.docs.rs]
+features = ["mermaid"]
+
 [dependencies]
 smallvec = "1.15"
 quick-xml = { version = "0.41", default-features = false }
