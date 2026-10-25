@@ -12,4 +12,3 @@ impl BuildXML for CantSplit {
         XMLBuilder::from(stream).cant_split()?.into_inner()
     }
 }
-

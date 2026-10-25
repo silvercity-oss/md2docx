@@ -4,14 +4,7 @@ use super::XmlEvent;
 use std::io::Write;
 
 impl<W: Write> XMLBuilder<W> {
-    open!(
-        open_wp_inline,
-        "wp:inline",
-        "distT",
-        "distB",
-        "distL",
-        "distR"
-    );
+    open!(open_wp_inline, "wp:inline", "distT", "distB", "distL", "distR");
 
     open!(
         open_wp_anchor,

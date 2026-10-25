@@ -11,10 +11,7 @@ pub struct BookmarkStart {
 
 impl BookmarkStart {
     pub fn new(id: usize, name: impl Into<String>) -> BookmarkStart {
-        BookmarkStart {
-            id,
-            name: name.into(),
-        }
+        BookmarkStart { id, name: name.into() }
     }
 }
 
@@ -28,4 +25,3 @@ impl BuildXML for BookmarkStart {
             .into_inner()
     }
 }
-

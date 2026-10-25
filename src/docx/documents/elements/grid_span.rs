@@ -8,11 +8,7 @@ pub struct GridSpan {
     val: usize,
 }
 
-impl GridSpan {
-    pub fn new(v: usize) -> GridSpan {
-        GridSpan { val: v }
-    }
-}
+impl GridSpan {}
 
 impl BuildXML for GridSpan {
     fn build_to<W: Write>(
@@ -22,4 +18,3 @@ impl BuildXML for GridSpan {
         XMLBuilder::from(stream).grid_span(self.val)?.into_inner()
     }
 }
-

@@ -2,17 +2,12 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stretch {
     value: i32,
 }
 
-impl Stretch {
-    pub fn new(s: i32) -> Stretch {
-        Self { value: s }
-    }
-}
+impl Stretch {}
 
 impl BuildXML for Stretch {
     fn build_to<W: Write>(
@@ -22,4 +17,3 @@ impl BuildXML for Stretch {
         XMLBuilder::from(stream).w(self.value)?.into_inner()
     }
 }
-

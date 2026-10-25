@@ -2,7 +2,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeaderReference {
     pub header_type: String,
@@ -18,14 +17,7 @@ impl Default for HeaderReference {
     }
 }
 
-impl HeaderReference {
-    pub fn new(t: impl Into<String>, id: impl Into<String>) -> HeaderReference {
-        HeaderReference {
-            header_type: t.into(),
-            id: id.into(),
-        }
-    }
-}
+impl HeaderReference {}
 
 impl BuildXML for HeaderReference {
     fn build_to<W: Write>(

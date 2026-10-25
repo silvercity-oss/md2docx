@@ -18,11 +18,6 @@ impl ParagraphPropertyDefault {
         self.paragraph_property = self.paragraph_property.line_spacing(spacing);
         self
     }
-
-    pub fn paragraph_property(mut self, p: ParagraphProperty) -> Self {
-        self.paragraph_property = p;
-        self
-    }
 }
 
 impl Default for ParagraphPropertyDefault {
@@ -44,4 +39,3 @@ impl BuildXML for ParagraphPropertyDefault {
             .into_inner()
     }
 }
-

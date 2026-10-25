@@ -22,4 +22,3 @@ impl BuildXML for LevelText {
         XMLBuilder::from(stream).level_text(&self.val)?.into_inner()
     }
 }
-

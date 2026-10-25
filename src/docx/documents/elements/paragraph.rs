@@ -69,15 +69,6 @@ impl Paragraph {
         Default::default()
     }
 
-    pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = id.into();
-        self
-    }
-
-    pub fn children(&self) -> &Vec<ParagraphChild> {
-        &self.children
-    }
-
     pub fn add_run(mut self, run: Run) -> Paragraph {
         self.children.push(ParagraphChild::Run(Box::new(run)));
         self
@@ -93,12 +84,9 @@ impl Paragraph {
     /// Mutating in place lets automatic TOC expansion bookmark headings
     /// without moving each paragraph out of the document tree.
     pub(crate) fn wrap_by_bookmark(&mut self, id: usize, name: impl Into<String>) {
-        self.children.insert(
-            0,
-            ParagraphChild::BookmarkStart(BookmarkStart::new(id, name)),
-        );
         self.children
-            .push(ParagraphChild::BookmarkEnd(BookmarkEnd::new(id)));
+            .insert(0, ParagraphChild::BookmarkStart(BookmarkStart::new(id, name)));
+        self.children.push(ParagraphChild::BookmarkEnd(BookmarkEnd::new(id)));
     }
 
     pub fn add_hyperlink(mut self, link: Hyperlink) -> Self {
@@ -106,29 +94,8 @@ impl Paragraph {
         self
     }
 
-    pub fn add_structured_data_tag(mut self, t: StructuredDataTag) -> Self {
-        self.children
-            .push(ParagraphChild::StructuredDataTag(Box::new(t)));
-        self
-    }
-
-    pub fn add_insert(mut self, insert: Insert) -> Paragraph {
-        self.children.push(ParagraphChild::Insert(insert));
-        self
-    }
-
     pub fn add_delete(mut self, delete: Delete) -> Paragraph {
         self.children.push(ParagraphChild::Delete(delete));
-        self
-    }
-
-    pub fn add_move_from(mut self, move_from: MoveFrom) -> Paragraph {
-        self.children.push(ParagraphChild::MoveFrom(move_from));
-        self
-    }
-
-    pub fn add_move_to(mut self, move_to: MoveTo) -> Paragraph {
-        self.children.push(ParagraphChild::MoveTo(move_to));
         self
     }
 
@@ -139,21 +106,7 @@ impl Paragraph {
     }
 
     pub fn add_bookmark_end(mut self, id: usize) -> Paragraph {
-        self.children
-            .push(ParagraphChild::BookmarkEnd(BookmarkEnd::new(id)));
-        self
-    }
-
-    pub fn add_comment_start(mut self, comment: Comment) -> Paragraph {
-        self.children.push(ParagraphChild::CommentStart(Box::new(
-            CommentRangeStart::new(comment),
-        )));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> Paragraph {
-        self.children
-            .push(ParagraphChild::CommentEnd(CommentRangeEnd::new(id)));
+        self.children.push(ParagraphChild::BookmarkEnd(BookmarkEnd::new(id)));
         self
     }
 
@@ -167,55 +120,8 @@ impl Paragraph {
         self
     }
 
-    pub fn snap_to_grid(mut self, v: bool) -> Self {
-        self.property = self.property.snap_to_grid(v);
-        self
-    }
-
-    pub fn keep_next(mut self, v: bool) -> Self {
-        self.property = self.property.keep_next(v);
-        self
-    }
-
-    pub fn contextual_spacing(mut self, v: bool) -> Self {
-        self.property = self.property.contextual_spacing(v);
-        self
-    }
-
-    pub fn keep_lines(mut self, v: bool) -> Self {
-        self.property = self.property.keep_lines(v);
-        self
-    }
-
-    pub fn outline_lvl(mut self, v: usize) -> Self {
-        self.property = self.property.outline_lvl(v);
-        self
-    }
-
-    pub fn page_break_before(mut self, v: bool) -> Self {
-        self.property = self.property.page_break_before(v);
-        self
-    }
-
-    pub fn widow_control(mut self, v: bool) -> Self {
-        self.property = self.property.widow_control(v);
-        self
-    }
-
-    pub fn section_property(mut self, s: SectionProperty) -> Self {
-        self.property = self.property.section_property(s);
-        self
-    }
-
     pub fn add_tab(mut self, t: Tab) -> Self {
         self.property = self.property.add_tab(t);
-        self
-    }
-
-    pub fn tabs(mut self, tabs: &[Tab]) -> Self {
-        for tab in tabs {
-            self.property = self.property.add_tab(tab.clone());
-        }
         self
     }
 
@@ -230,54 +136,9 @@ impl Paragraph {
         self
     }
 
-    pub fn start_chars(mut self, chars: i32) -> Paragraph {
-        self.property = self.property.start_chars(chars);
-        self
-    }
-
-    pub fn end_chars(mut self, chars: i32) -> Paragraph {
-        self.property = self.property.end_chars(chars);
-        self
-    }
-
-    pub fn hanging_chars(mut self, chars: i32) -> Paragraph {
-        self.property = self.property.hanging_chars(chars);
-        self
-    }
-
-    pub fn first_line_chars(mut self, chars: i32) -> Paragraph {
-        self.property = self.property.first_line_chars(chars);
-        self
-    }
-
     pub fn numbering(mut self, id: NumberingId, level: IndentLevel) -> Self {
         self.property = self.property.numbering(id, level);
         self.has_numbering = true;
-        self
-    }
-
-    pub fn size(mut self, size: usize) -> Self {
-        self.property.run_property = self.property.run_property.size(size);
-        self
-    }
-
-    pub fn color(mut self, c: impl Into<String>) -> Self {
-        self.property.run_property = self.property.run_property.color(c);
-        self
-    }
-
-    pub fn bold(mut self) -> Self {
-        self.property.run_property = self.property.run_property.bold();
-        self
-    }
-
-    pub fn italic(mut self) -> Self {
-        self.property.run_property = self.property.run_property.italic();
-        self
-    }
-
-    pub fn fonts(mut self, f: RunFonts) -> Self {
-        self.property.run_property = self.property.run_property.fonts(f);
         self
     }
 
@@ -288,26 +149,6 @@ impl Paragraph {
 
     pub fn line_spacing(mut self, spacing: LineSpacing) -> Self {
         self.property = self.property.line_spacing(spacing);
-        self
-    }
-
-    pub fn character_spacing(mut self, spacing: i32) -> Self {
-        self.property = self.property.character_spacing(spacing);
-        self
-    }
-
-    pub fn delete(mut self, author: impl Into<String>, date: impl Into<String>) -> Self {
-        self.property.run_property.del = Some(Delete::new().author(author).date(date));
-        self
-    }
-
-    pub fn insert(mut self, author: impl Into<String>, date: impl Into<String>) -> Self {
-        self.property.run_property.ins = Some(Insert::new_with_empty().author(author).date(date));
-        self
-    }
-
-    pub fn paragraph_property_change(mut self, p: ParagraphPropertyChange) -> Self {
-        self.property = self.property.paragraph_property_change(p);
         self
     }
 
@@ -408,107 +249,7 @@ impl Paragraph {
         self
     }
 
-    pub fn add_num_pages(mut self, p: NumPages) -> Self {
-        self.children.push(ParagraphChild::NumPages(Box::new(p)));
-        self
-    }
-
     // frameProperty
-    pub fn wrap(mut self, wrap: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            wrap: Some(wrap.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn v_anchor(mut self, anchor: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            v_anchor: Some(anchor.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn h_anchor(mut self, anchor: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            h_anchor: Some(anchor.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn h_rule(mut self, r: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            h_rule: Some(r.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn x_align(mut self, align: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            x_align: Some(align.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn y_align(mut self, align: impl Into<String>) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            y_align: Some(align.into()),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn h_space(mut self, x: i32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            h_space: Some(x),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn v_space(mut self, x: i32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            v_space: Some(x),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn frame_x(mut self, x: i32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            x: Some(x),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn frame_y(mut self, y: i32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            y: Some(y),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn frame_width(mut self, n: u32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            w: Some(n),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
-
-    pub fn frame_height(mut self, n: u32) -> Self {
-        self.property.frame_property = Some(FrameProperty {
-            h: Some(n),
-            ..self.property.frame_property.unwrap_or_default()
-        });
-        self
-    }
 }
 
 impl BuildXML for Paragraph {
@@ -524,4 +265,3 @@ impl BuildXML for Paragraph {
             .into_inner()
     }
 }
-

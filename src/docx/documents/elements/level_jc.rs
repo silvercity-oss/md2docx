@@ -19,9 +19,6 @@ impl BuildXML for LevelJc {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .level_justification(&self.val)?
-            .into_inner()
+        XMLBuilder::from(stream).level_justification(&self.val)?.into_inner()
     }
 }
-

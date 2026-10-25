@@ -3,7 +3,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Comments {
     pub(crate) comments: Vec<Comment>,
@@ -12,14 +11,6 @@ pub struct Comments {
 impl Comments {
     pub fn new() -> Self {
         Default::default()
-    }
-
-    pub fn inner(&self) -> &[Comment] {
-        &self.comments
-    }
-
-    pub fn into_inner(self) -> Vec<Comment> {
-        self.comments
     }
 
     pub(crate) fn add_comments(&mut self, comments: Vec<Comment>) {
@@ -40,4 +31,3 @@ impl BuildXML for Comments {
             .into_inner()
     }
 }
-

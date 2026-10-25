@@ -12,10 +12,6 @@ impl BoldCs {
     pub fn new() -> BoldCs {
         Default::default()
     }
-    pub fn disable(mut self) -> BoldCs {
-        self.val = false;
-        self
-    }
 }
 
 impl Default for BoldCs {

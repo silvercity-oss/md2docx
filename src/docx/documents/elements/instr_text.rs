@@ -34,4 +34,3 @@ impl BuildXML for Box<InstrText> {
             .into_inner()
     }
 }
-

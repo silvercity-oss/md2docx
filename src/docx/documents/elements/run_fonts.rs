@@ -49,31 +49,6 @@ impl RunFonts {
         self.cs = Some(escape_owned(f.into()));
         self
     }
-
-    pub fn ascii_theme(mut self, f: impl Into<String>) -> Self {
-        self.ascii_theme = Some(escape_owned(f.into()));
-        self
-    }
-
-    pub fn hi_ansi_theme(mut self, f: impl Into<String>) -> Self {
-        self.hi_ansi_theme = Some(escape_owned(f.into()));
-        self
-    }
-
-    pub fn east_asia_theme(mut self, f: impl Into<String>) -> Self {
-        self.east_asia_theme = Some(escape_owned(f.into()));
-        self
-    }
-
-    pub fn cs_theme(mut self, f: impl Into<String>) -> Self {
-        self.cs_theme = Some(escape_owned(f.into()));
-        self
-    }
-
-    pub fn hint(mut self, f: impl Into<String>) -> Self {
-        self.hint = Some(escape_owned(f.into()));
-        self
-    }
 }
 
 impl BuildXML for RunFonts {
@@ -96,4 +71,3 @@ impl BuildXML for RunFonts {
             .into_inner()
     }
 }
-

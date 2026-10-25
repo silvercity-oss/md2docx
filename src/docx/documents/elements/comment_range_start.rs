@@ -11,23 +11,8 @@ pub struct CommentRangeStart {
 }
 
 impl CommentRangeStart {
-    pub fn new(comment: Comment) -> CommentRangeStart {
-        CommentRangeStart {
-            id: comment.id(),
-            comment,
-        }
-    }
-
-    pub(crate) fn comment(&mut self, comment: Comment) {
-        self.comment = comment;
-    }
-
     pub(crate) fn get_comment_ref(&self) -> &Comment {
         &self.comment
-    }
-
-    pub(crate) fn get_id(&self) -> usize {
-        self.id
     }
 }
 
@@ -41,4 +26,3 @@ impl BuildXML for CommentRangeStart {
             .into_inner()
     }
 }
-

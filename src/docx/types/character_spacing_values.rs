@@ -1,6 +1,6 @@
+use super::errors;
 use std::fmt;
 use std::str::FromStr;
-use super::errors;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CharacterSpacingValues {
@@ -29,9 +29,7 @@ impl FromStr for CharacterSpacingValues {
         match s {
             "doNotCompress" => Ok(CharacterSpacingValues::DoNotCompress),
             "compressPunctuation" => Ok(CharacterSpacingValues::CompressPunctuation),
-            "compressPunctuationAndJapaneseKana" => {
-                Ok(CharacterSpacingValues::CompressPunctuationAndJapaneseKana)
-            }
+            "compressPunctuationAndJapaneseKana" => Ok(CharacterSpacingValues::CompressPunctuationAndJapaneseKana),
             _ => Err(errors::TypeError::Unsupported(s.to_string())),
         }
     }

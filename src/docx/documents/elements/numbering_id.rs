@@ -2,7 +2,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct NumberingId {
     pub id: usize,
@@ -22,4 +21,3 @@ impl BuildXML for NumberingId {
         XMLBuilder::from(stream).num_id(self.id)?.into_inner()
     }
 }
-

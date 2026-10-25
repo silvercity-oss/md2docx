@@ -8,11 +8,7 @@ pub struct DocId {
     id: String,
 }
 
-impl DocId {
-    pub fn new(id: impl Into<String>) -> DocId {
-        DocId { id: id.into() }
-    }
-}
+impl DocId {}
 
 impl BuildXML for DocId {
     fn build_to<W: Write>(

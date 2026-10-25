@@ -5,7 +5,6 @@ use crate::docx::xml_builder::*;
 use crate::docx::{Footer, Header};
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionProperty {
     pub page_size: PageSize,
@@ -46,84 +45,10 @@ impl SectionProperty {
         self
     }
 
-    pub fn page_orient(mut self, o: PageOrientationType) -> Self {
-        self.page_size = self.page_size.orient(o);
-        self
-    }
-
-    pub fn doc_grid(mut self, doc_grid: DocGrid) -> Self {
-        self.doc_grid = Some(doc_grid);
-        self
-    }
-
-    pub fn text_direction(mut self, direction: String) -> Self {
-        self.text_direction = direction;
-        self
-    }
-
-    pub fn title_pg(mut self) -> Self {
-        self.title_pg = true;
-        self
-    }
-
-    pub fn header(mut self, h: Header, rid: &str) -> Self {
-        self.header_reference = Some(HeaderReference::new("default", rid));
-        self.header = Some((rid.to_string(), h));
-        self
-    }
-
-    pub fn first_header(mut self, h: Header, rid: &str) -> Self {
-        self.first_header_reference = Some(HeaderReference::new("first", rid));
-        self.first_header = Some((rid.to_string(), h));
-        self.title_pg = true;
-        self
-    }
-
-    pub fn first_header_without_title_pg(mut self, h: Header, rid: &str) -> Self {
-        self.first_header_reference = Some(HeaderReference::new("first", rid));
-        self.first_header = Some((rid.to_string(), h));
-        self
-    }
-
-    pub fn even_header(mut self, h: Header, rid: &str) -> Self {
-        self.even_header_reference = Some(HeaderReference::new("even", rid));
-        self.even_header = Some((rid.to_string(), h));
-        self
-    }
-
     pub fn footer(mut self, h: Footer, rid: &str) -> Self {
         self.footer_reference = Some(FooterReference::new("default", rid));
         self.footer = Some((rid.to_string(), h));
         self
-    }
-
-    pub fn first_footer(mut self, h: Footer, rid: &str) -> Self {
-        self.first_footer_reference = Some(FooterReference::new("first", rid));
-        self.first_footer = Some((rid.to_string(), h));
-        self.title_pg = true;
-        self
-    }
-
-    pub fn first_footer_without_title_pg(mut self, h: Footer, rid: &str) -> Self {
-        self.first_footer_reference = Some(FooterReference::new("first", rid));
-        self.first_footer = Some((rid.to_string(), h));
-        self
-    }
-
-    pub fn even_footer(mut self, h: Footer, rid: &str) -> Self {
-        self.even_footer_reference = Some(FooterReference::new("even", rid));
-        self.even_footer = Some((rid.to_string(), h));
-        self
-    }
-
-    /// Returns the default, first, and even headers that are present.
-    pub fn get_headers(&self) -> Vec<&(String, Header)> {
-        self.headers().collect()
-    }
-
-    /// Returns the default, first, and even footers that are present.
-    pub fn get_footers(&self) -> Vec<&(String, Footer)> {
-        self.footers().collect()
     }
 
     /// Iterates headers without allocating the compatibility `Vec` returned by
@@ -136,13 +61,9 @@ impl SectionProperty {
 
     /// Iterates mutable headers so package metadata can be collected in place.
     pub(crate) fn headers_mut(&mut self) -> impl Iterator<Item = &mut (String, Header)> {
-        [
-            &mut self.header,
-            &mut self.first_header,
-            &mut self.even_header,
-        ]
-        .into_iter()
-        .filter_map(Option::as_mut)
+        [&mut self.header, &mut self.first_header, &mut self.even_header]
+            .into_iter()
+            .filter_map(Option::as_mut)
     }
 
     /// Iterates footers without allocating the compatibility `Vec` returned by
@@ -155,18 +76,9 @@ impl SectionProperty {
 
     /// Iterates mutable footers so package metadata can be collected in place.
     pub(crate) fn footers_mut(&mut self) -> impl Iterator<Item = &mut (String, Footer)> {
-        [
-            &mut self.footer,
-            &mut self.first_footer,
-            &mut self.even_footer,
-        ]
-        .into_iter()
-        .filter_map(Option::as_mut)
-    }
-
-    pub fn page_num_type(mut self, h: PageNumType) -> Self {
-        self.page_num_type = Some(h);
-        self
+        [&mut self.footer, &mut self.first_footer, &mut self.even_footer]
+            .into_iter()
+            .filter_map(Option::as_mut)
     }
 }
 
@@ -227,4 +139,3 @@ impl BuildXML for SectionProperty {
             .into_inner()
     }
 }
-

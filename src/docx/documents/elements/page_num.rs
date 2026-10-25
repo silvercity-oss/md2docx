@@ -10,9 +10,7 @@ pub struct PageNum {
 
 impl Default for PageNum {
     fn default() -> Self {
-        Self {
-            instr: InstrPAGE {},
-        }
+        Self { instr: InstrPAGE {} }
     }
 }
 
@@ -36,4 +34,3 @@ impl BuildXML for PageNum {
             .build_to(stream)
     }
 }
-

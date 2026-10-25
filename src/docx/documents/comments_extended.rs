@@ -32,4 +32,3 @@ impl BuildXML for CommentsExtended {
             .into_inner()
     }
 }
-

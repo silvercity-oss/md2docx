@@ -2071,6 +2071,9 @@ fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
 }
 
 pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &Config, writer: W) -> Result<()> {
+    // Identifier counters restart for every conversion, so equal input gives equal ids and one
+    // conversion cannot observe another's progress.
+    let _ids = crate::docx::IdScope::new();
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown);

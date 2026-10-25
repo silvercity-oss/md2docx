@@ -17,4 +17,3 @@ impl<W: Write> XMLBuilder<W> {
     closed_with_child!(characters_with_spaces, "CharactersWithSpaces");
     closed_with_child!(paragraphs, "Paragraphs");
 }
-

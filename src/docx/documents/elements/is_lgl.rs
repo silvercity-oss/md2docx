@@ -6,11 +6,7 @@ use crate::docx::xml_builder::*;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct IsLgl {}
 
-impl IsLgl {
-    pub fn new() -> IsLgl {
-        IsLgl {}
-    }
-}
+impl IsLgl {}
 
 impl BuildXML for IsLgl {
     fn build_to<W: Write>(
@@ -20,4 +16,3 @@ impl BuildXML for IsLgl {
         XMLBuilder::from(stream).is_lgl()?.into_inner()
     }
 }
-

@@ -8,16 +8,7 @@ pub struct Dstrike {
     pub val: bool,
 }
 
-impl Dstrike {
-    pub fn new() -> Dstrike {
-        Default::default()
-    }
-
-    pub fn disable(mut self) -> Dstrike {
-        self.val = false;
-        self
-    }
-}
+impl Dstrike {}
 
 impl Default for Dstrike {
     fn default() -> Self {

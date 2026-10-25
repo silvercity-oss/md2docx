@@ -38,101 +38,10 @@ pub struct TableOfContents {
 }
 
 impl TableOfContents {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_instr_text(s: &str) -> Self {
-        let instr = InstrToC::with_instr_text(s);
-        Self {
-            instr,
-            ..Self::default()
-        }
-    }
-
-    pub fn heading_styles_range(mut self, start: usize, end: usize) -> Self {
-        self.instr = self.instr.heading_styles_range(start, end);
-        self
-    }
-
-    pub fn tc_field_identifier(mut self, f: Option<String>) -> Self {
-        self.instr = self.instr.tc_field_identifier(f);
-        self
-    }
-
-    pub fn add_style_with_level(mut self, s: StyleWithLevel) -> Self {
-        self.instr = self.instr.add_style_with_level(s);
-        self
-    }
-
-    pub fn hyperlink(mut self) -> Self {
-        self.instr = self.instr.hyperlink();
-        self
-    }
-
-    pub fn alias(mut self, a: impl Into<String>) -> Self {
-        self.alias = Some(a.into());
-        self
-    }
-
-    pub fn delete(mut self, author: impl Into<String>, date: impl Into<String>) -> Self {
-        self.delete = Some(TableOfContentsReviewData {
-            author: escape::escape_owned(author.into()),
-            date: date.into(),
-        });
-        self
-    }
-
     // pub fn tc_field_level_range(mut self, start: usize, end: usize) -> Self {
     //     self.instr = self.instr.tc_field_level_range(start, end);
     //     self
     // }
-
-    pub fn add_item(mut self, t: TableOfContentsItem) -> Self {
-        self.items.push(t);
-        self
-    }
-
-    pub fn auto(mut self) -> Self {
-        self.auto = true;
-        self
-    }
-
-    pub fn dirty(mut self) -> Self {
-        self.dirty = true;
-        self
-    }
-
-    pub fn add_before_paragraph(mut self, p: Paragraph) -> Self {
-        self.before_contents
-            .push(TocContent::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_after_paragraph(mut self, p: Paragraph) -> Self {
-        self.after_contents.push(TocContent::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_before_table(mut self, t: Table) -> Self {
-        self.before_contents.push(TocContent::Table(Box::new(t)));
-        self
-    }
-
-    pub fn add_after_table(mut self, t: Table) -> Self {
-        self.after_contents.push(TocContent::Table(Box::new(t)));
-        self
-    }
-
-    pub fn without_sdt(mut self) -> Self {
-        self.without_sdt = true;
-        self
-    }
-
-    pub fn paragraph_property(mut self, p: ParagraphProperty) -> Self {
-        self.paragraph_property = Some(p);
-        self
-    }
 }
 
 impl BuildXML for TableOfContents {
@@ -149,10 +58,7 @@ impl BuildXML for TableOfContents {
             let mut b = XMLBuilder::from(stream);
 
             if !self.without_sdt {
-                b = b
-                    .open_structured_tag()?
-                    .add_child(&p)?
-                    .open_structured_tag_content()?;
+                b = b.open_structured_tag()?.add_child(&p)?.open_structured_tag_content()?;
             }
 
             for c in self.before_contents.iter() {
@@ -203,9 +109,7 @@ impl BuildXML for TableOfContents {
                                 let mut new_p = p.clone();
                                 new_p.children.insert(
                                     0,
-                                    ParagraphChild::Run(Box::new(
-                                        Run::new().add_field_char(FieldCharType::End, false),
-                                    )),
+                                    ParagraphChild::Run(Box::new(Run::new().add_field_char(FieldCharType::End, false))),
                                 );
                                 b = b.add_child(&new_p)?
                             } else {
@@ -216,9 +120,7 @@ impl BuildXML for TableOfContents {
                             // insert empty line for table
                             // because it causes docx error if table is added after TOC
                             if i == 0 {
-                                b = b.add_child(
-                                    &Paragraph::new().add_run(Run::new().add_text("")),
-                                )?;
+                                b = b.add_child(&Paragraph::new().add_run(Run::new().add_text("")))?;
                             }
                             b = b.add_child(&t)?;
                         }
@@ -249,10 +151,7 @@ impl BuildXML for TableOfContents {
             let mut b = XMLBuilder::from(stream);
 
             if !self.without_sdt {
-                b = b
-                    .open_structured_tag()?
-                    .add_child(&p)?
-                    .open_structured_tag_content()?;
+                b = b.open_structured_tag()?.add_child(&p)?.open_structured_tag_content()?;
             }
 
             for c in self.before_contents.iter() {
@@ -291,4 +190,3 @@ impl BuildXML for TableOfContents {
         }
     }
 }
-

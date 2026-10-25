@@ -47,36 +47,12 @@ pub enum RunChild {
 
 impl Run {
     pub fn new() -> Run {
-        Run {
-            ..Default::default()
-        }
+        Run { ..Default::default() }
     }
 
     pub fn add_text(mut self, text: impl Into<String>) -> Run {
         self.children
             .push(RunChild::Text(Text::new(text.into().replace('\n', ""))));
-        self
-    }
-
-    pub(crate) fn add_text_without_escape(mut self, text: impl Into<String>) -> Run {
-        self.children.push(RunChild::Text(Text::without_escape(
-            text.into().replace('\n', ""),
-        )));
-        self
-    }
-
-    pub fn add_delete_text(mut self, text: impl Into<String>) -> Run {
-        self.children.push(RunChild::DeleteText(DeleteText::new(
-            text.into().replace('\n', ""),
-        )));
-        self
-    }
-
-    pub(crate) fn add_delete_text_without_escape(mut self, text: impl Into<String>) -> Run {
-        self.children
-            .push(RunChild::DeleteText(DeleteText::without_escape(
-                text.into().replace('\n', ""),
-            )));
         self
     }
 
@@ -86,13 +62,6 @@ impl Run {
             f = f.dirty();
         };
         self.children.push(RunChild::FieldChar(f));
-        self
-    }
-
-    pub fn add_tc(mut self, tc: InstrTC) -> Run {
-        self = self.add_field_char(crate::docx::types::FieldCharType::Begin, false);
-        self = self.add_instr_text(InstrText::TC(tc));
-        self = self.add_field_char(crate::docx::types::FieldCharType::End, false);
         self
     }
 
@@ -111,19 +80,8 @@ impl Run {
         self
     }
 
-    pub fn add_ptab(mut self, ptab: PositionalTab) -> Run {
-        self.children.push(RunChild::PTab(ptab));
-        self
-    }
-
     pub fn add_image(mut self, pic: Pic) -> Run {
-        self.children
-            .push(RunChild::Drawing(Box::new(Drawing::new().pic(pic))));
-        self
-    }
-
-    pub(crate) fn add_drawing(mut self, d: Drawing) -> Run {
-        self.children.push(RunChild::Drawing(Box::new(d)));
+        self.children.push(RunChild::Drawing(Box::new(Drawing::new().pic(pic))));
         self
     }
 
@@ -138,45 +96,8 @@ impl Run {
         self
     }
 
-    pub fn add_carriage_return(mut self) -> Run {
-        self.children
-            .push(RunChild::CarriageReturn(CarriageReturn::new()));
-        self
-    }
-
-    pub fn add_no_break_hyphen(mut self) -> Run {
-        self.children
-            .push(RunChild::NoBreakHyphen(NoBreakHyphen::new()));
-        self
-    }
-
-    pub fn add_soft_hyphen(mut self) -> Run {
-        self.children.push(RunChild::SoftHyphen(SoftHyphen::new()));
-        self
-    }
-
-    pub fn add_sym(mut self, sym: Sym) -> Run {
-        self.children.push(RunChild::Sym(sym));
-        self
-    }
-
     pub fn style(mut self, style_id: &str) -> Self {
         self.run_property = self.run_property.style(style_id);
-        self
-    }
-
-    pub fn size(mut self, size: usize) -> Run {
-        self.run_property = self.run_property.size(size);
-        self
-    }
-
-    pub fn character_spacing(mut self, v: i32) -> Run {
-        self.run_property = self.run_property.spacing(v);
-        self
-    }
-
-    pub fn stretch(mut self, v: i32) -> Run {
-        self.run_property = self.run_property.stretch(v);
         self
     }
 
@@ -185,36 +106,8 @@ impl Run {
         self
     }
 
-    /// Sets the theme color reference (`w:themeColor`) on the run color.
-    pub fn theme_color(mut self, theme_color: crate::docx::types::ThemeColor) -> Run {
-        self.run_property = self.run_property.theme_color(theme_color);
-        self
-    }
-
-    /// Sets the theme shade modifier (`w:themeShade`) on the run color.
-    pub fn theme_shade(mut self, theme_shade: impl Into<String>) -> Run {
-        self.run_property = self.run_property.theme_shade(theme_shade);
-        self
-    }
-
-    /// Sets the theme tint modifier (`w:themeTint`) on the run color.
-    pub fn theme_tint(mut self, theme_tint: impl Into<String>) -> Run {
-        self.run_property = self.run_property.theme_tint(theme_tint);
-        self
-    }
-
-    pub fn highlight(mut self, color: impl Into<String>) -> Run {
-        self.run_property = self.run_property.highlight(color);
-        self
-    }
-
     pub fn bold(mut self) -> Run {
         self.run_property = self.run_property.bold();
-        self
-    }
-
-    pub fn disable_bold(mut self) -> Run {
-        self.run_property = self.run_property.disable_bold();
         self
     }
 
@@ -228,45 +121,14 @@ impl Run {
         self
     }
 
-    pub fn dstrike(mut self) -> Run {
-        self.run_property = self.run_property.dstrike();
-        self
-    }
-
-    pub fn text_border(mut self, b: TextBorder) -> Run {
-        self.run_property = self.run_property.text_border(b);
-        self
-    }
-
-    pub fn disable_italic(mut self) -> Run {
-        self.run_property = self.run_property.disable_italic();
-        self
-    }
-
     pub fn underline(mut self, line_type: impl Into<String>) -> Run {
         self.run_property = self.run_property.underline(line_type);
         self
     }
 
-    pub fn vanish(mut self) -> Run {
-        self.run_property = self.run_property.vanish();
-        self
-    }
-
-    pub fn fonts(mut self, f: RunFonts) -> Run {
-        self.run_property = self.run_property.fonts(f);
-        self
-    }
-
-    pub(crate) fn set_property(mut self, p: RunProperty) -> Run {
-        self.run_property = p;
-        self
-    }
-
     pub fn add_footnote_reference(mut self, footnote: Footnote) -> Run {
         self.run_property = RunProperty::new().style("FootnoteReference");
-        self.children
-            .push(RunChild::FootnoteReference(footnote.into()));
+        self.children.push(RunChild::FootnoteReference(footnote.into()));
         self
     }
 
@@ -324,4 +186,3 @@ impl BuildXML for Run {
             .into_inner()
     }
 }
-

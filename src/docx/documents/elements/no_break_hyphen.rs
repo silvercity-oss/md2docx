@@ -26,4 +26,3 @@ impl BuildXML for NoBreakHyphen {
         XMLBuilder::from(stream).no_break_hyphen()?.into_inner()
     }
 }
-

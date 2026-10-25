@@ -1,7 +1,6 @@
-
+use super::errors;
 use std::fmt;
 use std::str::FromStr;
-use super::errors;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum DocGridType {

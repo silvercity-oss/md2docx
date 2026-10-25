@@ -6,11 +6,7 @@ use crate::docx::xml_builder::XMLBuilder;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct InstrPAGE {}
 
-impl InstrPAGE {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+impl InstrPAGE {}
 
 impl BuildXML for InstrPAGE {
     fn build_to<W: Write>(

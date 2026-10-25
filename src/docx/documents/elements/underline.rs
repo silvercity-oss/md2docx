@@ -22,4 +22,3 @@ impl BuildXML for Underline {
         XMLBuilder::from(stream).underline(&self.val)?.into_inner()
     }
 }
-

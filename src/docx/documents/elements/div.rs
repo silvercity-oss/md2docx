@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Div {
     pub id: String,
@@ -22,36 +21,4 @@ impl Default for Div {
     }
 }
 
-impl Div {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            ..Default::default()
-        }
-    }
-
-    pub fn margin_left(mut self, s: usize) -> Self {
-        self.margin_left = s;
-        self
-    }
-
-    pub fn margin_right(mut self, s: usize) -> Self {
-        self.margin_right = s;
-        self
-    }
-
-    pub fn margin_top(mut self, s: usize) -> Self {
-        self.margin_top = s;
-        self
-    }
-
-    pub fn margin_bottom(mut self, s: usize) -> Self {
-        self.margin_bottom = s;
-        self
-    }
-
-    pub fn add_child(mut self, s: Div) -> Self {
-        self.divs_child.push(s);
-        self
-    }
-}
+impl Div {}

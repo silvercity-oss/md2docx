@@ -22,4 +22,3 @@ impl BuildXML for Sz {
         XMLBuilder::from(stream).sz(self.val)?.into_inner()
     }
 }
-

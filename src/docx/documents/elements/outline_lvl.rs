@@ -2,7 +2,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutlineLvl {
     pub v: usize,
@@ -26,4 +25,3 @@ impl BuildXML for OutlineLvl {
             .into_inner()
     }
 }
-

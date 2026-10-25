@@ -5,7 +5,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::types::CharacterSpacingValues;
 use crate::docx::xml_builder::*;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     default_tab_stop: DefaultTabStop,
@@ -20,36 +19,6 @@ pub struct Settings {
 impl Settings {
     pub fn new() -> Settings {
         Default::default()
-    }
-
-    pub fn doc_id(mut self, id: impl Into<String>) -> Self {
-        self.doc_id = Some(DocId::new(id.into()));
-        self
-    }
-
-    pub fn default_tab_stop(mut self, tab_stop: usize) -> Self {
-        self.default_tab_stop = DefaultTabStop::new(tab_stop);
-        self
-    }
-
-    pub fn add_doc_var(mut self, name: impl Into<String>, val: impl Into<String>) -> Self {
-        self.doc_vars.push(DocVar::new(name, val));
-        self
-    }
-
-    pub fn even_and_odd_headers(mut self) -> Self {
-        self.even_and_odd_headers = true;
-        self
-    }
-
-    pub fn adjust_line_height_in_table(mut self) -> Self {
-        self.adjust_line_height_in_table = true;
-        self
-    }
-
-    pub fn character_spacing_control(mut self, val: CharacterSpacingValues) -> Self {
-        self.character_spacing_control = Some(val);
-        self
     }
 }
 
@@ -86,15 +55,9 @@ impl BuildXML for Settings {
             .apply_opt(self.character_spacing_control, |v, b| {
                 b.character_spacing_control(&v.to_string())
             })?
-            .apply_if(self.adjust_line_height_in_table, |b| {
-                b.adjust_line_height_table()
-            })?
+            .apply_if(self.adjust_line_height_in_table, |b| b.adjust_line_height_table())?
             .use_fe_layout()?
-            .compat_setting(
-                "compatibilityMode",
-                "http://schemas.microsoft.com/office/word",
-                "15",
-            )?
+            .compat_setting("compatibilityMode", "http://schemas.microsoft.com/office/word", "15")?
             .compat_setting(
                 "overrideTableStyleFontSizeAndJustification",
                 "http://schemas.microsoft.com/office/word",
@@ -130,4 +93,3 @@ impl BuildXML for Settings {
             .into_inner()
     }
 }
-

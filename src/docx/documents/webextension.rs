@@ -10,14 +10,7 @@ pub struct WebExtensionProperty {
     pub value: String,
 }
 
-impl WebExtensionProperty {
-    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            value: value.into(),
-        }
-    }
-}
+impl WebExtensionProperty {}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct WebExtension {
@@ -29,31 +22,7 @@ pub struct WebExtension {
     pub properties: Vec<WebExtensionProperty>,
 }
 
-impl WebExtension {
-    pub fn new(
-        id: impl Into<String>,
-        reference_id: impl Into<String>,
-        version: impl Into<String>,
-        store: impl Into<String>,
-        store_type: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            reference_id: reference_id.into(),
-            version: version.into(),
-            store: store.into(),
-            store_type: store_type.into(),
-            properties: vec![],
-        }
-    }
-
-    pub fn property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        let v = value.into();
-        let v = format!("&quot;{}&quot;", escape(&v).replace("&quot;", "\\&quot;"));
-        self.properties.push(WebExtensionProperty::new(name, v));
-        self
-    }
-}
+impl WebExtension {}
 
 impl BuildXML for WebExtension {
     fn build_to<W: Write>(
@@ -66,24 +35,14 @@ impl BuildXML for WebExtension {
                 "http://schemas.microsoft.com/office/webextensions/webextension/2010/11",
                 &format!("{{{}}}", self.id),
             )?
-            .webextension_reference(
-                &self.reference_id,
-                &self.version,
-                &self.store,
-                &self.store_type,
-            )?
+            .webextension_reference(&self.reference_id, &self.version, &self.store, &self.store_type)?
             .webextension_alternate_references()?
             .open_webextension_properties()?
-            .apply_each(&self.properties, |p, b| {
-                b.webextension_property(&p.name, &p.value)
-            })?
+            .apply_each(&self.properties, |p, b| b.webextension_property(&p.name, &p.value))?
             .close()?
             .webextension_bindings()?
-            .webextension_snapshot(
-                "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-            )?
+            .webextension_snapshot("http://schemas.openxmlformats.org/officeDocument/2006/relationships")?
             .close()?
             .into_inner()
     }
 }
-

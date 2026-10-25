@@ -20,11 +20,6 @@ impl Numbering {
         }
     }
 
-    pub fn overrides(mut self, overrides: Vec<LevelOverride>) -> Self {
-        self.level_overrides = overrides;
-        self
-    }
-
     pub fn add_override(mut self, o: LevelOverride) -> Self {
         self.level_overrides.push(o);
         self
@@ -46,4 +41,3 @@ impl BuildXML for Numbering {
             .into_inner()
     }
 }
-

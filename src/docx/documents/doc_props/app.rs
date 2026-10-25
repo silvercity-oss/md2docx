@@ -27,4 +27,3 @@ impl BuildXML for AppProps {
             .into_inner()
     }
 }
-

@@ -8,11 +8,7 @@ pub struct LevelRestart {
     val: u32,
 }
 
-impl LevelRestart {
-    pub fn new(val: impl Into<u32>) -> Self {
-        Self { val: val.into() }
-    }
-}
+impl LevelRestart {}
 
 impl BuildXML for LevelRestart {
     fn build_to<W: Write>(
@@ -24,4 +20,3 @@ impl BuildXML for LevelRestart {
             .into_inner()
     }
 }
-

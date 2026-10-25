@@ -6,11 +6,7 @@ use crate::docx::xml_builder::*;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Vanish {}
 
-impl Vanish {
-    pub fn new() -> Vanish {
-        Vanish {}
-    }
-}
+impl Vanish {}
 
 impl BuildXML for Vanish {
     fn build_to<W: Write>(
@@ -20,4 +16,3 @@ impl BuildXML for Vanish {
         XMLBuilder::from(stream).vanish()?.into_inner()
     }
 }
-

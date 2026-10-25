@@ -12,10 +12,7 @@ pub struct Footnote {
 
 impl Default for Footnote {
     fn default() -> Self {
-        Footnote {
-            id: 1,
-            content: vec![],
-        }
+        Footnote { id: 1, content: vec![] }
     }
 }
 
@@ -25,10 +22,6 @@ impl Footnote {
             id: generate_footnote_id(),
             ..Default::default()
         }
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
     }
 
     pub fn add_content(&mut self, p: Paragraph) -> Self {
@@ -64,4 +57,3 @@ impl BuildXML for Footnote {
             .into_inner()
     }
 }
-

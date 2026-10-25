@@ -1,10 +1,9 @@
-
 //
 // Please see https://c-rex.net/projects/samples/ooxml/e1/Part4/OOXML_P4_DOCX_ST_FldCharType_topic_ID0E6TU2.html#topic_ID0E6TU2
 //
+use super::errors;
 use std::fmt;
 use std::str::FromStr;
-use super::errors;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum FieldCharType {

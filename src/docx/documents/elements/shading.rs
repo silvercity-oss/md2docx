@@ -27,18 +27,8 @@ impl Shading {
         Shading::default()
     }
 
-    pub fn color(mut self, color: impl Into<String>) -> Shading {
-        self.color = color.into();
-        self
-    }
-
     pub fn fill(mut self, fill: impl Into<String>) -> Shading {
         self.fill = fill.into();
-        self
-    }
-
-    pub fn shd_type(mut self, shd_type: ShdType) -> Shading {
-        self.shd_type = shd_type;
         self
     }
 }

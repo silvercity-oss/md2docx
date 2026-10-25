@@ -3,7 +3,6 @@ use crate::docx::types::*;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageSize {
     w: u32,
@@ -35,21 +34,6 @@ impl PageSize {
             orient: self.orient,
         }
     }
-
-    pub fn width(mut self, w: u32) -> PageSize {
-        self.w = w;
-        self
-    }
-
-    pub fn height(mut self, h: u32) -> PageSize {
-        self.h = h;
-        self
-    }
-
-    pub fn orient(mut self, o: PageOrientationType) -> PageSize {
-        self.orient = Some(o);
-        self
-    }
 }
 
 impl BuildXML for PageSize {
@@ -68,4 +52,3 @@ impl BuildXML for PageSize {
             .into_inner()
     }
 }
-

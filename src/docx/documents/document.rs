@@ -55,41 +55,6 @@ impl Document {
         self
     }
 
-    pub fn add_bookmark_start(mut self, id: usize, name: impl Into<String>) -> Self {
-        self.children
-            .push(DocumentChild::BookmarkStart(BookmarkStart::new(id, name)));
-        self
-    }
-
-    pub fn add_bookmark_end(mut self, id: usize) -> Self {
-        self.children
-            .push(DocumentChild::BookmarkEnd(BookmarkEnd::new(id)));
-        self
-    }
-
-    pub fn add_comment_start(mut self, comment: Comment) -> Self {
-        self.children.push(DocumentChild::CommentStart(Box::new(
-            CommentRangeStart::new(comment),
-        )));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> Self {
-        self.children
-            .push(DocumentChild::CommentEnd(CommentRangeEnd::new(id)));
-        self
-    }
-
-    pub fn add_section(mut self, sec: Section) -> Self {
-        self.children.push(DocumentChild::Section(Box::new(sec)));
-        self
-    }
-
-    pub fn title_pg(mut self) -> Self {
-        self.section_property = self.section_property.title_pg();
-        self
-    }
-
     pub fn page_size(mut self, size: PageSize) -> Self {
         self.section_property = self.section_property.page_size(size);
         self
@@ -97,91 +62,6 @@ impl Document {
 
     pub fn page_margin(mut self, margin: crate::docx::types::PageMargin) -> Self {
         self.section_property = self.section_property.page_margin(margin);
-        self
-    }
-
-    pub fn page_orient(mut self, o: crate::docx::types::PageOrientationType) -> Self {
-        self.section_property = self.section_property.page_orient(o);
-        self
-    }
-
-    pub fn doc_grid(mut self, doc_grid: DocGrid) -> Self {
-        self.section_property = self.section_property.doc_grid(doc_grid);
-        self
-    }
-
-    pub fn default_section_property(mut self, property: SectionProperty) -> Self {
-        self.section_property = property;
-        self
-    }
-
-    pub fn header(mut self, h: Header, rid: &str) -> Self {
-        self.section_property = self.section_property.header(h, rid);
-        self
-    }
-
-    pub fn first_header(mut self, h: Header, rid: &str) -> Self {
-        self.section_property = self.section_property.first_header(h, rid);
-        self
-    }
-
-    pub(crate) fn first_header_without_title_pg(mut self, h: Header, rid: &str) -> Self {
-        self.section_property = self.section_property.first_header_without_title_pg(h, rid);
-        self
-    }
-
-    pub fn even_header(mut self, h: Header, rid: &str) -> Self {
-        self.section_property = self.section_property.even_header(h, rid);
-        self
-    }
-
-    pub fn footer(mut self, h: Footer, rid: &str) -> Self {
-        self.section_property = self.section_property.footer(h, rid);
-        self
-    }
-
-    pub fn first_footer(mut self, h: Footer, rid: &str) -> Self {
-        self.section_property = self.section_property.first_footer(h, rid);
-        self
-    }
-
-    pub(crate) fn first_footer_without_title_pg(mut self, h: Footer, rid: &str) -> Self {
-        self.section_property = self.section_property.first_footer_without_title_pg(h, rid);
-        self
-    }
-
-    pub fn even_footer(mut self, h: Footer, rid: &str) -> Self {
-        self.section_property = self.section_property.even_footer(h, rid);
-        self
-    }
-
-    pub fn add_structured_data_tag(mut self, t: StructuredDataTag) -> Self {
-        if t.has_numbering {
-            self.has_numbering = true
-        }
-        self.children
-            .push(DocumentChild::StructuredDataTag(Box::new(t)));
-        self
-    }
-
-    pub fn add_table_of_contents(mut self, t: TableOfContents) -> Self {
-        self.children
-            .push(DocumentChild::TableOfContents(Box::new(t)));
-        self
-    }
-
-    pub fn columns(mut self, col: usize) -> Self {
-        self.section_property.columns = col;
-        self
-    }
-
-    pub fn text_direction(mut self, direction: String) -> Self {
-        self.section_property.text_direction = direction;
-        self
-    }
-
-    pub fn page_num_type(mut self, p: PageNumType) -> Self {
-        self.section_property = self.section_property.page_num_type(p);
         self
     }
 
@@ -277,4 +157,3 @@ impl BuildXML for Document {
             .into_inner()
     }
 }
-

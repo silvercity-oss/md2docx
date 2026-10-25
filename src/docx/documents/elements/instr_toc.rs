@@ -6,11 +6,7 @@ use crate::docx::xml_builder::XMLBuilder;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct StyleWithLevel(pub (String, usize));
 
-impl StyleWithLevel {
-    pub fn new(s: impl Into<String>, l: usize) -> Self {
-        Self((s.into(), l))
-    }
-}
+impl StyleWithLevel {}
 // https://c-rex.net/projects/samples/ooxml/e1/Part4/OOXML_P4_DOCX_TOCTOC_topic_ID0ELZO1.html
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct InstrToC {
@@ -58,10 +54,6 @@ pub struct InstrToC {
 impl InstrToC {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_instr_text(s: &str) -> Self {
-        Self::from_str(s).expect("should convert to InstrToC")
     }
 
     pub fn heading_styles_range(mut self, start: usize, end: usize) -> Self {
@@ -355,10 +347,7 @@ impl std::str::FromStr for InstrToC {
                                 if let Some(style) = r.next() {
                                     if let Some(level) = r.next() {
                                         if let Ok(level) = usize::from_str(level) {
-                                            toc = toc.add_style_with_level(StyleWithLevel((
-                                                style.to_string(),
-                                                level,
-                                            )));
+                                            toc = toc.add_style_with_level(StyleWithLevel((style.to_string(), level)));
                                             continue;
                                         }
                                     }
@@ -379,4 +368,3 @@ impl std::str::FromStr for InstrToC {
         }
     }
 }
-

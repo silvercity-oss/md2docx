@@ -34,31 +34,6 @@ impl Indent {
             first_line_chars: None,
         }
     }
-
-    pub fn end(mut self, end: i32) -> Self {
-        self.end = Some(end);
-        self
-    }
-
-    pub fn start_chars(mut self, chars: i32) -> Self {
-        self.start_chars = Some(chars);
-        self
-    }
-
-    pub fn end_chars(mut self, chars: i32) -> Self {
-        self.end_chars = Some(chars);
-        self
-    }
-
-    pub fn hanging_chars(mut self, chars: i32) -> Self {
-        self.hanging_chars = Some(chars);
-        self
-    }
-
-    pub fn first_line_chars(mut self, chars: i32) -> Self {
-        self.first_line_chars = Some(chars);
-        self
-    }
 }
 
 impl Default for Indent {
@@ -85,4 +60,3 @@ impl BuildXML for Indent {
             .into_inner()
     }
 }
-

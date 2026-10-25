@@ -9,11 +9,7 @@ pub struct VMerge {
     val: VMergeType,
 }
 
-impl VMerge {
-    pub fn new(v: VMergeType) -> VMerge {
-        VMerge { val: v }
-    }
-}
+impl VMerge {}
 
 impl BuildXML for VMerge {
     fn build_to<W: Write>(
@@ -25,4 +21,3 @@ impl BuildXML for VMerge {
             .into_inner()
     }
 }
-

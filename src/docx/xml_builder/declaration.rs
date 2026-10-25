@@ -13,4 +13,3 @@ impl<W: Write> XMLBuilder<W> {
         })
     }
 }
-

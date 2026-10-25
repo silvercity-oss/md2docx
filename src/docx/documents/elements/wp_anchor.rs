@@ -4,11 +4,6 @@ use std::io::Write;
 use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct WpAnchor {
-    pub children: Vec<AGraphic>,
-}
-
 /*
   20.4.2.3
   anchor (WpAnchor for Floating DrawingML Object)
@@ -20,27 +15,3 @@ pub struct WpAnchor {
   document relative to the page.
   When this element encapsulates the DrawingML object's i
 */
-impl WpAnchor {
-    pub fn new() -> WpAnchor {
-        Default::default()
-    }
-
-    pub fn add_graphic(mut self, g: AGraphic) -> WpAnchor {
-        self.children.push(g);
-        self
-    }
-}
-
-impl BuildXML for WpAnchor {
-    fn build_to<W: Write>(
-        &self,
-        stream: crate::docx::xml::writer::EventWriter<W>,
-    ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .open_anchor()?
-            .add_children(&self.children)?
-            .close()?
-            .into_inner()
-    }
-}
-

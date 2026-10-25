@@ -40,16 +40,9 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:wp14",
                     "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
                 )
-                .attr(
-                    "xmlns:w14",
-                    "http://schemas.microsoft.com/office/word/2010/wordml",
-                )
-                .attr(
-                    "xmlns:w15",
-                    "http://schemas.microsoft.com/office/word/2012/wordml",
-                )
+                .attr("xmlns:w14", "http://schemas.microsoft.com/office/word/2010/wordml")
+                .attr("xmlns:w15", "http://schemas.microsoft.com/office/word/2012/wordml")
                 .attr("mc:Ignorable", "w14 wp14"),
         )
     }
 }
-

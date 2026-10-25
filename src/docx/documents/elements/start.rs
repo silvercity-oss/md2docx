@@ -22,4 +22,3 @@ impl BuildXML for Start {
         XMLBuilder::from(stream).start(self.val)?.into_inner()
     }
 }
-

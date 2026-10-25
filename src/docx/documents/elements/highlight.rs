@@ -8,11 +8,7 @@ pub struct Highlight {
     val: String,
 }
 
-impl Highlight {
-    pub fn new(val: impl Into<String>) -> Highlight {
-        Highlight { val: val.into() }
-    }
-}
+impl Highlight {}
 
 impl BuildXML for Highlight {
     fn build_to<W: Write>(
@@ -22,4 +18,3 @@ impl BuildXML for Highlight {
         XMLBuilder::from(stream).highlight(&self.val)?.into_inner()
     }
 }
-

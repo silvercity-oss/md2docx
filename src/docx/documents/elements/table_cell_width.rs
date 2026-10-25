@@ -10,11 +10,7 @@ pub struct TableCellWidth {
     width_type: WidthType,
 }
 
-impl TableCellWidth {
-    pub fn new(width: usize, width_type: WidthType) -> TableCellWidth {
-        TableCellWidth { width, width_type }
-    }
-}
+impl TableCellWidth {}
 
 impl BuildXML for TableCellWidth {
     fn build_to<W: Write>(
@@ -26,4 +22,3 @@ impl BuildXML for TableCellWidth {
             .into_inner()
     }
 }
-

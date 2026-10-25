@@ -33,4 +33,3 @@ impl BuildXML for RunStyle {
         XMLBuilder::from(stream).run_style(&self.val)?.into_inner()
     }
 }
-

@@ -22,11 +22,6 @@ impl TableOfContentsItem {
         }
     }
 
-    pub fn instr(mut self, instr: InstrToC) -> Self {
-        self.instr = instr;
-        self
-    }
-
     pub fn text(mut self, text: impl Into<String>) -> Self {
         self.text = text.into();
         self
@@ -39,11 +34,6 @@ impl TableOfContentsItem {
 
     pub fn toc_key(mut self, key: impl Into<String>) -> Self {
         self.toc_key = key.into();
-        self
-    }
-
-    pub fn page_ref(mut self, r: impl Into<String>) -> Self {
-        self.page_ref = Some(r.into());
         self
     }
 }
@@ -83,9 +73,7 @@ impl BuildXML for Vec<TableOfContentsItem> {
                 let run = Run::new().add_text(&t.text);
                 let page_ref = Run::new()
                     .add_field_char(FieldCharType::Begin, false)
-                    .add_instr_text(InstrText::PAGEREF(
-                        InstrPAGEREF::new(&t.toc_key).hyperlink(),
-                    ))
+                    .add_instr_text(InstrText::PAGEREF(InstrPAGEREF::new(&t.toc_key).hyperlink()))
                     .add_field_char(FieldCharType::Separate, false)
                     .add_text(t.page_ref.to_owned().unwrap_or_else(|| "1".to_string()))
                     .add_field_char(FieldCharType::End, false);
@@ -98,10 +86,7 @@ impl BuildXML for Vec<TableOfContentsItem> {
                             .add_run(page_ref),
                     );
                 } else {
-                    p = p
-                        .add_run(run)
-                        .add_run(Run::new().add_tab())
-                        .add_run(page_ref);
+                    p = p.add_run(run).add_run(Run::new().add_tab()).add_run(page_ref);
                 }
                 b = b.add_child(&p)?;
             }

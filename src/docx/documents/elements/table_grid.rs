@@ -26,4 +26,3 @@ impl BuildXML for TableGrid {
             .into_inner()
     }
 }
-

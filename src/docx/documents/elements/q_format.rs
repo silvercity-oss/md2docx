@@ -25,4 +25,3 @@ impl BuildXML for QFormat {
         XMLBuilder::from(stream).q_format()?.into_inner()
     }
 }
-

@@ -25,11 +25,6 @@ impl Drawing {
         self.data = Some(DrawingData::Pic(pic));
         self
     }
-
-    pub fn text_box(mut self, t: TextBox) -> Drawing {
-        self.data = Some(DrawingData::TextBox(t));
-        self
-    }
 }
 
 impl BuildXML for Drawing {
@@ -63,10 +58,7 @@ impl BuildXML for Drawing {
                             if p.layout_in_cell { "1" } else { "0" },
                             &format!("{}", p.relative_height),
                         )?
-                        .simple_pos(
-                            &format!("{}", p.simple_pos_x),
-                            &format!("{}", p.simple_pos_y),
-                        )?
+                        .simple_pos(&format!("{}", p.simple_pos_x), &format!("{}", p.simple_pos_y))?
                         .open_position_h(&format!("{}", p.relative_from_h))?;
 
                     match p.position_h {
@@ -107,15 +99,10 @@ impl BuildXML for Drawing {
                 b = b
                     .wp_doc_pr("1", "Figure")?
                     .open_wp_c_nv_graphic_frame_pr()?
-                    .a_graphic_frame_locks(
-                        "http://schemas.openxmlformats.org/drawingml/2006/main",
-                        "1",
-                    )?
+                    .a_graphic_frame_locks("http://schemas.openxmlformats.org/drawingml/2006/main", "1")?
                     .close()?
                     .open_a_graphic("http://schemas.openxmlformats.org/drawingml/2006/main")?
-                    .open_a_graphic_data(
-                        "http://schemas.openxmlformats.org/drawingml/2006/picture",
-                    )?
+                    .open_a_graphic_data("http://schemas.openxmlformats.org/drawingml/2006/picture")?
                     .add_child(&p.clone())?
                     .close()?
                     .close()?;
@@ -128,4 +115,3 @@ impl BuildXML for Drawing {
         b.close()?.close()?.into_inner()
     }
 }
-

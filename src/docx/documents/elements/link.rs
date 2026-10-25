@@ -9,13 +9,7 @@ pub struct Link {
     val: String,
 }
 
-impl Link {
-    pub fn new(val: impl Into<String>) -> Link {
-        Link {
-            val: escape_owned(val.into()),
-        }
-    }
-}
+impl Link {}
 
 impl BuildXML for Link {
     fn build_to<W: Write>(

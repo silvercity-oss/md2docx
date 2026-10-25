@@ -15,16 +15,6 @@ impl NumberingProperty {
         Default::default()
     }
 
-    pub fn id(mut self, id: NumberingId) -> NumberingProperty {
-        self.id = Some(id);
-        self
-    }
-
-    pub(crate) fn level(mut self, level: IndentLevel) -> NumberingProperty {
-        self.level = Some(level);
-        self
-    }
-
     pub fn add_num(mut self, id: NumberingId, level: IndentLevel) -> NumberingProperty {
         self.id = Some(id);
         self.level = Some(level);
@@ -45,4 +35,3 @@ impl BuildXML for NumberingProperty {
             .into_inner()
     }
 }
-

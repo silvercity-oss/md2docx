@@ -81,11 +81,7 @@ impl<W: Write> XMLBuilder<W> {
     /// If `opt` argument is `Some`, continue building XML.
     ///
     #[inline(always)]
-    pub(crate) fn apply_opt<T, F: FnOnce(T, Self) -> Result<Self>>(
-        self,
-        opt: Option<T>,
-        f: F,
-    ) -> Result<Self> {
+    pub(crate) fn apply_opt<T, F: FnOnce(T, Self) -> Result<Self>>(self, opt: Option<T>, f: F) -> Result<Self> {
         if let Some(it) = opt {
             f(it, self)
         } else {
@@ -185,4 +181,3 @@ impl<W: Write> XMLBuilder<W> {
         .close()
     }
 }
-

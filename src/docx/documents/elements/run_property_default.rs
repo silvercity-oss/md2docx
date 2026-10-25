@@ -19,18 +19,8 @@ impl RunPropertyDefault {
         self
     }
 
-    pub fn spacing(mut self, spacing: i32) -> Self {
-        self.run_property = self.run_property.spacing(spacing);
-        self
-    }
-
     pub fn fonts(mut self, font: RunFonts) -> Self {
         self.run_property = self.run_property.fonts(font);
-        self
-    }
-
-    pub(crate) fn run_property(mut self, p: RunProperty) -> Self {
-        self.run_property = p;
         self
     }
 }
@@ -54,4 +44,3 @@ impl BuildXML for RunPropertyDefault {
             .into_inner()
     }
 }
-

@@ -8,11 +8,7 @@ pub struct CommentRangeEnd {
     id: usize,
 }
 
-impl CommentRangeEnd {
-    pub fn new(id: usize) -> CommentRangeEnd {
-        CommentRangeEnd { id }
-    }
-}
+impl CommentRangeEnd {}
 
 impl BuildXML for CommentRangeEnd {
     fn build_to<W: Write>(
@@ -31,4 +27,3 @@ impl BuildXML for CommentRangeEnd {
             .into_inner()
     }
 }
-

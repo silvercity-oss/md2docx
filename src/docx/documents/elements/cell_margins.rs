@@ -10,11 +10,7 @@ pub struct CellMargin {
     pub width_type: WidthType,
 }
 
-impl CellMargin {
-    pub fn new(val: usize, t: WidthType) -> Self {
-        Self { val, width_type: t }
-    }
-}
+impl CellMargin {}
 
 impl Default for CellMargin {
     fn default() -> CellMargin {
@@ -33,31 +29,7 @@ pub struct CellMargins {
     right: Option<CellMargin>,
 }
 
-impl CellMargins {
-    pub fn new() -> CellMargins {
-        Default::default()
-    }
-
-    pub fn margin_top(mut self, v: usize, t: WidthType) -> Self {
-        self.top = Some(CellMargin::new(v, t));
-        self
-    }
-
-    pub fn margin_right(mut self, v: usize, t: WidthType) -> Self {
-        self.right = Some(CellMargin::new(v, t));
-        self
-    }
-
-    pub fn margin_left(mut self, v: usize, t: WidthType) -> Self {
-        self.left = Some(CellMargin::new(v, t));
-        self
-    }
-
-    pub fn margin_bottom(mut self, v: usize, t: WidthType) -> Self {
-        self.bottom = Some(CellMargin::new(v, t));
-        self
-    }
-}
+impl CellMargins {}
 
 impl BuildXML for CellMargins {
     fn build_to<W: Write>(
@@ -66,9 +38,7 @@ impl BuildXML for CellMargins {
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         XMLBuilder::from(stream)
             .open_cell_margins()?
-            .apply_opt(self.top.as_ref(), |top, b| {
-                b.margin_top(top.val as i32, top.width_type)
-            })?
+            .apply_opt(self.top.as_ref(), |top, b| b.margin_top(top.val as i32, top.width_type))?
             .apply_opt(self.left.as_ref(), |left, b| {
                 b.margin_left(left.val as i32, left.width_type)
             })?
@@ -82,4 +52,3 @@ impl BuildXML for CellMargins {
             .into_inner()
     }
 }
-

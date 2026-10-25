@@ -12,10 +12,7 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:wpc",
                     "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
                 )
-                .attr(
-                    "xmlns:cx",
-                    "http://schemas.microsoft.com/office/drawing/2014/chartex",
-                )
+                .attr("xmlns:cx", "http://schemas.microsoft.com/office/drawing/2014/chartex")
                 .attr(
                     "xmlns:cx1",
                     "http://schemas.microsoft.com/office/drawing/2015/9/8/chartex",
@@ -52,27 +49,15 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:mc",
                     "http://schemas.openxmlformats.org/markup-compatibility/2006",
                 )
-                .attr(
-                    "xmlns:aink",
-                    "http://schemas.microsoft.com/office/drawing/2016/ink",
-                )
-                .attr(
-                    "xmlns:am3d",
-                    "http://schemas.microsoft.com/office/drawing/2017/model3d",
-                )
+                .attr("xmlns:aink", "http://schemas.microsoft.com/office/drawing/2016/ink")
+                .attr("xmlns:am3d", "http://schemas.microsoft.com/office/drawing/2017/model3d")
                 .attr("xmlns:o", "urn:schemas-microsoft-com:office:office")
-                .attr(
-                    "xmlns:oel",
-                    "http://schemas.microsoft.com/office/2019/extlst",
-                )
+                .attr("xmlns:oel", "http://schemas.microsoft.com/office/2019/extlst")
                 .attr(
                     "xmlns:r",
                     "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
                 )
-                .attr(
-                    "xmlns:m",
-                    "http://schemas.openxmlformats.org/officeDocument/2006/math",
-                )
+                .attr("xmlns:m", "http://schemas.openxmlformats.org/officeDocument/2006/math")
                 .attr("xmlns:v", "urn:schemas-microsoft-com:vml")
                 .attr(
                     "xmlns:wp14",
@@ -87,14 +72,8 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:w",
                     "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                 )
-                .attr(
-                    "xmlns:w14",
-                    "http://schemas.microsoft.com/office/word/2010/wordml",
-                )
-                .attr(
-                    "xmlns:w15",
-                    "http://schemas.microsoft.com/office/word/2012/wordml",
-                )
+                .attr("xmlns:w14", "http://schemas.microsoft.com/office/word/2010/wordml")
+                .attr("xmlns:w15", "http://schemas.microsoft.com/office/word/2012/wordml")
                 .attr(
                     "xmlns:w16cex",
                     "http://schemas.microsoft.com/office/word/2018/wordml/cex",
@@ -103,10 +82,7 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:w16cid",
                     "http://schemas.microsoft.com/office/word/2016/wordml/cid",
                 )
-                .attr(
-                    "xmlns:w16",
-                    "http://schemas.microsoft.com/office/word/2018/wordml",
-                )
+                .attr("xmlns:w16", "http://schemas.microsoft.com/office/word/2018/wordml")
                 .attr(
                     "xmlns:w16du",
                     "http://schemas.microsoft.com/office/word/2023/wordml/word16du",
@@ -127,18 +103,12 @@ impl<W: Write> XMLBuilder<W> {
                     "xmlns:wpi",
                     "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",
                 )
-                .attr(
-                    "xmlns:wne",
-                    "http://schemas.microsoft.com/office/word/2006/wordml",
-                )
+                .attr("xmlns:wne", "http://schemas.microsoft.com/office/word/2006/wordml")
                 .attr(
                     "xmlns:wps",
                     "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
                 )
-                .attr(
-                    "mc:Ignorable",
-                    "w14 w15 w16se w16cid w16 w16cex w16sdtdh w16du wp14",
-                ),
+                .attr("mc:Ignorable", "w14 w15 w16se w16cid w16 w16cex w16sdtdh w16du wp14"),
         )
     }
 }

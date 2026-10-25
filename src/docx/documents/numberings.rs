@@ -4,7 +4,6 @@ use crate::docx::types::*;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Numberings {
     pub abstract_nums: Vec<AbstractNumbering>,
@@ -88,12 +87,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("%3"),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(1260),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(1260), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -103,12 +97,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("%4."),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(1680),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(1680), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -118,12 +107,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("(%5)"),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(2100),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(2100), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -133,12 +117,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("%6"),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(2520),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(2520), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -148,12 +127,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("%7."),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(2940),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(2940), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -163,12 +137,7 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("(%8)"),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(3360),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(3360), Some(SpecialIndentType::Hanging(420)), None, None),
         )
         .add_level(
             Level::new(
@@ -178,12 +147,6 @@ fn create_default_numbering() -> AbstractNumbering {
                 LevelText::new("%9"),
                 LevelJc::new("left"),
             )
-            .indent(
-                Some(3780),
-                Some(SpecialIndentType::Hanging(420)),
-                None,
-                None,
-            ),
+            .indent(Some(3780), Some(SpecialIndentType::Hanging(420)), None, None),
         )
 }
-

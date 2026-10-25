@@ -15,5 +15,4 @@ macro_rules! delegate_to_field {
     };
 }
 
-
 pub(crate) use delegate_to_field;

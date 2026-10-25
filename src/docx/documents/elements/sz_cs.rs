@@ -21,4 +21,3 @@ impl BuildXML for SzCs {
         XMLBuilder::from(stream).sz_cs(self.val)?.into_inner()
     }
 }
-

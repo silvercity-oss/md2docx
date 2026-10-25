@@ -20,9 +20,6 @@ impl BuildXML for Break {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .br(&self.break_type.to_string())?
-            .into_inner()
+        XMLBuilder::from(stream).br(&self.break_type.to_string())?.into_inner()
     }
 }
-

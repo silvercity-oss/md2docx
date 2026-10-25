@@ -30,40 +30,7 @@ impl Default for TableCellMargins {
     }
 }
 
-impl TableCellMargins {
-    pub fn new() -> TableCellMargins {
-        Default::default()
-    }
-
-    pub fn margin(self, top: usize, right: usize, bottom: usize, left: usize) -> TableCellMargins {
-        TableCellMargins {
-            top: CellMargin::new(top, WidthType::Dxa),
-            left: CellMargin::new(left, WidthType::Dxa),
-            bottom: CellMargin::new(bottom, WidthType::Dxa),
-            right: CellMargin::new(right, WidthType::Dxa),
-        }
-    }
-
-    pub fn margin_top(mut self, v: usize, t: WidthType) -> Self {
-        self.top = CellMargin::new(v, t);
-        self
-    }
-
-    pub fn margin_right(mut self, v: usize, t: WidthType) -> Self {
-        self.right = CellMargin::new(v, t);
-        self
-    }
-
-    pub fn margin_left(mut self, v: usize, t: WidthType) -> Self {
-        self.left = CellMargin::new(v, t);
-        self
-    }
-
-    pub fn margin_bottom(mut self, v: usize, t: WidthType) -> Self {
-        self.bottom = CellMargin::new(v, t);
-        self
-    }
-}
+impl TableCellMargins {}
 
 impl BuildXML for TableCellMargins {
     fn build_to<W: Write>(
@@ -80,4 +47,3 @@ impl BuildXML for TableCellMargins {
             .into_inner()
     }
 }
-

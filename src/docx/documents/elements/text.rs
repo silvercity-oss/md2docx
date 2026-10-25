@@ -17,13 +17,6 @@ impl Text {
             preserve_space: true,
         }
     }
-
-    pub(crate) fn without_escape(text: impl Into<String>) -> Text {
-        Text {
-            text: text.into(),
-            preserve_space: true,
-        }
-    }
 }
 
 impl BuildXML for Text {
@@ -31,9 +24,6 @@ impl BuildXML for Text {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .text(&self.text, true)?
-            .into_inner()
+        XMLBuilder::from(stream).text(&self.text, true)?.into_inner()
     }
 }
-

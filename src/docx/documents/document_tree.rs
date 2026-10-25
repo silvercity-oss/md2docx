@@ -5,10 +5,10 @@
 //! dependency collectors complete when new package metadata is added.
 
 use crate::docx::{
-    Delete, DeleteChild, Document, DocumentChild, DrawingData, Footer, FooterChild, Header,
-    HeaderChild, Hyperlink, Insert, InsertChild, MoveFrom, MoveFromChild, MoveTo, MoveToChild,
-    Paragraph, ParagraphChild, Pic, Run, RunChild, Section, SectionChild, StructuredDataTag,
-    StructuredDataTagChild, Table, TableCellContent, TableChild, TableOfContents, TableRowChild,
+    Delete, DeleteChild, Document, DocumentChild, DrawingData, Footer, FooterChild, Header, HeaderChild, Hyperlink,
+    Insert, InsertChild, MoveFrom, MoveFromChild, MoveTo, MoveToChild, Paragraph, ParagraphChild, Pic, Run, RunChild,
+    Section, SectionChild, StructuredDataTag, StructuredDataTagChild, Table, TableCellContent, TableChild,
+    TableOfContents, TableRowChild,
 };
 
 /// Receives package-relevant nodes while the document tree is traversed.
@@ -99,9 +99,7 @@ fn visit_table(table: &mut Table, visitor: &mut impl DocumentTreeVisitor) {
                 match content {
                     TableCellContent::Paragraph(paragraph) => visit_paragraph(paragraph, visitor),
                     TableCellContent::Table(table) => visit_table(table, visitor),
-                    TableCellContent::StructuredDataTag(tag) => {
-                        visit_structured_data_tag(tag, visitor)
-                    }
+                    TableCellContent::StructuredDataTag(tag) => visit_structured_data_tag(tag, visitor),
                     TableCellContent::TableOfContents(toc) => visit_table_of_contents(toc, visitor),
                 }
             }
@@ -110,11 +108,7 @@ fn visit_table(table: &mut Table, visitor: &mut impl DocumentTreeVisitor) {
 }
 
 fn visit_table_of_contents(toc: &mut TableOfContents, visitor: &mut impl DocumentTreeVisitor) {
-    for content in toc
-        .before_contents
-        .iter_mut()
-        .chain(toc.after_contents.iter_mut())
-    {
+    for content in toc.before_contents.iter_mut().chain(toc.after_contents.iter_mut()) {
         match content {
             crate::docx::TocContent::Paragraph(paragraph) => visit_paragraph(paragraph, visitor),
             crate::docx::TocContent::Table(table) => visit_table(table, visitor),
@@ -128,9 +122,7 @@ fn visit_structured_data_tag(tag: &mut StructuredDataTag, visitor: &mut impl Doc
             StructuredDataTagChild::Run(run) => visit_run(run, visitor),
             StructuredDataTagChild::Paragraph(paragraph) => visit_paragraph(paragraph, visitor),
             StructuredDataTagChild::Table(table) => visit_table(table, visitor),
-            StructuredDataTagChild::StructuredDataTag(tag) => {
-                visit_structured_data_tag(tag, visitor)
-            }
+            StructuredDataTagChild::StructuredDataTag(tag) => visit_structured_data_tag(tag, visitor),
             StructuredDataTagChild::BookmarkStart(_)
             | StructuredDataTagChild::BookmarkEnd(_)
             | StructuredDataTagChild::CommentStart(_)
@@ -144,10 +136,7 @@ fn visit_paragraph(paragraph: &mut Paragraph, visitor: &mut impl DocumentTreeVis
     visit_paragraph_children(&mut paragraph.children, visitor);
 }
 
-fn visit_paragraph_children(
-    children: &mut [ParagraphChild],
-    visitor: &mut impl DocumentTreeVisitor,
-) {
+fn visit_paragraph_children(children: &mut [ParagraphChild], visitor: &mut impl DocumentTreeVisitor) {
     for child in children {
         match child {
             ParagraphChild::Run(run) => visit_run(run, visitor),

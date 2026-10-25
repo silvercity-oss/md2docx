@@ -69,19 +69,13 @@ impl BuildXML for CoreProps {
             )?
             .dcterms_created(
                 "dcterms:W3CDTF",
-                self.config
-                    .created
-                    .as_deref()
-                    .unwrap_or("1970-01-01T00:00:00Z"),
+                self.config.created.as_deref().unwrap_or("1970-01-01T00:00:00Z"),
             )?
             .dc_creator(self.config.creator.as_deref().unwrap_or("unknown"))?
             .cp_last_modified_by(self.config.last_modified_by.as_deref().unwrap_or("unknown"))?
             .dcterms_modified(
                 "dcterms:W3CDTF",
-                self.config
-                    .modified
-                    .as_deref()
-                    .unwrap_or("1970-01-01T00:00:00Z"),
+                self.config.modified.as_deref().unwrap_or("1970-01-01T00:00:00Z"),
             )?
             .cp_revision(&self.config.revision.unwrap_or(1).to_string())?
             .apply_opt(self.config.description.as_ref(), |v, b| b.dc_description(v))?
@@ -92,4 +86,3 @@ impl BuildXML for CoreProps {
             .into_inner()
     }
 }
-

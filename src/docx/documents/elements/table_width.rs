@@ -26,4 +26,3 @@ impl BuildXML for TableWidth {
             .into_inner()
     }
 }
-

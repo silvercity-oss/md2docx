@@ -18,11 +18,6 @@ impl ContentTypes {
         Default::default()
     }
 
-    pub fn add_content(mut self, path: impl Into<String>, namespace: impl Into<String>) -> Self {
-        self.types.insert(path.into(), namespace.into());
-        self
-    }
-
     pub fn set_default(mut self) -> ContentTypes {
         self.types.insert(
             "/_rels/.rels".to_owned(),
@@ -42,18 +37,15 @@ impl ContentTypes {
         );
         self.types.insert(
             "/word/settings.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml".to_owned(),
         );
         self.types.insert(
             "/word/fontTable.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml".to_owned(),
         );
         self.types.insert(
             "/word/document.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml".to_owned(),
         );
         self.types.insert(
             "/word/styles.xml".to_owned(),
@@ -61,60 +53,19 @@ impl ContentTypes {
         );
         self.types.insert(
             "/word/comments.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml".to_owned(),
         );
         self.types.insert(
             "/word/numbering.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml".to_owned(),
         );
         self.types.insert(
             "/word/commentsExtended.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml".to_owned(),
         );
         self.types.insert(
             "/docProps/custom.xml".to_owned(),
             "application/vnd.openxmlformats-officedocument.custom-properties+xml".to_owned(),
-        );
-        self
-    }
-
-    pub fn add_taskpanes(mut self) -> Self {
-        self.types.insert(
-            "/word/webextensions/taskpanes.xml".to_owned(),
-            "application/vnd.ms-office.webextensiontaskpanes+xml".to_owned(),
-        );
-        self
-    }
-
-    pub fn add_web_extensions(mut self) -> Self {
-        self.types.insert(
-            format!(
-                "/word/webextensions/webextension{}.xml",
-                self.web_extension_count
-            ),
-            "application/vnd.ms-office.webextension+xml".to_owned(),
-        );
-        self.web_extension_count += 1;
-        self
-    }
-
-    pub fn add_custom_xml(mut self) -> Self {
-        self.types.insert(
-            format!("/customXml/itemProps{}.xml", self.web_extension_count),
-            "application/vnd.openxmlformats-officedocument.customXmlProperties+xml".to_owned(),
-        );
-        self.custom_xml_count += 1;
-        self
-    }
-
-    pub fn add_header(mut self) -> Self {
-        self.header_count += 1;
-        self.types.insert(
-            format!("/word/header{}.xml", self.header_count),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml".to_owned(),
         );
         self
     }
@@ -130,8 +81,7 @@ impl ContentTypes {
     pub fn add_footnotes(mut self) -> Self {
         self.types.insert(
             "/word/footnotes.xml".to_owned(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
-                .to_owned(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml".to_owned(),
         );
         self
     }
@@ -162,14 +112,10 @@ impl BuildXML for ContentTypes {
             .add_default("jpg", "image/jpg")?
             .add_default("bmp", "image/bmp")?
             .add_default("gif", "image/gif")?
-            .add_default(
-                "rels",
-                "application/vnd.openxmlformats-package.relationships+xml",
-            )?
+            .add_default("rels", "application/vnd.openxmlformats-package.relationships+xml")?
             .add_default("xml", "application/xml")?
             .apply_each(self.types.iter(), |(k, v), b| b.add_override(k, v))?
             .close()?
             .into_inner()
     }
 }
-

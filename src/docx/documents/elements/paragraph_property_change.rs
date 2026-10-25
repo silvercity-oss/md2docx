@@ -21,28 +21,7 @@ impl Default for ParagraphPropertyChange {
     }
 }
 
-impl ParagraphPropertyChange {
-    pub fn new() -> ParagraphPropertyChange {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub fn property(mut self, p: ParagraphProperty) -> ParagraphPropertyChange {
-        self.property = Box::new(p);
-        self
-    }
-
-    pub fn author(mut self, author: impl Into<String>) -> ParagraphPropertyChange {
-        self.author = escape::escape_owned(author.into());
-        self
-    }
-
-    pub fn date(mut self, date: impl Into<String>) -> ParagraphPropertyChange {
-        self.date = date.into();
-        self
-    }
-}
+impl ParagraphPropertyChange {}
 
 impl ParagraphPropertyChangeId for ParagraphPropertyChange {}
 
@@ -59,4 +38,3 @@ impl BuildXML for ParagraphPropertyChange {
             .into_inner()
     }
 }
-

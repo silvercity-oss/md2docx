@@ -45,32 +45,7 @@ pub struct Pic {
 }
 
 impl Pic {
-    #[cfg(feature = "image")]
-    /// Make a `Pic`.
-    ///
-    /// Converts the passed image to PNG internally and computes its size.
-    pub fn new(buf: &[u8]) -> Pic {
-        if buf.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]) {
-            let reader = ::image::ImageReader::new(std::io::Cursor::new(buf))
-                .with_guessed_format()
-                .expect("Should detect PNG format.");
-            let (w, h) = reader
-                .into_dimensions()
-                .expect("Should read PNG dimensions.");
-            return Self::new_with_dimensions(buf.to_vec(), w, h);
-        }
-
-        let img = ::image::load_from_memory(buf).expect("Should load image from memory.");
-        let (w, h) = ::image::GenericImageView::dimensions(&img);
-        let mut buf = std::io::Cursor::new(vec![]);
-        img.write_to(&mut buf, ::image::ImageFormat::Png)
-            .expect("Unable to write dynamic image");
-        Self::new_with_dimensions(buf.into_inner(), w, h)
-    }
-
     /// Make a `Pic` element. For now only PNG is supported.
-    ///
-    /// Use [Pic::new] method, to call `image` crate do conversion for you.
     pub fn new_with_dimensions(buffer: Vec<u8>, width_px: u32, height_px: u32) -> Pic {
         let id = create_pic_rid(generate_pic_id());
         Self {
@@ -96,35 +71,6 @@ impl Pic {
         }
     }
 
-    pub(crate) fn with_empty() -> Pic {
-        Self {
-            id: "".to_string(),
-            image: vec![],
-            size: (0, 0),
-            position_type: DrawingPositionType::Inline,
-            simple_pos: false,
-            simple_pos_x: 0,
-            simple_pos_y: 0,
-            layout_in_cell: false,
-            relative_height: 190500,
-            allow_overlap: false,
-            position_v: DrawingPosition::Offset(0),
-            position_h: DrawingPosition::Offset(0),
-            relative_from_h: RelativeFromHType::default(),
-            relative_from_v: RelativeFromVType::default(),
-            dist_t: 0,
-            dist_b: 0,
-            dist_l: 0,
-            dist_r: 0,
-            rot: 0,
-        }
-    }
-
-    pub fn id(mut self, id: impl Into<String>) -> Pic {
-        self.id = id.into();
-        self
-    }
-
     // unit is emu
     pub fn size(mut self, w_emu: u32, h_emu: u32) -> Pic {
         self.size = (w_emu, h_emu);
@@ -132,80 +78,6 @@ impl Pic {
     }
 
     // unit is deg
-    pub fn rotate(mut self, deg: u16) -> Pic {
-        self.rot = deg;
-        self
-    }
-
-    pub fn floating(mut self) -> Pic {
-        self.position_type = DrawingPositionType::Anchor;
-        self
-    }
-
-    pub fn overlapping(mut self) -> Pic {
-        self.allow_overlap = true;
-        self
-    }
-
-    pub fn offset_x(mut self, x: i32) -> Pic {
-        self.position_h = DrawingPosition::Offset(x);
-        self
-    }
-
-    pub fn offset_y(mut self, y: i32) -> Pic {
-        self.position_v = DrawingPosition::Offset(y);
-        self
-    }
-
-    pub fn position_h(mut self, pos: DrawingPosition) -> Self {
-        self.position_h = pos;
-        self
-    }
-
-    pub fn position_v(mut self, pos: DrawingPosition) -> Self {
-        self.position_v = pos;
-        self
-    }
-
-    pub fn relative_from_h(mut self, t: RelativeFromHType) -> Self {
-        self.relative_from_h = t;
-        self
-    }
-
-    pub fn relative_from_v(mut self, t: RelativeFromVType) -> Self {
-        self.relative_from_v = t;
-        self
-    }
-
-    pub fn dist_t(mut self, v: i32) -> Self {
-        self.dist_t = v;
-        self
-    }
-
-    pub fn dist_b(mut self, v: i32) -> Self {
-        self.dist_b = v;
-        self
-    }
-
-    pub fn dist_l(mut self, v: i32) -> Self {
-        self.dist_l = v;
-        self
-    }
-
-    pub fn dist_r(mut self, v: i32) -> Self {
-        self.dist_r = v;
-        self
-    }
-
-    pub fn simple_pos(mut self, v: bool) -> Self {
-        self.simple_pos = v;
-        self
-    }
-
-    pub fn relative_height(mut self, v: u32) -> Self {
-        self.relative_height = v;
-        self
-    }
 }
 
 impl BuildXML for Pic {
@@ -241,4 +113,3 @@ impl BuildXML for Pic {
             .into_inner()
     }
 }
-

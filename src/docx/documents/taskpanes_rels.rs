@@ -12,20 +12,6 @@ impl TaskpanesRels {
     pub fn new() -> Self {
         Default::default()
     }
-
-    pub fn add_rel(mut self) -> Self {
-        let index = self.rels.len() + 1;
-        self.rels.push((
-            "http://schemas.microsoft.com/office/2011/relationships/webextension".to_string(),
-            format!("rId{index}"),
-            format!("webextension{index}.xml"),
-        ));
-        self
-    }
-
-    pub fn find_target(&self, rel_type: &str) -> Option<&(String, String, String)> {
-        self.rels.iter().find(|rel| rel.0 == rel_type)
-    }
 }
 
 impl BuildXML for TaskpanesRels {
@@ -41,4 +27,3 @@ impl BuildXML for TaskpanesRels {
             .into_inner()
     }
 }
-

@@ -40,20 +40,6 @@ impl Delete {
         self
     }
 
-    pub fn add_comment_start(mut self, comment: Comment) -> Delete {
-        self.children
-            .push(DeleteChild::CommentStart(Box::new(CommentRangeStart::new(
-                comment,
-            ))));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> Delete {
-        self.children
-            .push(DeleteChild::CommentEnd(CommentRangeEnd::new(id)));
-        self
-    }
-
     pub fn author(mut self, author: impl Into<String>) -> Delete {
         self.author = escape::escape_owned(author.into());
         self
@@ -84,4 +70,3 @@ impl BuildXML for Delete {
             .into_inner()
     }
 }
-

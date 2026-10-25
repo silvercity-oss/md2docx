@@ -9,22 +9,12 @@ pub struct Sym {
     pub char: String,
 }
 
-impl Sym {
-    pub fn new(font: impl Into<String>, char: impl Into<String>) -> Self {
-        Self {
-            font: font.into(),
-            char: char.into(),
-        }
-    }
-}
+impl Sym {}
 impl BuildXML for Sym {
     fn build_to<W: Write>(
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .sym(&self.font, &self.char)?
-            .into_inner()
+        XMLBuilder::from(stream).sym(&self.font, &self.char)?.into_inner()
     }
 }
-

@@ -20,27 +20,6 @@ impl DocumentRels {
     pub fn new() -> DocumentRels {
         Default::default()
     }
-
-    pub fn add_custom_item(mut self) -> Self {
-        self.custom_xml_count += 1;
-        self
-    }
-
-    pub fn add_image(mut self, id: impl Into<String>, path: impl Into<String>) -> Self {
-        self.images.push((id.into(), path.into()));
-        self
-    }
-
-    pub fn add_hyperlinks(
-        mut self,
-        id: impl Into<String>,
-        path: impl Into<String>,
-        r#type: impl Into<String>,
-    ) -> Self {
-        self.hyperlinks
-            .push((id.into(), escape_owned(path.into()), r#type.into()));
-        self
-    }
 }
 
 impl BuildXML for DocumentRels {

@@ -70,18 +70,8 @@ impl ParagraphProperty {
         self
     }
 
-    pub fn numbering_property(mut self, np: NumberingProperty) -> Self {
-        self.numbering_property = Some(np);
-        self
-    }
-
     pub fn line_spacing(mut self, spacing: LineSpacing) -> Self {
         self.line_spacing = Some(spacing);
-        self
-    }
-
-    pub fn character_spacing(mut self, spacing: i32) -> Self {
-        self.run_property.character_spacing = Some(CharacterSpacing::new(spacing));
         self
     }
 
@@ -90,23 +80,8 @@ impl ParagraphProperty {
         self
     }
 
-    pub fn contextual_spacing(mut self, v: bool) -> Self {
-        self.contextual_spacing = Some(v);
-        self
-    }
-
     pub fn shading(mut self, s: Shading) -> Self {
         self.shading = Some(s);
-        self
-    }
-
-    pub fn keep_next(mut self, v: bool) -> Self {
-        self.keep_next = Some(v);
-        self
-    }
-
-    pub fn keep_lines(mut self, v: bool) -> Self {
-        self.keep_lines = Some(v);
         self
     }
 
@@ -120,99 +95,17 @@ impl ParagraphProperty {
         self
     }
 
-    pub fn page_break_before(mut self, v: bool) -> Self {
-        self.page_break_before = Some(v);
-        self
-    }
-    pub fn bidi(mut self, v: bool) -> Self {
-        self.bidi = Some(v);
-        self
-    }
-    pub fn widow_control(mut self, v: bool) -> Self {
-        self.widow_control = Some(v);
-        self
-    }
-
     pub fn add_tab(mut self, t: Tab) -> Self {
         self.tabs.push(t);
-        self
-    }
-
-    pub fn section_property(mut self, s: SectionProperty) -> Self {
-        self.section_property = Some(s);
-        self
-    }
-
-    pub fn paragraph_property_change(mut self, p: ParagraphPropertyChange) -> Self {
-        self.paragraph_property_change = Some(p);
-        self
-    }
-
-    pub fn frame_property(mut self, s: FrameProperty) -> Self {
-        self.frame_property = Some(s);
-        self
-    }
-
-    pub fn run_property(mut self, s: RunProperty) -> Self {
-        self.run_property = s;
-        self
-    }
-
-    pub fn text_alignment(mut self, s: TextAlignmentType) -> Self {
-        self.text_alignment = Some(TextAlignment::new(s));
-        self
-    }
-
-    pub fn adjust_right_ind(mut self, s: isize) -> Self {
-        self.adjust_right_ind = Some(AdjustRightInd::new(s));
         self
     }
 
     // Character-unit indents (hundredths of a character). These keep the
     // absolute values already set by `indent`, so call `indent` first.
     // If no indent exists yet, one is created with only the chars value set.
-    pub fn start_chars(mut self, chars: i32) -> Self {
-        self.indent = Some(self.indent.take().unwrap_or_default().start_chars(chars));
-        self
-    }
-
-    pub fn end_chars(mut self, chars: i32) -> Self {
-        self.indent = Some(self.indent.take().unwrap_or_default().end_chars(chars));
-        self
-    }
-
-    pub fn hanging_chars(mut self, chars: i32) -> Self {
-        self.indent = Some(self.indent.take().unwrap_or_default().hanging_chars(chars));
-        self
-    }
-
-    pub fn first_line_chars(mut self, chars: i32) -> Self {
-        self.indent = Some(
-            self.indent
-                .take()
-                .unwrap_or_default()
-                .first_line_chars(chars),
-        );
-        self
-    }
 
     pub fn set_borders(mut self, borders: ParagraphBorders) -> Self {
         self.borders = Some(borders);
-        self
-    }
-
-    pub fn set_border(mut self, border: ParagraphBorder) -> Self {
-        self.borders = Some(self.borders.unwrap_or_default().set(border));
-        self
-    }
-
-    pub fn clear_border(mut self, position: ParagraphBorderPosition) -> Self {
-        self.borders = Some(self.borders.unwrap_or_default().clear(position));
-        self
-    }
-
-    pub fn clear_all_borders(mut self) -> Self {
-        self.borders = Some(self.borders.unwrap_or_default().clear_all());
         self
     }
 }
@@ -256,4 +149,3 @@ impl BuildXML for ParagraphProperty {
             .into_inner()
     }
 }
-

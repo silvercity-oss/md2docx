@@ -1,7 +1,6 @@
-
+use super::errors;
 use std::fmt;
 use std::str::FromStr;
-use super::errors;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PositionalTabAlignmentType {

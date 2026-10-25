@@ -18,9 +18,6 @@ impl BuildXML for IndentLevel {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .indent_level(self.val)?
-            .into_inner()
+        XMLBuilder::from(stream).indent_level(self.val)?.into_inner()
     }
 }
-

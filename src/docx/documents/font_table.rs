@@ -4,7 +4,6 @@ use crate::docx::types::FontPitchType;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FontTable {}
 
@@ -32,4 +31,3 @@ impl BuildXML for FontTable {
             .into_inner()
     }
 }
-

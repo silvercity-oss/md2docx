@@ -110,9 +110,10 @@ exposing the internal model would freeze it as public API.
 * **Thread-safe.** `Config` is `Send + Sync`. Each call has its own scratch
   directory, removed when it returns (also on error); concurrent calls are
   independent (tested with 16 threads).
-* **Not byte-reproducible.** Same input gives the same *content*, but the writer
-  numbers relationship, footnote and picture ids from process-wide counters, so
-  two outputs can differ in those ids. Compare or cache by content.
+* **Deterministic identifiers.** Relationship, footnote, picture and bookmark ids restart
+  for every conversion (they are per thread and reset by each call), so the same input
+  yields the same parts apart from the document's created/modified timestamps. No state
+  leaks between conversions in a long-lived process.
 * **Errors** are `CrateError` (`#[non_exhaustive]`, `std::error::Error + Send +
   Sync`): `MissingExternalCLI`, `ExternalToolFailed`, `InvalidMarkdown`,
   `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGenerationError`,

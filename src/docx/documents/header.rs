@@ -10,37 +10,7 @@ pub struct Header {
     pub children: Vec<HeaderChild>,
 }
 
-impl Header {
-    pub fn new() -> Header {
-        Default::default()
-    }
-
-    pub fn add_paragraph(mut self, p: Paragraph) -> Self {
-        if p.has_numbering {
-            self.has_numbering = true
-        }
-        self.children.push(HeaderChild::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_table(mut self, t: Table) -> Self {
-        if t.has_numbering {
-            self.has_numbering = true
-        }
-        self.children.push(HeaderChild::Table(Box::new(t)));
-        self
-    }
-
-    /// reader only
-    pub(crate) fn add_structured_data_tag(mut self, t: StructuredDataTag) -> Self {
-        if t.has_numbering {
-            self.has_numbering = true
-        }
-        self.children
-            .push(HeaderChild::StructuredDataTag(Box::new(t)));
-        self
-    }
-}
+impl Header {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HeaderChild {
@@ -66,4 +36,3 @@ impl BuildXML for Header {
             .into_inner()
     }
 }
-

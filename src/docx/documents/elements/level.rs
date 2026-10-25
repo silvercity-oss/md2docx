@@ -3,7 +3,6 @@ use crate::docx::types::*;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Level {
     pub level: usize,
@@ -20,13 +19,7 @@ pub struct Level {
 }
 
 impl Level {
-    pub fn new(
-        level: usize,
-        start: Start,
-        format: NumberFormat,
-        text: LevelText,
-        jc: LevelJc,
-    ) -> Level {
+    pub fn new(level: usize, start: Start, format: NumberFormat, text: LevelText, jc: LevelJc) -> Level {
         Self {
             level,
             start,
@@ -49,127 +42,11 @@ impl Level {
         end: Option<i32>,
         start_chars: Option<i32>,
     ) -> Self {
-        self.paragraph_property =
-            self.paragraph_property
-                .indent(left, special_indent, end, start_chars);
-        self
-    }
-
-    pub fn start_chars(mut self, chars: i32) -> Self {
-        self.paragraph_property = self.paragraph_property.start_chars(chars);
-        self
-    }
-
-    pub fn end_chars(mut self, chars: i32) -> Self {
-        self.paragraph_property = self.paragraph_property.end_chars(chars);
-        self
-    }
-
-    pub fn hanging_chars(mut self, chars: i32) -> Self {
-        self.paragraph_property = self.paragraph_property.hanging_chars(chars);
-        self
-    }
-
-    pub fn first_line_chars(mut self, chars: i32) -> Self {
-        self.paragraph_property = self.paragraph_property.first_line_chars(chars);
-        self
-    }
-
-    pub fn paragraph_style(mut self, style_id: impl Into<String>) -> Self {
-        self.pstyle = Some(ParagraphStyle::new(Some(style_id.into())));
-        self
-    }
-
-    pub fn suffix(mut self, s: LevelSuffixType) -> Self {
-        self.suffix = s;
+        self.paragraph_property = self.paragraph_property.indent(left, special_indent, end, start_chars);
         self
     }
 
     // run property
-    pub fn size(mut self, size: usize) -> Self {
-        self.run_property = self.run_property.size(size);
-        self
-    }
-
-    pub fn spacing(mut self, v: i32) -> Self {
-        self.run_property = self.run_property.spacing(v);
-        self
-    }
-
-    pub fn color(mut self, color: impl Into<String>) -> Self {
-        self.run_property = self.run_property.color(color);
-        self
-    }
-
-    pub fn highlight(mut self, color: impl Into<String>) -> Self {
-        self.run_property = self.run_property.highlight(color);
-        self
-    }
-
-    pub fn bold(mut self) -> Self {
-        self.run_property = self.run_property.bold();
-        self
-    }
-
-    pub fn disable_bold(mut self) -> Self {
-        self.run_property = self.run_property.disable_bold();
-        self
-    }
-
-    pub fn italic(mut self) -> Self {
-        self.run_property = self.run_property.italic();
-        self
-    }
-
-    pub fn disable_italic(mut self) -> Self {
-        self.run_property = self.run_property.disable_italic();
-        self
-    }
-
-    pub fn strike(mut self) -> Self {
-        self.run_property = self.run_property.strike();
-        self
-    }
-
-    pub fn disable_strike(mut self) -> Self {
-        self.run_property = self.run_property.disable_strike();
-        self
-    }
-
-    pub fn dstrike(mut self) -> Self {
-        self.run_property = self.run_property.dstrike();
-        self
-    }
-
-    pub fn disable_dstrike(mut self) -> Self {
-        self.run_property = self.run_property.disable_dstrike();
-        self
-    }
-
-    pub fn underline(mut self, line_type: impl Into<String>) -> Self {
-        self.run_property = self.run_property.underline(line_type);
-        self
-    }
-
-    pub fn vanish(mut self) -> Self {
-        self.run_property = self.run_property.vanish();
-        self
-    }
-
-    pub fn fonts(mut self, f: RunFonts) -> Self {
-        self.run_property = self.run_property.fonts(f);
-        self
-    }
-
-    pub fn level_restart(mut self, v: u32) -> Self {
-        self.level_restart = Some(LevelRestart::new(v));
-        self
-    }
-
-    pub fn is_lgl(mut self) -> Self {
-        self.is_lgl = Some(IsLgl::new());
-        self
-    }
 }
 
 impl BuildXML for Level {
@@ -195,4 +72,3 @@ impl BuildXML for Level {
             .into_inner()
     }
 }
-

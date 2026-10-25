@@ -36,4 +36,3 @@ impl<'a> BuildXML for Font<'a> {
             .into_inner()
     }
 }
-

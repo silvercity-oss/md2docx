@@ -1,8 +1,8 @@
 //
 // Please see p3813 <xsd:simpleType name="ST_Border">
 //
-use std::fmt;
 use super::errors;
+use std::fmt;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, PartialEq)]

@@ -26,4 +26,3 @@ impl BuildXML for SoftHyphen {
         XMLBuilder::from(stream).soft_hyphen()?.into_inner()
     }
 }
-

@@ -16,11 +16,7 @@ impl Default for NumPages {
     }
 }
 
-impl NumPages {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
+impl NumPages {}
 
 impl BuildXML for NumPages {
     fn build_to<W: Write>(
@@ -36,4 +32,3 @@ impl BuildXML for NumPages {
             .build_to(stream)
     }
 }
-

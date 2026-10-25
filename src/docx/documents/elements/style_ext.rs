@@ -6,15 +6,4 @@
 
 use super::*;
 
-impl Style {
-    /// Applies shading to the style's run properties (`<w:rPr><w:shd/>`).
-    ///
-    /// Convenience delegator so callers never mutate the public
-    /// `run_property` field directly.
-    ///
-    pub fn shading(mut self, shading: Shading) -> Self {
-        self.run_property = self.run_property.shading(shading);
-        self
-    }
-}
-
+impl Style {}

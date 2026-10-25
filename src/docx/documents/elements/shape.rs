@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Shape {
     pub style: Option<String>,
@@ -11,21 +10,7 @@ pub struct ImageData {
     pub id: String,
 }
 
-impl Shape {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn style(mut self, style: impl Into<String>) -> Self {
-        self.style = Some(style.into());
-        self
-    }
-
-    pub fn image_data(mut self, id: impl Into<String>) -> Self {
-        self.image_data = Some(ImageData { id: id.into() });
-        self
-    }
-}
+impl Shape {}
 
 // impl BuildXML for Shape {
 //     fn build(&self) -> Vec<u8> {

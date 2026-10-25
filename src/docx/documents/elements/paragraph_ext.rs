@@ -5,14 +5,4 @@
 
 use super::*;
 
-impl Paragraph {
-    /// Sets the paragraph borders (`<w:pPr><w:pBdr/>`).
-    ///
-    /// Convenience delegator so callers never mutate the public `property`
-    /// field directly.
-    pub fn set_borders(mut self, borders: ParagraphBorders) -> Self {
-        self.property = self.property.set_borders(borders);
-        self
-    }
-}
-
+impl Paragraph {}

@@ -6,11 +6,7 @@ use std::io::Write;
 #[derive(Debug, Clone)]
 pub struct CustomItem(String);
 
-impl CustomItem {
-    pub fn new(xml: impl Into<String>) -> Self {
-        CustomItem(xml.into())
-    }
-}
+impl CustomItem {}
 
 impl BuildXML for CustomItem {
     fn build_to<W: Write>(

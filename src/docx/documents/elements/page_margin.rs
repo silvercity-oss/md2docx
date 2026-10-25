@@ -39,18 +39,6 @@ impl PageMargin {
     pub fn right(self, v: i32) -> PageMargin {
         PageMargin { right: v, ..self }
     }
-
-    pub fn header(self, v: i32) -> PageMargin {
-        PageMargin { header: v, ..self }
-    }
-
-    pub fn footer(self, v: i32) -> PageMargin {
-        PageMargin { footer: v, ..self }
-    }
-
-    pub fn gutter(self, v: i32) -> PageMargin {
-        PageMargin { gutter: v, ..self }
-    }
 }
 
 impl BuildXML for PageMargin {
@@ -71,4 +59,3 @@ impl BuildXML for PageMargin {
             .into_inner()
     }
 }
-

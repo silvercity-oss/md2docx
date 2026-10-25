@@ -24,4 +24,3 @@ impl BuildXML for BookmarkEnd {
             .into_inner()
     }
 }
-

@@ -9,13 +9,7 @@ pub struct BasedOn {
     val: String,
 }
 
-impl BasedOn {
-    pub fn new(val: impl Into<String>) -> BasedOn {
-        BasedOn {
-            val: escape_owned(val.into()),
-        }
-    }
-}
+impl BasedOn {}
 
 impl BuildXML for BasedOn {
     fn build_to<W: Write>(
@@ -25,4 +19,3 @@ impl BuildXML for BasedOn {
         XMLBuilder::from(stream).based_on(&self.val)?.into_inner()
     }
 }
-

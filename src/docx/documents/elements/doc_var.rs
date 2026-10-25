@@ -9,22 +9,13 @@ pub struct DocVar {
     val: String,
 }
 
-impl DocVar {
-    pub fn new(name: impl Into<String>, val: impl Into<String>) -> DocVar {
-        DocVar {
-            name: name.into(),
-            val: val.into(),
-        }
-    }
-}
+impl DocVar {}
 
 impl BuildXML for DocVar {
     fn build_to<W: Write>(
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .doc_var(&self.name, &self.val)?
-            .into_inner()
+        XMLBuilder::from(stream).doc_var(&self.name, &self.val)?.into_inner()
     }
 }

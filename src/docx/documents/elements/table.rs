@@ -43,81 +43,13 @@ impl Table {
         }
     }
 
-    pub fn without_borders(rows: Vec<TableRow>) -> Table {
-        let property = TableProperty::without_borders();
-        let has_numbering = rows.iter().any(|c| c.has_numbering);
-        let grid = vec![];
-        let rows = rows.into_iter().map(TableChild::TableRow).collect();
-        Self {
-            property,
-            rows,
-            grid,
-            has_numbering,
-        }
-    }
-
-    pub fn add_row(mut self, row: TableRow) -> Table {
-        self.rows.push(TableChild::TableRow(row));
-        self
-    }
-
     pub fn set_grid(mut self, grid: Vec<usize>) -> Table {
         self.grid = grid;
         self
     }
 
-    pub fn indent(mut self, v: i32) -> Table {
-        self.property = self.property.indent(v);
-        self
-    }
-
-    pub fn align(mut self, v: TableAlignmentType) -> Table {
-        self.property = self.property.align(v);
-        self
-    }
-
-    pub fn style(mut self, s: impl Into<String>) -> Table {
-        self.property = self.property.style(s);
-        self
-    }
-
-    pub fn layout(mut self, t: TableLayoutType) -> Table {
-        self.property = self.property.layout(t);
-        self
-    }
-
-    pub fn position(mut self, p: TablePositionProperty) -> Self {
-        self.property = self.property.position(p);
-        self
-    }
-
     pub fn width(mut self, w: usize, t: WidthType) -> Table {
         self.property = self.property.width(w, t);
-        self
-    }
-
-    pub fn margins(mut self, margins: TableCellMargins) -> Self {
-        self.property = self.property.set_margins(margins);
-        self
-    }
-
-    pub fn set_borders(mut self, borders: TableBorders) -> Self {
-        self.property = self.property.set_borders(borders);
-        self
-    }
-
-    pub fn set_border(mut self, border: TableBorder) -> Self {
-        self.property = self.property.set_border(border);
-        self
-    }
-
-    pub fn clear_border(mut self, position: TableBorderPosition) -> Self {
-        self.property = self.property.clear_border(position);
-        self
-    }
-
-    pub fn clear_all_border(mut self) -> Self {
-        self.property = self.property.clear_all_border();
         self
     }
 }
@@ -137,4 +69,3 @@ impl BuildXML for Table {
             .into_inner()
     }
 }
-

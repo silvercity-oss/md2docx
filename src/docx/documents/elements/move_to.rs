@@ -44,59 +44,7 @@ impl Default for MoveTo {
     }
 }
 
-impl MoveTo {
-    pub fn new(run: Run) -> MoveTo {
-        Self {
-            children: vec![MoveToChild::Run(Box::new(run))],
-            ..Default::default()
-        }
-    }
-
-    pub fn new_with_empty() -> MoveTo {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub fn add_run(mut self, run: Run) -> MoveTo {
-        self.children.push(MoveToChild::Run(Box::new(run)));
-        self
-    }
-
-    pub fn add_delete(mut self, del: Delete) -> MoveTo {
-        self.children.push(MoveToChild::Delete(del));
-        self
-    }
-
-    pub fn add_child(mut self, c: MoveToChild) -> MoveTo {
-        self.children.push(c);
-        self
-    }
-
-    pub fn add_comment_start(mut self, comment: Comment) -> Self {
-        self.children
-            .push(MoveToChild::CommentStart(Box::new(CommentRangeStart::new(
-                comment,
-            ))));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> Self {
-        self.children
-            .push(MoveToChild::CommentEnd(CommentRangeEnd::new(id)));
-        self
-    }
-
-    pub fn author(mut self, author: impl Into<String>) -> MoveTo {
-        self.author = escape::escape_owned(author.into());
-        self
-    }
-
-    pub fn date(mut self, date: impl Into<String>) -> MoveTo {
-        self.date = date.into();
-        self
-    }
-}
+impl MoveTo {}
 
 impl HistoryId for MoveTo {}
 
@@ -113,4 +61,3 @@ impl BuildXML for MoveTo {
             .into_inner()
     }
 }
-

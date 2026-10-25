@@ -1,4 +1,3 @@
-
 // https://c-rex.net/projects/samples/ooxml/e1/Part4/OOXML_P4_DOCX_HYPERLINKHYPERLINK_topic_ID0EFYG1.html
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct InstrHyperlink {
@@ -7,14 +6,7 @@ pub struct InstrHyperlink {
     pub anchor: bool,
 }
 
-impl InstrHyperlink {
-    pub fn new(target: impl Into<String>) -> Self {
-        Self {
-            target: target.into(),
-            ..Default::default()
-        }
-    }
-}
+impl InstrHyperlink {}
 
 // impl BuildXML for instrHyperlink {
 //     fn build(&self) -> Vec<u8> {

@@ -27,11 +27,6 @@ impl StructuredDataTagProperty {
         Default::default()
     }
 
-    pub fn data_binding(mut self, d: DataBinding) -> Self {
-        self.data_binding = Some(d);
-        self
-    }
-
     pub fn alias(mut self, v: impl Into<String>) -> Self {
         self.alias = Some(v.into());
         self
@@ -52,4 +47,3 @@ impl BuildXML for StructuredDataTagProperty {
             .into_inner()
     }
 }
-

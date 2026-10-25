@@ -20,12 +20,7 @@ macro_rules! open {
         }
     };
     ($name: ident, $el_name: expr, $attr0: expr, $attr1: expr, $attr2: expr) => {
-        pub(crate) fn $name(
-            self,
-            arg0: &str,
-            arg1: &str,
-            arg2: &str,
-        ) -> crate::docx::xml::writer::Result<Self> {
+        pub(crate) fn $name(self, arg0: &str, arg1: &str, arg2: &str) -> crate::docx::xml::writer::Result<Self> {
             self.write(
                 XmlEvent::start_element($el_name)
                     .attr($attr0, arg0)
@@ -246,12 +241,7 @@ macro_rules! closed_with_child {
         }
     };
     ($name: ident, $el_name: expr, $attr0: expr, $attr1: expr) => {
-        pub(crate) fn $name(
-            self,
-            arg0: &str,
-            arg1: &str,
-            child: &str,
-        ) -> crate::docx::xml::writer::Result<Self> {
+        pub(crate) fn $name(self, arg0: &str, arg1: &str, child: &str) -> crate::docx::xml::writer::Result<Self> {
             self.write(
                 XmlEvent::start_element($el_name)
                     .attr($attr0, arg0)
@@ -309,12 +299,7 @@ macro_rules! closed {
         }
     };
     ($name: ident, $el_name: expr, $attr0: expr, $attr1: expr, $attr2: expr) => {
-        pub(crate) fn $name(
-            self,
-            arg0: &str,
-            arg1: &str,
-            arg2: &str,
-        ) -> crate::docx::xml::writer::Result<Self> {
+        pub(crate) fn $name(self, arg0: &str, arg1: &str, arg2: &str) -> crate::docx::xml::writer::Result<Self> {
             self.write(
                 XmlEvent::start_element($el_name)
                     .attr($attr0, arg0)

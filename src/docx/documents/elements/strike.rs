@@ -12,11 +12,6 @@ impl Strike {
     pub fn new() -> Strike {
         Default::default()
     }
-
-    pub fn disable(mut self) -> Strike {
-        self.val = false;
-        self
-    }
 }
 
 impl Default for Strike {

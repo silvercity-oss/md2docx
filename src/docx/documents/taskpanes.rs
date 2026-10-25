@@ -6,11 +6,7 @@ use crate::docx::xml_builder::*;
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub struct Taskpanes {}
 
-impl Taskpanes {
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
+impl Taskpanes {}
 
 impl BuildXML for Taskpanes {
     fn build_to<W: Write>(
@@ -30,4 +26,3 @@ impl BuildXML for Taskpanes {
             .into_inner()
     }
 }
-

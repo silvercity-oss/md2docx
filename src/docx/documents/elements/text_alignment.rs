@@ -6,11 +6,7 @@ use crate::docx::{xml_builder::*, TextAlignmentType};
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextAlignment(pub TextAlignmentType);
 
-impl TextAlignment {
-    pub fn new(val: TextAlignmentType) -> TextAlignment {
-        TextAlignment(val)
-    }
-}
+impl TextAlignment {}
 
 impl BuildXML for TextAlignment {
     fn build_to<W: Write>(
@@ -22,4 +18,3 @@ impl BuildXML for TextAlignment {
             .into_inner()
     }
 }
-

@@ -14,11 +14,7 @@ impl<W: Write> XMLBuilder<W> {
     closed_with_str!(based_on, "w:basedOn");
     // i.e. <w:t ... >
     pub(crate) fn text(self, text: &str, preserve_space: bool) -> Result<Self> {
-        let space = if preserve_space {
-            "preserve"
-        } else {
-            "default"
-        };
+        let space = if preserve_space { "preserve" } else { "default" };
         self.write(XmlEvent::start_element("w:t").attr("xml:space", space))?
             .write(text)?
             .close()
@@ -80,11 +76,7 @@ impl<W: Write> XMLBuilder<W> {
 
     // i.e. <w:delText ... >
     pub(crate) fn delete_text(self, text: &str, preserve_space: bool) -> Result<Self> {
-        let space = if preserve_space {
-            "preserve"
-        } else {
-            "default"
-        };
+        let space = if preserve_space { "preserve" } else { "default" };
         self.write(XmlEvent::start_element("w:delText").attr("xml:space", space))?
             .write(text)?
             .close()
@@ -190,8 +182,7 @@ impl<W: Write> XMLBuilder<W> {
 
     pub(crate) fn disable_bold(self) -> Result<Self> {
         let f = "false";
-        self.write(XmlEvent::start_element("w:b").attr("w:val", f))?
-            .close()
+        self.write(XmlEvent::start_element("w:b").attr("w:val", f))?.close()
     }
 
     closed_with_str!(caps, "w:caps");
@@ -201,8 +192,7 @@ impl<W: Write> XMLBuilder<W> {
 
     pub(crate) fn disable_italic(self) -> Result<Self> {
         let f = "false";
-        self.write(XmlEvent::start_element("w:i").attr("w:val", f))?
-            .close()
+        self.write(XmlEvent::start_element("w:i").attr("w:val", f))?.close()
     }
 
     closed!(strike, "w:strike");
@@ -223,12 +213,7 @@ impl<W: Write> XMLBuilder<W> {
 
     // Build w:style element
     // i.e. <w:style ... >
-    pub(crate) fn open_style(
-        self,
-        style_type: StyleType,
-        id: &str,
-        is_default: bool,
-    ) -> Result<Self> {
+    pub(crate) fn open_style(self, style_type: StyleType, id: &str, is_default: bool) -> Result<Self> {
         let mut element = XmlEvent::start_element("w:style")
             .attr_display("w:type", style_type)
             .attr("w:styleId", id);
@@ -312,9 +297,7 @@ impl<W: Write> XMLBuilder<W> {
         }
 
         match special_indent {
-            Some(SpecialIndentType::FirstLine(v)) => {
-                self.write(base.attr_display("w:firstLine", v))
-            }
+            Some(SpecialIndentType::FirstLine(v)) => self.write(base.attr_display("w:firstLine", v)),
             Some(SpecialIndentType::Hanging(v)) => self.write(base.attr_display("w:hanging", v)),
             None => self.write(base),
         }?
@@ -489,14 +472,7 @@ impl<W: Write> XMLBuilder<W> {
     closed!(comment_range_start, "w:commentRangeStart", "w:id");
     closed!(comment_range_end, "w:commentRangeEnd", "w:id");
     closed!(comment_reference, "w:commentReference", "w:id");
-    open!(
-        open_comment,
-        "w:comment",
-        "w:id",
-        "w:author",
-        "w:date",
-        "w:initials"
-    );
+    open!(open_comment, "w:comment", "w:id", "w:author", "w:date", "w:initials");
 
     closed_with_str!(multi_level_type, "w:multiLevelType");
 
@@ -538,19 +514,9 @@ impl<W: Write> XMLBuilder<W> {
     closed!(ul_trail_space, "w:ulTrailSpace");
     closed!(do_not_expand_shift_return, "w:doNotExpandShiftReturn");
     closed!(adjust_line_height_table, "w:adjustLineHeightInTable");
-    closed!(
-        character_spacing_control,
-        "w:characterSpacingControl",
-        "w:val"
-    );
+    closed!(character_spacing_control, "w:characterSpacingControl", "w:val");
     closed!(use_fe_layout, "w:useFELayout");
-    closed!(
-        compat_setting,
-        "w:compatSetting",
-        "w:name",
-        "w:uri",
-        "w:val"
-    );
+    closed!(compat_setting, "w:compatSetting", "w:name", "w:uri", "w:val");
 
     closed!(keep_next, "w:keepNext");
     closed!(keep_lines, "w:keepLines");
@@ -599,12 +565,7 @@ impl<W: Write> XMLBuilder<W> {
     closed!(webextensionref, "wetp:webextensionref", "xmlns:r", "r:id");
 
     // customXML
-    open!(
-        open_data_store_item,
-        "ds:datastoreItem",
-        "xmlns:ds",
-        "ds:itemID"
-    );
+    open!(open_data_store_item, "ds:datastoreItem", "xmlns:ds", "ds:itemID");
     open!(open_data_store_schema_refs, "ds:schemaRefs");
 
     // CommentExtended
@@ -733,11 +694,7 @@ impl<W: Write> XMLBuilder<W> {
         self.write(w)?.close()
     }
 
-    pub(crate) fn page_num_type(
-        self,
-        start: Option<u32>,
-        chap_style: Option<String>,
-    ) -> Result<Self> {
+    pub(crate) fn page_num_type(self, start: Option<u32>, chap_style: Option<String>) -> Result<Self> {
         let mut w = XmlEvent::start_element("w:pgNumType");
         if let Some(start) = start {
             w = w.attr_display("w:start", start);
@@ -785,11 +742,7 @@ impl<W: Write> XMLBuilder<W> {
 
     // FootnoteReference
     // w:footnoteReference w:id="1"
-    pub(crate) fn footnote_reference(
-        self,
-        id: usize,
-        custom_mark_follows: Option<bool>,
-    ) -> Result<Self> {
+    pub(crate) fn footnote_reference(self, id: usize, custom_mark_follows: Option<bool>) -> Result<Self> {
         let mut element = XmlEvent::start_element("w:footnoteReference").attr_display("w:id", id);
         if let Some(value) = custom_mark_follows {
             element = element.attr("w:customMarkFollows", if value { "1" } else { "0" });
@@ -800,4 +753,3 @@ impl<W: Write> XMLBuilder<W> {
     // Footnotes
     open!(open_footnote, "w:footnote", "w:id");
 }
-

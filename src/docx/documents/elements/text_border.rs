@@ -12,31 +12,7 @@ pub struct TextBorder {
     pub space: usize,
 }
 
-impl TextBorder {
-    pub fn new() -> Self {
-        TextBorder::default()
-    }
-
-    pub fn color(mut self, color: impl Into<String>) -> Self {
-        self.color = color.into();
-        self
-    }
-
-    pub fn size(mut self, size: usize) -> Self {
-        self.size = size;
-        self
-    }
-
-    pub fn space(mut self, space: usize) -> Self {
-        self.space = space;
-        self
-    }
-
-    pub fn border_type(mut self, border_type: BorderType) -> Self {
-        self.border_type = border_type;
-        self
-    }
-}
+impl TextBorder {}
 
 impl Default for TextBorder {
     fn default() -> Self {

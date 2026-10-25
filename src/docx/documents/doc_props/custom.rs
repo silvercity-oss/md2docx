@@ -5,17 +5,12 @@ use crate::docx::xml_builder::*;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CustomProps {
-    pub properties: std::collections::HashMap<String, String>,
+    pub properties: std::collections::BTreeMap<String, String>,
 }
 
 impl CustomProps {
     pub(crate) fn new() -> Self {
         Self::default()
-    }
-
-    pub fn add_custom_property(mut self, name: impl Into<String>, item: impl Into<String>) -> Self {
-        self.properties.insert(name.into(), item.into());
-        self
     }
 }
 

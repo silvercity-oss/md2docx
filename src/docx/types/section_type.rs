@@ -1,4 +1,3 @@
-
 //
 // Please see CT_SectType
 //
@@ -8,9 +7,9 @@
 // <xsd:enumeration value="evenPage"/>
 // <xsd:enumeration value="oddPage"/>
 
+use super::errors;
 use std::fmt;
 use std::str::FromStr;
-use super::errors;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SectionType {

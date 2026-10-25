@@ -50,42 +50,8 @@ impl RunProperty {
         self
     }
 
-    pub fn spacing(mut self, spacing: i32) -> RunProperty {
-        self.character_spacing = Some(CharacterSpacing::new(spacing));
-        self
-    }
-
     pub fn color(mut self, color: impl Into<String>) -> RunProperty {
         self.color = Some(Color::new(color));
-        self
-    }
-
-    /// Sets the theme color reference (`w:themeColor`) on the run color.
-    ///
-    /// The hex value set via [`color`](Self::color) is kept as a fallback. If no
-    /// color has been set yet this defaults the fallback to `auto`.
-    pub fn theme_color(mut self, theme_color: crate::docx::types::ThemeColor) -> RunProperty {
-        let color = self.color.take().unwrap_or_else(|| Color::new("auto"));
-        self.color = Some(color.theme_color(theme_color));
-        self
-    }
-
-    /// Sets the theme shade modifier (`w:themeShade`) on the run color.
-    pub fn theme_shade(mut self, theme_shade: impl Into<String>) -> RunProperty {
-        let color = self.color.take().unwrap_or_else(|| Color::new("auto"));
-        self.color = Some(color.theme_shade(theme_shade));
-        self
-    }
-
-    /// Sets the theme tint modifier (`w:themeTint`) on the run color.
-    pub fn theme_tint(mut self, theme_tint: impl Into<String>) -> RunProperty {
-        let color = self.color.take().unwrap_or_else(|| Color::new("auto"));
-        self.color = Some(color.theme_tint(theme_tint));
-        self
-    }
-
-    pub fn highlight(mut self, color: impl Into<String>) -> RunProperty {
-        self.highlight = Some(Highlight::new(color));
         self
     }
 
@@ -97,17 +63,6 @@ impl RunProperty {
     pub fn bold(mut self) -> RunProperty {
         self.bold = Some(Bold::new());
         self.bold_cs = Some(BoldCs::new());
-        self
-    }
-
-    pub fn disable_bold(mut self) -> RunProperty {
-        self.bold = Some(Bold::new().disable());
-        self.bold_cs = Some(BoldCs::new().disable());
-        self
-    }
-
-    pub fn caps(mut self) -> RunProperty {
-        self.caps = Some(Caps::new());
         self
     }
 
@@ -123,84 +78,13 @@ impl RunProperty {
         self
     }
 
-    pub fn disable_strike(mut self) -> RunProperty {
-        self.strike = Some(Strike::new().disable());
-        self
-    }
-
-    pub fn dstrike(mut self) -> RunProperty {
-        self.dstrike = Some(Dstrike::new());
-        self.strike = None;
-        self
-    }
-
-    pub fn disable_dstrike(mut self) -> RunProperty {
-        self.dstrike = Some(Dstrike::new().disable());
-        self
-    }
-
-    pub fn disable_italic(mut self) -> RunProperty {
-        self.italic = Some(Italic::new().disable());
-        self.italic_cs = Some(ItalicCs::new().disable());
-        self
-    }
-
     pub fn underline(mut self, line_type: impl Into<String>) -> RunProperty {
         self.underline = Some(Underline::new(line_type));
         self
     }
 
-    pub fn vanish(mut self) -> RunProperty {
-        self.vanish = Some(Vanish::new());
-        self
-    }
-
-    pub fn spec_vanish(mut self) -> RunProperty {
-        self.spec_vanish = Some(SpecVanish::new());
-        self
-    }
-
     pub fn fonts(mut self, font: RunFonts) -> RunProperty {
         self.fonts = Some(font);
-        self
-    }
-
-    pub fn character_spacing(mut self, v: i32) -> RunProperty {
-        self.character_spacing = Some(CharacterSpacing::new(v));
-        self
-    }
-
-    pub fn stretch(mut self, v: i32) -> RunProperty {
-        self.stretch = Some(Stretch::new(v));
-        self
-    }
-
-    pub fn fit_text(mut self, val: usize, id: Option<u32>) -> RunProperty {
-        let mut fit_text = FitText::new(val);
-        if let Some(id) = id {
-            fit_text = fit_text.id(id);
-        }
-        self.fit_text = Some(fit_text);
-        self
-    }
-
-    pub fn text_border(mut self, b: TextBorder) -> Self {
-        self.text_border = Some(b);
-        self
-    }
-
-    pub fn delete(mut self, d: Delete) -> Self {
-        self.del = Some(d);
-        self
-    }
-
-    pub fn insert(mut self, i: Insert) -> Self {
-        self.ins = Some(i);
-        self
-    }
-
-    pub fn ptab(mut self, ptab: PositionalTab) -> Self {
-        self.positional_tab = Some(ptab);
         self
     }
 
@@ -246,4 +130,3 @@ impl BuildXML for RunProperty {
             .into_inner()
     }
 }
-

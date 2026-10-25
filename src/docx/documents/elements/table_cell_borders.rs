@@ -35,33 +35,6 @@ impl TableCellBorder {
             color: "000000".to_owned(),
         }
     }
-
-    pub fn color(mut self, color: impl Into<String>) -> TableCellBorder {
-        self.color = color.into();
-        self
-    }
-
-    pub fn size(mut self, size: usize) -> TableCellBorder {
-        self.size = size;
-        self
-    }
-
-    pub fn border_type(mut self, border_type: BorderType) -> TableCellBorder {
-        self.border_type = border_type;
-        self
-    }
-
-    pub fn get_size(&self) -> usize {
-        self.size
-    }
-
-    pub fn get_color(&self) -> String {
-        self.color.clone()
-    }
-
-    pub fn get_border_type(&self) -> BorderType {
-        self.border_type
-    }
 }
 
 impl BuildXML for TableCellBorder {
@@ -112,76 +85,7 @@ impl Default for TableCellBorders {
     }
 }
 
-impl TableCellBorders {
-    pub fn new() -> TableCellBorders {
-        Default::default()
-    }
-
-    pub fn with_empty() -> TableCellBorders {
-        TableCellBorders {
-            top: None,
-            left: None,
-            bottom: None,
-            right: None,
-            inside_h: None,
-            inside_v: None,
-            tr2bl: None,
-            tl2br: None,
-        }
-    }
-
-    pub fn set(mut self, border: TableCellBorder) -> Self {
-        match border.position {
-            TableCellBorderPosition::Top => self.top = Some(border),
-            TableCellBorderPosition::Left => self.left = Some(border),
-            TableCellBorderPosition::Bottom => self.bottom = Some(border),
-            TableCellBorderPosition::Right => self.right = Some(border),
-            TableCellBorderPosition::InsideH => self.inside_h = Some(border),
-            TableCellBorderPosition::InsideV => self.inside_v = Some(border),
-            TableCellBorderPosition::Tr2bl => self.tr2bl = Some(border),
-            TableCellBorderPosition::Tl2br => self.tl2br = Some(border),
-        };
-        self
-    }
-
-    pub fn clear(mut self, position: TableCellBorderPosition) -> Self {
-        let nil = TableCellBorder::new(position.clone()).border_type(BorderType::Nil);
-        match position {
-            TableCellBorderPosition::Top => self.top = Some(nil),
-            TableCellBorderPosition::Left => self.left = Some(nil),
-            TableCellBorderPosition::Bottom => self.bottom = Some(nil),
-            TableCellBorderPosition::Right => self.right = Some(nil),
-            TableCellBorderPosition::InsideH => self.inside_h = Some(nil),
-            TableCellBorderPosition::InsideV => self.inside_v = Some(nil),
-            TableCellBorderPosition::Tr2bl => self.tr2bl = Some(nil),
-            TableCellBorderPosition::Tl2br => self.tl2br = Some(nil),
-        };
-        self
-    }
-
-    pub fn clear_all(mut self) -> Self {
-        self.top =
-            Some(TableCellBorder::new(TableCellBorderPosition::Top).border_type(BorderType::Nil));
-        self.left =
-            Some(TableCellBorder::new(TableCellBorderPosition::Left).border_type(BorderType::Nil));
-        self.bottom = Some(
-            TableCellBorder::new(TableCellBorderPosition::Bottom).border_type(BorderType::Nil),
-        );
-        self.right =
-            Some(TableCellBorder::new(TableCellBorderPosition::Right).border_type(BorderType::Nil));
-        self.inside_h = Some(
-            TableCellBorder::new(TableCellBorderPosition::InsideH).border_type(BorderType::Nil),
-        );
-        self.inside_v = Some(
-            TableCellBorder::new(TableCellBorderPosition::InsideV).border_type(BorderType::Nil),
-        );
-        self.tl2br =
-            Some(TableCellBorder::new(TableCellBorderPosition::Tl2br).border_type(BorderType::Nil));
-        self.tr2bl =
-            Some(TableCellBorder::new(TableCellBorderPosition::Tr2bl).border_type(BorderType::Nil));
-        self
-    }
-}
+impl TableCellBorders {}
 
 impl BuildXML for TableCellBorders {
     fn build_to<W: Write>(

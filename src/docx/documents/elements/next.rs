@@ -8,11 +8,7 @@ pub struct Next {
     val: String,
 }
 
-impl Next {
-    pub fn new(val: impl Into<String>) -> Next {
-        Next { val: val.into() }
-    }
-}
+impl Next {}
 
 impl BuildXML for Next {
     fn build_to<W: Write>(
@@ -22,4 +18,3 @@ impl BuildXML for Next {
         XMLBuilder::from(stream).next(&self.val)?.into_inner()
     }
 }
-

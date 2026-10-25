@@ -35,21 +35,6 @@ impl TableBorder {
             color: "000000".to_owned(),
         }
     }
-
-    pub fn color(mut self, color: impl Into<String>) -> TableBorder {
-        self.color = color.into();
-        self
-    }
-
-    pub fn size(mut self, size: usize) -> TableBorder {
-        self.size = size;
-        self
-    }
-
-    pub fn border_type(mut self, border_type: BorderType) -> TableBorder {
-        self.border_type = border_type;
-        self
-    }
 }
 
 impl BuildXML for TableBorder {
@@ -99,56 +84,6 @@ impl TableBorders {
     pub fn new() -> TableBorders {
         Default::default()
     }
-
-    pub fn with_empty() -> TableBorders {
-        TableBorders {
-            top: None,
-            left: None,
-            bottom: None,
-            right: None,
-            inside_h: None,
-            inside_v: None,
-        }
-    }
-
-    pub fn set(mut self, border: TableBorder) -> Self {
-        match border.position {
-            TableBorderPosition::Top => self.top = Some(border),
-            TableBorderPosition::Left => self.left = Some(border),
-            TableBorderPosition::Bottom => self.bottom = Some(border),
-            TableBorderPosition::Right => self.right = Some(border),
-            TableBorderPosition::InsideH => self.inside_h = Some(border),
-            TableBorderPosition::InsideV => self.inside_v = Some(border),
-        };
-        self
-    }
-
-    pub fn clear(mut self, position: TableBorderPosition) -> Self {
-        let nil = TableBorder::new(position.clone()).border_type(BorderType::Nil);
-        match position {
-            TableBorderPosition::Top => self.top = Some(nil),
-            TableBorderPosition::Left => self.left = Some(nil),
-            TableBorderPosition::Bottom => self.bottom = Some(nil),
-            TableBorderPosition::Right => self.right = Some(nil),
-            TableBorderPosition::InsideH => self.inside_h = Some(nil),
-            TableBorderPosition::InsideV => self.inside_v = Some(nil),
-        };
-        self
-    }
-
-    pub fn clear_all(mut self) -> Self {
-        self.top = Some(TableBorder::new(TableBorderPosition::Top).border_type(BorderType::Nil));
-        self.left = Some(TableBorder::new(TableBorderPosition::Left).border_type(BorderType::Nil));
-        self.bottom =
-            Some(TableBorder::new(TableBorderPosition::Bottom).border_type(BorderType::Nil));
-        self.right =
-            Some(TableBorder::new(TableBorderPosition::Right).border_type(BorderType::Nil));
-        self.inside_h =
-            Some(TableBorder::new(TableBorderPosition::InsideH).border_type(BorderType::Nil));
-        self.inside_v =
-            Some(TableBorder::new(TableBorderPosition::InsideV).border_type(BorderType::Nil));
-        self
-    }
 }
 
 impl BuildXML for TableBorders {
@@ -168,4 +103,3 @@ impl BuildXML for TableBorders {
             .into_inner()
     }
 }
-

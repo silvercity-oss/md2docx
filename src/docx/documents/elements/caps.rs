@@ -10,16 +10,7 @@ pub struct Caps {
     val: bool,
 }
 
-impl Caps {
-    pub fn new() -> Caps {
-        Default::default()
-    }
-
-    pub fn disable(mut self) -> Caps {
-        self.val = false;
-        self
-    }
-}
+impl Caps {}
 
 impl Default for Caps {
     fn default() -> Self {
@@ -32,8 +23,6 @@ impl BuildXML for Caps {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .caps(&self.val.to_string())?
-            .into_inner()
+        XMLBuilder::from(stream).caps(&self.val.to_string())?.into_inner()
     }
 }

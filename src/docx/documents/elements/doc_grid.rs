@@ -11,34 +11,7 @@ pub struct DocGrid {
     char_space: Option<isize>,
 }
 
-impl DocGrid {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_empty() -> Self {
-        Self {
-            grid_type: DocGridType::Default,
-            line_pitch: None,
-            char_space: None,
-        }
-    }
-
-    pub fn grid_type(mut self, t: DocGridType) -> Self {
-        self.grid_type = t;
-        self
-    }
-
-    pub fn line_pitch(mut self, line_pitch: usize) -> Self {
-        self.line_pitch = Some(line_pitch);
-        self
-    }
-
-    pub fn char_space(mut self, char_space: isize) -> Self {
-        self.char_space = Some(char_space);
-        self
-    }
-}
+impl DocGrid {}
 
 impl Default for DocGrid {
     fn default() -> Self {

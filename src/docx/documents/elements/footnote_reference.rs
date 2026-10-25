@@ -12,25 +12,7 @@ pub struct FootnoteReference {
     pub content: Vec<Paragraph>,
 }
 
-impl FootnoteReference {
-    pub fn new(id: usize) -> Self {
-        FootnoteReference {
-            id,
-            custom_mark_follows: None,
-            style: "FootnoteReference".to_string(),
-            content: vec![],
-        }
-    }
-    /// Suppress the automatic reference marker when a custom mark follows.
-    pub fn custom_mark_follows(mut self, value: bool) -> Self {
-        self.custom_mark_follows = Some(value);
-        self
-    }
-    /// Add footnote content as a Paragraph
-    pub fn footnote(&mut self, p: Paragraph) {
-        self.content.push(p)
-    }
-}
+impl FootnoteReference {}
 impl From<Footnote> for FootnoteReference {
     fn from(footnote: Footnote) -> Self {
         FootnoteReference {
@@ -52,4 +34,3 @@ impl BuildXML for FootnoteReference {
             .into_inner()
     }
 }
-

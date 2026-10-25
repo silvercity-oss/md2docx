@@ -20,8 +20,6 @@ impl BuildXML for VertAlign {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .vert_align(&self.val.to_string())?
-            .into_inner()
+        XMLBuilder::from(stream).vert_align(&self.val.to_string())?.into_inner()
     }
 }

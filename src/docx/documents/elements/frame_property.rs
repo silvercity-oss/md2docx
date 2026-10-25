@@ -38,71 +38,7 @@ pub struct FrameProperty {
     pub y_align: Option<String>,
 }
 
-impl FrameProperty {
-    pub fn new() -> FrameProperty {
-        Default::default()
-    }
-
-    pub fn wrap(mut self, wrap: impl Into<String>) -> Self {
-        self.wrap = Some(wrap.into());
-        self
-    }
-
-    pub fn v_anchor(mut self, anchor: impl Into<String>) -> Self {
-        self.v_anchor = Some(anchor.into());
-        self
-    }
-
-    pub fn h_anchor(mut self, anchor: impl Into<String>) -> Self {
-        self.h_anchor = Some(anchor.into());
-        self
-    }
-
-    pub fn h_rule(mut self, r: impl Into<String>) -> Self {
-        self.h_rule = Some(r.into());
-        self
-    }
-
-    pub fn x_align(mut self, align: impl Into<String>) -> Self {
-        self.x_align = Some(align.into());
-        self
-    }
-
-    pub fn y_align(mut self, align: impl Into<String>) -> Self {
-        self.y_align = Some(align.into());
-        self
-    }
-
-    pub fn h_space(mut self, x: i32) -> Self {
-        self.h_space = Some(x);
-        self
-    }
-
-    pub fn v_space(mut self, x: i32) -> Self {
-        self.v_space = Some(x);
-        self
-    }
-
-    pub fn x(mut self, x: i32) -> Self {
-        self.x = Some(x);
-        self
-    }
-
-    pub fn y(mut self, y: i32) -> Self {
-        self.y = Some(y);
-        self
-    }
-
-    pub fn width(mut self, n: u32) -> Self {
-        self.w = Some(n);
-        self
-    }
-
-    pub fn height(mut self, n: u32) -> Self {
-        self.h = Some(n);
-        self
-    }
-}
+impl FrameProperty {}
 
 impl BuildXML for FrameProperty {
     fn build_to<W: Write>(
@@ -112,4 +48,3 @@ impl BuildXML for FrameProperty {
         XMLBuilder::from(stream).frame_property(self)?.into_inner()
     }
 }
-

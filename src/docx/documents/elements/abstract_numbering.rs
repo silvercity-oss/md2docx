@@ -2,7 +2,6 @@ use crate::docx::documents::{BuildXML, Level};
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct AbstractNumbering {
     pub id: usize,
@@ -27,16 +26,6 @@ impl AbstractNumbering {
         self.levels.push(level);
         self
     }
-
-    pub fn num_style_link(mut self, link: impl Into<String>) -> Self {
-        self.num_style_link = Some(link.into());
-        self
-    }
-
-    pub fn style_link(mut self, link: impl Into<String>) -> Self {
-        self.style_link = Some(link.into());
-        self
-    }
 }
 
 impl BuildXML for AbstractNumbering {
@@ -54,4 +43,3 @@ impl BuildXML for AbstractNumbering {
         builder.add_children(&self.levels)?.close()?.into_inner()
     }
 }
-

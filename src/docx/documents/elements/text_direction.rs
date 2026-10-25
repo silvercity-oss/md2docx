@@ -9,11 +9,7 @@ pub struct TextDirection {
     val: TextDirectionType,
 }
 
-impl TextDirection {
-    pub fn new(t: TextDirectionType) -> TextDirection {
-        TextDirection { val: t }
-    }
-}
+impl TextDirection {}
 
 impl BuildXML for TextDirection {
     fn build_to<W: Write>(
@@ -25,4 +21,3 @@ impl BuildXML for TextDirection {
             .into_inner()
     }
 }
-

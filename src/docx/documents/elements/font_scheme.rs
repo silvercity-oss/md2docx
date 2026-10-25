@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct FontSchemeFont {
     pub script: String,
@@ -20,8 +19,4 @@ pub struct FontScheme {
 }
 
 // For now reader only
-impl FontScheme {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
+impl FontScheme {}

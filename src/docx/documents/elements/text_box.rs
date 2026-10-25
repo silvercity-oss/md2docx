@@ -1,4 +1,3 @@
-
 use crate::docx::documents::*;
 use crate::docx::types::*;
 
@@ -69,75 +68,6 @@ impl TextBox {
     }
 
     // unit is emu
-    pub fn size(mut self, w_emu: u32, h_emu: u32) -> Self {
-        self.size = (w_emu, h_emu);
-        self
-    }
-
-    pub fn floating(mut self) -> Self {
-        self.position_type = DrawingPositionType::Anchor;
-        self
-    }
-
-    pub fn offset_x(mut self, x: i32) -> Self {
-        self.position_h = DrawingPosition::Offset(x);
-        self
-    }
-
-    pub fn offset_y(mut self, y: i32) -> Self {
-        self.position_v = DrawingPosition::Offset(y);
-        self
-    }
-
-    pub fn position_h(mut self, pos: DrawingPosition) -> Self {
-        self.position_h = pos;
-        self
-    }
-
-    pub fn position_v(mut self, pos: DrawingPosition) -> Self {
-        self.position_v = pos;
-        self
-    }
-
-    pub fn relative_from_h(mut self, t: RelativeFromHType) -> Self {
-        self.relative_from_h = t;
-        self
-    }
-
-    pub fn relative_from_v(mut self, t: RelativeFromVType) -> Self {
-        self.relative_from_v = t;
-        self
-    }
-
-    pub fn dist_t(mut self, v: i32) -> Self {
-        self.dist_t = v;
-        self
-    }
-
-    pub fn dist_b(mut self, v: i32) -> Self {
-        self.dist_b = v;
-        self
-    }
-
-    pub fn dist_l(mut self, v: i32) -> Self {
-        self.dist_l = v;
-        self
-    }
-
-    pub fn dist_r(mut self, v: i32) -> Self {
-        self.dist_r = v;
-        self
-    }
-
-    pub fn simple_pos(mut self, v: bool) -> Self {
-        self.simple_pos = v;
-        self
-    }
-
-    pub fn relative_height(mut self, v: u32) -> Self {
-        self.relative_height = v;
-        self
-    }
 }
 
 /*

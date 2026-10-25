@@ -8,25 +8,7 @@ pub struct PageNumType {
     pub chap_style: Option<String>,
 }
 
-impl PageNumType {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn start(self, s: u32) -> Self {
-        Self {
-            start: Some(s),
-            ..self
-        }
-    }
-
-    pub fn chap_style(self, s: impl Into<String>) -> Self {
-        Self {
-            chap_style: Some(s.into()),
-            ..self
-        }
-    }
-}
+impl PageNumType {}
 
 impl BuildXML for PageNumType {
     fn build_to<W: Write>(

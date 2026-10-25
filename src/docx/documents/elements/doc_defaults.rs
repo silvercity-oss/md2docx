@@ -22,11 +22,6 @@ impl DocDefaults {
         self
     }
 
-    pub fn spacing(mut self, spacing: i32) -> Self {
-        self.run_property_default = self.run_property_default.spacing(spacing);
-        self
-    }
-
     pub fn fonts(mut self, font: RunFonts) -> Self {
         self.run_property_default = self.run_property_default.fonts(font);
         self
@@ -34,16 +29,6 @@ impl DocDefaults {
 
     pub fn line_spacing(mut self, spacing: LineSpacing) -> Self {
         self.paragraph_property_default = self.paragraph_property_default.line_spacing(spacing);
-        self
-    }
-
-    pub(crate) fn run_property(mut self, p: RunProperty) -> Self {
-        self.run_property_default = self.run_property_default.run_property(p);
-        self
-    }
-
-    pub(crate) fn paragraph_property(mut self, p: ParagraphProperty) -> Self {
-        self.paragraph_property_default = self.paragraph_property_default.paragraph_property(p);
         self
     }
 }
@@ -72,4 +57,3 @@ impl BuildXML for DocDefaults {
             .into_inner()
     }
 }
-

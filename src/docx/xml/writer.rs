@@ -132,17 +132,9 @@ impl<W: Write> EventWriter<W> {
                     .map_err(Error::from)?;
             }
             XmlEvent::EndElement => {
-                let state = self
-                    .inner
-                    .element_stack
-                    .pop()
-                    .ok_or(Error::UnbalancedEndTag)?;
+                let state = self.inner.element_stack.pop().ok_or(Error::UnbalancedEndTag)?;
                 if state.pending {
-                    self.inner
-                        .writer
-                        .get_mut()
-                        .write_all(b" />")
-                        .map_err(Error::from)?;
+                    self.inner.writer.get_mut().write_all(b" />").map_err(Error::from)?;
                 } else {
                     let name_end = state.name_start + state.name_len;
                     let writer = self.inner.writer.get_mut();
@@ -180,11 +172,7 @@ impl<W: Write> EventWriter<W> {
         if let Some(state) = self.inner.element_stack.last_mut() {
             if state.pending {
                 state.pending = false;
-                self.inner
-                    .writer
-                    .get_mut()
-                    .write_all(b">")
-                    .map_err(Error::from)?;
+                self.inner.writer.get_mut().write_all(b">").map_err(Error::from)?;
             }
         }
         Ok(())
@@ -266,11 +254,8 @@ impl<'a> StartElement<'a> {
         self.encoded.push(b' ');
         self.encoded.extend_from_slice(name.as_bytes());
         self.encoded.extend_from_slice(b"=\"");
-        fmt::write(
-            &mut AttributeValueWriter(&mut self.encoded),
-            format_args!("{value}"),
-        )
-        .expect("writing to an in-memory attribute buffer cannot fail");
+        fmt::write(&mut AttributeValueWriter(&mut self.encoded), format_args!("{value}"))
+            .expect("writing to an in-memory attribute buffer cannot fail");
         self.encoded.push(b'"');
         self
     }

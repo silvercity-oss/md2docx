@@ -9,11 +9,7 @@ pub struct TableLayout {
     layout_type: TableLayoutType,
 }
 
-impl TableLayout {
-    pub fn new(t: TableLayoutType) -> TableLayout {
-        TableLayout { layout_type: t }
-    }
-}
+impl TableLayout {}
 
 impl BuildXML for TableLayout {
     fn build_to<W: Write>(
@@ -25,4 +21,3 @@ impl BuildXML for TableLayout {
             .into_inner()
     }
 }
-

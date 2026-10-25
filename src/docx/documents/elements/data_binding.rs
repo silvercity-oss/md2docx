@@ -10,26 +10,7 @@ pub struct DataBinding {
     pub store_item_id: Option<String>,
 }
 
-impl DataBinding {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn xpath(mut self, xpath: impl Into<String>) -> Self {
-        self.xpath = Some(xpath.into());
-        self
-    }
-
-    pub fn prefix_mappings(mut self, m: impl Into<String>) -> Self {
-        self.prefix_mappings = Some(m.into());
-        self
-    }
-
-    pub fn store_item_id(mut self, id: impl Into<String>) -> Self {
-        self.store_item_id = Some(id.into());
-        self
-    }
-}
+impl DataBinding {}
 
 impl BuildXML for DataBinding {
     fn build_to<W: Write>(
@@ -45,4 +26,3 @@ impl BuildXML for DataBinding {
             .into_inner()
     }
 }
-

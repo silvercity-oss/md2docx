@@ -125,10 +125,6 @@ impl Default for ParagraphBorders {
 }
 
 impl ParagraphBorders {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn with_empty() -> Self {
         ParagraphBorders {
             left: None,
@@ -149,32 +145,6 @@ impl ParagraphBorders {
             ParagraphBorderPosition::Between => self.between = Some(border),
             ParagraphBorderPosition::Bar => self.bar = Some(border),
         };
-        self
-    }
-
-    pub fn clear(mut self, position: ParagraphBorderPosition) -> Self {
-        let nil = ParagraphBorder::new(position.clone()).val(BorderType::Nil);
-        match position {
-            ParagraphBorderPosition::Top => self.top = Some(nil),
-            ParagraphBorderPosition::Left => self.left = Some(nil),
-            ParagraphBorderPosition::Bottom => self.bottom = Some(nil),
-            ParagraphBorderPosition::Right => self.right = Some(nil),
-            ParagraphBorderPosition::Between => self.between = Some(nil),
-            ParagraphBorderPosition::Bar => self.bar = Some(nil),
-        };
-        self
-    }
-
-    pub fn clear_all(mut self) -> Self {
-        self.left = Some(ParagraphBorder::new(ParagraphBorderPosition::Left).val(BorderType::Nil));
-        self.right =
-            Some(ParagraphBorder::new(ParagraphBorderPosition::Right).val(BorderType::Nil));
-        self.top = Some(ParagraphBorder::new(ParagraphBorderPosition::Top).val(BorderType::Nil));
-        self.bottom =
-            Some(ParagraphBorder::new(ParagraphBorderPosition::Bottom).val(BorderType::Nil));
-        self.between =
-            Some(ParagraphBorder::new(ParagraphBorderPosition::Between).val(BorderType::Nil));
-        self.bar = Some(ParagraphBorder::new(ParagraphBorderPosition::Bar).val(BorderType::Nil));
         self
     }
 }

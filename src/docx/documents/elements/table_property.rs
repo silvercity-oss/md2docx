@@ -1,8 +1,8 @@
-use std::io::Write;
 use super::*;
 use crate::docx::documents::BuildXML;
 use crate::docx::types::*;
 use crate::docx::xml_builder::*;
+use std::io::Write;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableProperty {
@@ -36,105 +36,8 @@ impl TableProperty {
         Default::default()
     }
 
-    pub fn without_borders() -> TableProperty {
-        TableProperty {
-            borders: TableBorders::with_empty(),
-            ..Default::default()
-        }
-    }
-
-    pub fn indent(mut self, v: i32) -> TableProperty {
-        self.indent = Some(TableIndent::new(v, WidthType::Dxa));
-        self
-    }
-
     pub fn width(mut self, v: usize, t: WidthType) -> TableProperty {
         self.width = TableWidth::new(v, t);
-        self
-    }
-
-    pub fn align(mut self, v: TableAlignmentType) -> TableProperty {
-        self.justification = Justification::new(v.to_string());
-        self
-    }
-
-    pub fn set_margins(mut self, margins: TableCellMargins) -> Self {
-        self.margins = Some(margins);
-        self
-    }
-
-    pub fn cell_margin_top(mut self, v: usize, t: WidthType) -> Self {
-        if let Some(margins) = self.margins {
-            self.margins = Some(margins.margin_top(v, t));
-        } else {
-            let margins = TableCellMargins::new();
-            self.margins = Some(margins.margin_top(v, t));
-        }
-        self
-    }
-
-    pub fn cell_margin_right(mut self, v: usize, t: WidthType) -> Self {
-        if let Some(margins) = self.margins {
-            self.margins = Some(margins.margin_right(v, t));
-        } else {
-            let margins = TableCellMargins::new();
-            self.margins = Some(margins.margin_right(v, t));
-        }
-        self
-    }
-
-    pub fn cell_margin_bottom(mut self, v: usize, t: WidthType) -> Self {
-        if let Some(margins) = self.margins {
-            self.margins = Some(margins.margin_bottom(v, t));
-        } else {
-            let margins = TableCellMargins::new();
-            self.margins = Some(margins.margin_bottom(v, t));
-        }
-        self
-    }
-
-    pub fn cell_margin_left(mut self, v: usize, t: WidthType) -> Self {
-        if let Some(margins) = self.margins {
-            self.margins = Some(margins.margin_left(v, t));
-        } else {
-            let margins = TableCellMargins::new();
-            self.margins = Some(margins.margin_left(v, t));
-        }
-        self
-    }
-
-    pub fn set_borders(mut self, borders: TableBorders) -> Self {
-        self.borders = borders;
-        self
-    }
-
-    pub fn set_border(mut self, border: TableBorder) -> Self {
-        self.borders = self.borders.set(border);
-        self
-    }
-
-    pub fn clear_border(mut self, position: TableBorderPosition) -> Self {
-        self.borders = self.borders.clear(position);
-        self
-    }
-
-    pub fn clear_all_border(mut self) -> Self {
-        self.borders = self.borders.clear_all();
-        self
-    }
-
-    pub fn style(mut self, s: impl Into<String>) -> Self {
-        self.style = Some(TableStyle::new(s));
-        self
-    }
-
-    pub fn layout(mut self, t: TableLayoutType) -> Self {
-        self.layout = Some(TableLayout::new(t));
-        self
-    }
-
-    pub fn position(mut self, p: TablePositionProperty) -> Self {
-        self.position = Some(p);
         self
     }
 }
@@ -160,4 +63,3 @@ impl BuildXML for TableProperty {
             .into_inner()
     }
 }
-

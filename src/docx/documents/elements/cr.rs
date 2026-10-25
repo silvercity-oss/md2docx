@@ -26,4 +26,3 @@ impl BuildXML for CarriageReturn {
         XMLBuilder::from(stream).cr()?.into_inner()
     }
 }
-

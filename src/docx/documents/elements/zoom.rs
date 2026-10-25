@@ -2,7 +2,6 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Zoom {
     val: usize,
@@ -19,9 +18,6 @@ impl BuildXML for Zoom {
         &self,
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
-        XMLBuilder::from(stream)
-            .zoom(&format!("{}", self.val))?
-            .into_inner()
+        XMLBuilder::from(stream).zoom(&format!("{}", self.val))?.into_inner()
     }
 }
-

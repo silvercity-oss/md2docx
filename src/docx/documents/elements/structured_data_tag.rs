@@ -52,45 +52,7 @@ impl BuildXML for StructuredDataTagChild {
     }
 }
 
-impl StructuredDataTag {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn add_run(mut self, run: Run) -> Self {
-        self.children
-            .push(StructuredDataTagChild::Run(Box::new(run)));
-        self
-    }
-
-    pub fn add_paragraph(mut self, p: Paragraph) -> Self {
-        if p.has_numbering {
-            self.has_numbering = true
-        }
-        self.children
-            .push(StructuredDataTagChild::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_table(mut self, t: Table) -> Self {
-        if t.has_numbering {
-            self.has_numbering = true
-        }
-        self.children
-            .push(StructuredDataTagChild::Table(Box::new(t)));
-        self
-    }
-
-    pub fn data_binding(mut self, d: DataBinding) -> Self {
-        self.property = self.property.data_binding(d);
-        self
-    }
-
-    pub fn alias(mut self, v: impl Into<String>) -> Self {
-        self.property = self.property.alias(v);
-        self
-    }
-}
+impl StructuredDataTag {}
 
 impl BuildXML for StructuredDataTag {
     fn build_to<W: Write>(
@@ -107,4 +69,3 @@ impl BuildXML for StructuredDataTag {
             .into_inner()
     }
 }
-

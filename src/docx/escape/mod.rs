@@ -31,35 +31,3 @@ pub(crate) fn escape_owned(text: String) -> String {
         text
     }
 }
-
-pub(crate) fn replace_escaped(text: &str) -> String {
-    let mut decoded = String::with_capacity(text.len());
-    let mut rest = text;
-
-    while let Some(index) = rest.find('&') {
-        decoded.push_str(&rest[..index]);
-        rest = &rest[index..];
-        let (replacement, consumed) = if rest.starts_with("&lt;") {
-            (Some("<"), 4)
-        } else if rest.starts_with("&gt;") {
-            (Some(">"), 4)
-        } else if rest.starts_with("&amp;") {
-            (Some("&"), 5)
-        } else if rest.starts_with("&quot;") {
-            (Some("\""), 6)
-        } else if rest.starts_with("&#39;") {
-            (Some("'"), 5)
-        } else if rest.starts_with("&apos;") {
-            (Some("'"), 6)
-        } else if rest.starts_with("&nbsp;") {
-            (Some(" "), 6)
-        } else {
-            (None, 1)
-        };
-        decoded.push_str(replacement.unwrap_or("&"));
-        rest = &rest[consumed..];
-    }
-    decoded.push_str(rest);
-    decoded
-}
-

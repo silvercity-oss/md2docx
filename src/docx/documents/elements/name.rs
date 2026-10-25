@@ -17,10 +17,6 @@ impl Name {
         }
     }
 
-    pub fn starts_with(&self, s: &str) -> bool {
-        self.name.starts_with(s)
-    }
-
     pub fn is_heading(&self) -> bool {
         self.name.to_lowercase().starts_with("heading")
     }
@@ -39,4 +35,3 @@ impl BuildXML for Name {
         XMLBuilder::from(stream).name(&self.name)?.into_inner()
     }
 }
-

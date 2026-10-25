@@ -12,11 +12,6 @@ impl Bold {
     pub fn new() -> Bold {
         Default::default()
     }
-
-    pub fn disable(mut self) -> Bold {
-        self.val = false;
-        self
-    }
 }
 
 impl Default for Bold {

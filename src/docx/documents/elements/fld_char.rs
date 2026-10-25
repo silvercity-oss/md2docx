@@ -30,11 +30,7 @@ impl BuildXML for FieldChar {
         stream: crate::docx::xml::writer::EventWriter<W>,
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         XMLBuilder::from(stream)
-            .field_character(
-                &format!("{}", self.field_char_type),
-                &format!("{}", self.dirty),
-            )?
+            .field_character(&format!("{}", self.field_char_type), &format!("{}", self.dirty))?
             .into_inner()
     }
 }
-

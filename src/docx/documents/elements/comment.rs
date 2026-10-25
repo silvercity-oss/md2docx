@@ -31,38 +31,6 @@ impl Default for Comment {
 }
 
 impl Comment {
-    pub fn new(id: usize) -> Comment {
-        Self {
-            id,
-            ..Default::default()
-        }
-    }
-
-    pub fn author(mut self, author: impl Into<String>) -> Comment {
-        self.author = author.into();
-        self
-    }
-
-    pub fn date(mut self, date: impl Into<String>) -> Comment {
-        self.date = date.into();
-        self
-    }
-
-    pub fn add_paragraph(mut self, p: Paragraph) -> Self {
-        self.children.push(CommentChild::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_table(mut self, t: Table) -> Self {
-        self.children.push(CommentChild::Table(Box::new(t)));
-        self
-    }
-
-    pub fn parent_comment_id(mut self, parent_comment_id: usize) -> Comment {
-        self.parent_comment_id = Some(parent_comment_id);
-        self
-    }
-
     pub fn id(&self) -> usize {
         self.id
     }
@@ -92,4 +60,3 @@ impl BuildXML for Comment {
             .into_inner()
     }
 }
-

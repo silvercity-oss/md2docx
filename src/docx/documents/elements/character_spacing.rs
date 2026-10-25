@@ -2,17 +2,12 @@ use crate::docx::documents::BuildXML;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct CharacterSpacing {
     value: i32,
 }
 
-impl CharacterSpacing {
-    pub fn new(s: i32) -> CharacterSpacing {
-        Self { value: s }
-    }
-}
+impl CharacterSpacing {}
 
 impl BuildXML for CharacterSpacing {
     fn build_to<W: Write>(
@@ -22,4 +17,3 @@ impl BuildXML for CharacterSpacing {
         XMLBuilder::from(stream).spacing(self.value)?.into_inner()
     }
 }
-

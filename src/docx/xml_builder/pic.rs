@@ -14,12 +14,7 @@ impl<W: Write> XMLBuilder<W> {
     open!(open_pic_nv_pic_pr, "pic:nvPicPr");
     closed!(pic_c_nv_pr, "pic:cNvPr", "id", "name");
     open!(open_pic_c_nv_pic_pr, "pic:cNvPicPr");
-    closed!(
-        a_pic_locks,
-        "a:picLocks",
-        "noChangeAspect",
-        "noChangeArrowheads"
-    );
+    closed!(a_pic_locks, "a:picLocks", "noChangeAspect", "noChangeArrowheads");
 
     open!(open_pic_sp_pr, "pic:spPr", "bwMode");
     open!(open_a_xfrm, "a:xfrm");

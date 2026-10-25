@@ -19,11 +19,6 @@ impl LineSpacing {
         Self::default()
     }
 
-    pub fn line_rule(mut self, t: LineSpacingType) -> Self {
-        self.line_rule = Some(t);
-        self
-    }
-
     pub fn before(mut self, before: u32) -> Self {
         self.before = Some(before);
         self
@@ -31,21 +26,6 @@ impl LineSpacing {
 
     pub fn after(mut self, after: u32) -> Self {
         self.after = Some(after);
-        self
-    }
-
-    pub fn before_lines(mut self, before: u32) -> Self {
-        self.before_lines = Some(before);
-        self
-    }
-
-    pub fn after_lines(mut self, after: u32) -> Self {
-        self.after_lines = Some(after);
-        self
-    }
-
-    pub fn line(mut self, line: i32) -> Self {
-        self.line = Some(line);
         self
     }
 }
@@ -67,4 +47,3 @@ impl BuildXML for LineSpacing {
             .into_inner()
     }
 }
-

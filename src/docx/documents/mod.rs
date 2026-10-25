@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     str::FromStr,
 };
 
@@ -27,6 +27,7 @@ mod header_id;
 mod header_rels;
 mod history_id;
 mod hyperlink_id;
+pub(crate) mod ids;
 mod image_collector;
 mod numberings;
 mod paragraph_id;
@@ -82,10 +83,7 @@ pub use web_settings::*;
 pub use webextension::*;
 pub use xml_docx::*;
 
-use self::image_collector::{
-    collect_document_footnotes, collect_document_part, collect_footer_part, collect_header_part,
-    MediaRegistry,
-};
+use self::image_collector::{collect_document_part, collect_footer_part, collect_header_part, MediaRegistry};
 
 #[derive(Debug, Clone)]
 pub struct Image(pub Vec<u8>);
@@ -102,21 +100,6 @@ pub struct Png(pub Vec<u8>);
 
 pub type ImageIdAndPath = (String, String);
 pub type ImageIdAndBuf = (String, Vec<u8>);
-
-const PNG_SIGNATURE: &[u8; 8] = &[137, 80, 78, 71, 13, 10, 26, 10];
-
-fn is_emf(path: &str, buf: &[u8]) -> bool {
-    if path.to_ascii_lowercase().ends_with(".emf") {
-        return true;
-    }
-    // EMF files start with EMR_HEADER, whose first 4 bytes are the
-    // record type 0x00000001 (little-endian) and bytes 40..44 hold
-    // the signature " EMF" (0x464D4520).
-    buf.len() >= 44
-        && buf[0..4] == [0x01, 0x00, 0x00, 0x00]
-        && buf[40..44] == [0x20, 0x45, 0x4D, 0x46]
-}
-
 
 #[derive(Debug, Clone)]
 pub struct Docx {
@@ -229,122 +212,18 @@ impl Docx {
         Default::default()
     }
 
-    pub fn document(mut self, d: Document) -> Docx {
-        for child in &self.document.children {
-            match child {
-                DocumentChild::Paragraph(paragraph) => {
-                    if paragraph.has_numbering {
-                        self.document_rels.has_numberings = true;
-                    }
-                }
-                DocumentChild::Table(table) if table.has_numbering => {
-                    self.document_rels.has_numberings = true;
-                }
-                _ => {}
-            }
-        }
-        self.document = d;
-        self
-    }
-
-    pub fn styles(mut self, s: Styles) -> Self {
-        self.styles = s;
-        self
-    }
-
     pub fn add_style(mut self, s: Style) -> Self {
         self.styles = self.styles.add_style(s);
         self
     }
 
-    pub fn numberings(mut self, n: Numberings) -> Self {
-        self.numberings = n;
-        self
-    }
-
-    pub fn settings(mut self, s: Settings) -> Self {
-        self.settings = s;
-        self
-    }
+    // reader only
 
     // reader only
-    pub(crate) fn web_settings(mut self, s: WebSettings) -> Self {
-        self.web_settings = s;
-        self
-    }
 
     // reader only
-    pub(crate) fn add_image(
-        self,
-        id: impl Into<String>,
-        path: impl Into<String>,
-        buf: Vec<u8>,
-    ) -> Self {
-        self.add_image_with_options(id, path, buf, true)
-    }
 
     // reader only
-    pub(crate) fn add_image_with_options(
-        mut self,
-        id: impl Into<String>,
-        path: impl Into<String>,
-        buf: Vec<u8>,
-        generate_preview: bool,
-    ) -> Self {
-        let path: String = path.into();
-
-        if is_emf(&path, &buf) {
-            self.images
-                .push((id.into(), path, Image(buf), Png(Vec::new())));
-            return self;
-        }
-
-        if !generate_preview {
-            self.images
-                .push((id.into(), path, Image(buf), Png(Vec::new())));
-            return self;
-        }
-
-        if buf.starts_with(PNG_SIGNATURE) {
-            self.images
-                .push((id.into(), path, Image(buf.clone()), Png(buf)));
-            return self;
-        }
-
-        #[cfg(feature = "image")]
-        if let Ok(dimg) = image::load_from_memory(&buf) {
-            let mut png = std::io::Cursor::new(vec![]);
-            // For now only png supported
-            dimg.write_to(&mut png, image::ImageFormat::Png)
-                .expect("Unable to write dynamic image");
-
-            self.images
-                .push((id.into(), path, Image(buf), Png(png.into_inner())));
-        }
-        self
-    }
-
-    // reader only
-    pub(crate) fn add_hyperlink(
-        mut self,
-        id: impl Into<String>,
-        path: impl Into<String>,
-        r#type: impl Into<String>,
-    ) -> Self {
-        self.hyperlinks
-            .push((id.into(), path.into(), r#type.into()));
-        self
-    }
-
-    pub fn comments(mut self, c: Comments) -> Self {
-        self.comments = c;
-        self
-    }
-
-    pub fn comments_extended(mut self, c: CommentsExtended) -> Self {
-        self.comments_extended = c;
-        self
-    }
 
     pub fn add_paragraph(mut self, p: Paragraph) -> Docx {
         if p.has_numbering {
@@ -353,118 +232,6 @@ impl Docx {
             self.document_rels.has_numberings = true;
         }
         self.document = self.document.add_paragraph(p);
-        self
-    }
-
-    /// Attaches one header without rebuilding the surrounding section.
-    ///
-    /// Mutating the property in place preserves pending first/even headers and
-    /// footers until each receives its own relationship and content-type entry.
-    fn attach_section_header(
-        &mut self,
-        section: &mut Section,
-        header: Header,
-        attach: fn(SectionProperty, Header, &str) -> SectionProperty,
-    ) {
-        if header.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.header_count + 1;
-        let relationship_id = create_header_rid(count);
-        section.property = attach(
-            std::mem::take(&mut section.property),
-            header,
-            &relationship_id,
-        );
-        self.document_rels.header_count = count;
-        self.content_type = std::mem::take(&mut self.content_type).add_header();
-    }
-
-    /// Attaches one footer while preserving every unprocessed section part.
-    fn attach_section_footer(
-        &mut self,
-        section: &mut Section,
-        footer: Footer,
-        attach: fn(SectionProperty, Footer, &str) -> SectionProperty,
-    ) {
-        if footer.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.footer_count + 1;
-        let relationship_id = create_footer_rid(count);
-        section.property = attach(
-            std::mem::take(&mut section.property),
-            footer,
-            &relationship_id,
-        );
-        self.document_rels.footer_count = count;
-        self.content_type = std::mem::take(&mut self.content_type).add_footer();
-    }
-
-    /// Appends a section and registers all of its header and footer variants.
-    ///
-    /// Each pending part is attached independently so adding a default header
-    /// cannot discard first/even headers or any footer that still needs a
-    /// relationship and content-type entry.
-    pub fn add_section(mut self, s: Section) -> Docx {
-        if s.has_numbering {
-            // If this document has numbering, set numberings.xml to document_rels.
-            // This is because numberings.xml without numbering cause an error on word online.
-            self.document_rels.has_numberings = true;
-        }
-
-        let mut new_section = s;
-
-        if let Some(header) = new_section.temp_header.take() {
-            self.attach_section_header(&mut new_section, header, SectionProperty::header);
-        }
-
-        if let Some(header) = new_section.temp_first_header.take() {
-            self.attach_section_header(&mut new_section, header, SectionProperty::first_header);
-        }
-
-        if let Some(header) = new_section.temp_even_header.take() {
-            self.attach_section_header(&mut new_section, header, SectionProperty::even_header);
-        }
-
-        if let Some(footer) = new_section.temp_footer.take() {
-            self.attach_section_footer(&mut new_section, footer, SectionProperty::footer);
-        }
-
-        if let Some(footer) = new_section.temp_first_footer.take() {
-            self.attach_section_footer(&mut new_section, footer, SectionProperty::first_footer);
-        }
-
-        if let Some(footer) = new_section.temp_even_footer.take() {
-            self.attach_section_footer(&mut new_section, footer, SectionProperty::even_footer);
-        }
-
-        self.document = self.document.add_section(new_section);
-        self
-    }
-
-    pub fn add_structured_data_tag(mut self, t: StructuredDataTag) -> Docx {
-        if t.has_numbering {
-            // If this document has numbering, set numberings.xml to document_rels.
-            // This is because numberings.xml without numbering cause an error on word online.
-            self.document_rels.has_numberings = true;
-        }
-        self.document = self.document.add_structured_data_tag(t);
-        self
-    }
-
-    pub fn add_table_of_contents(mut self, t: TableOfContents) -> Docx {
-        self.document = self.document.add_table_of_contents(t);
-        self
-    }
-
-    pub fn add_bookmark_start(mut self, id: usize, name: impl Into<String>) -> Docx {
-        self.document = self.document.add_bookmark_start(id, name);
-        self
-    }
-
-    pub fn add_bookmark_end(mut self, id: usize) -> Docx {
-        self.document = self.document.add_bookmark_end(id);
         self
     }
 
@@ -478,89 +245,14 @@ impl Docx {
         self
     }
 
-    pub fn header(mut self, header: Header) -> Self {
-        if header.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.header_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .header(header, &create_header_rid(count));
-        self.document_rels.header_count = count;
-        self.content_type = self.content_type.add_header();
-        self
-    }
-
-    pub fn first_header(mut self, header: Header) -> Self {
-        if header.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.header_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .first_header(header, &create_header_rid(count));
-        self.document_rels.header_count = count;
-        self.content_type = self.content_type.add_header();
-        self
-    }
-
-    pub fn even_header(mut self, header: Header) -> Self {
-        if header.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.header_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .even_header(header, &create_header_rid(count));
-        self.document_rels.header_count = count;
-        self.content_type = self.content_type.add_header();
-        self.settings = self.settings.even_and_odd_headers();
-        self
-    }
-
     pub fn footer(mut self, footer: Footer) -> Self {
         if footer.has_numbering {
             self.document_rels.has_numberings = true;
         }
         let count = self.document_rels.footer_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .footer(footer, &create_footer_rid(count));
+        self.document.section_property = self.document.section_property.footer(footer, &create_footer_rid(count));
         self.document_rels.footer_count = count;
         self.content_type = self.content_type.add_footer();
-        self
-    }
-
-    pub fn first_footer(mut self, footer: Footer) -> Self {
-        if footer.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.footer_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .first_footer(footer, &create_footer_rid(count));
-        self.document_rels.footer_count = count;
-        self.content_type = self.content_type.add_footer();
-        self
-    }
-
-    pub fn even_footer(mut self, footer: Footer) -> Self {
-        if footer.has_numbering {
-            self.document_rels.has_numberings = true;
-        }
-        let count = self.document_rels.footer_count + 1;
-        self.document.section_property = self
-            .document
-            .section_property
-            .even_footer(footer, &create_footer_rid(count));
-        self.document_rels.footer_count = count;
-        self.content_type = self.content_type.add_footer();
-        self.settings = self.settings.even_and_odd_headers();
         self
     }
 
@@ -584,31 +276,6 @@ impl Docx {
         self
     }
 
-    pub fn custom_property(mut self, name: impl Into<String>, item: impl Into<String>) -> Self {
-        self.doc_props = self.doc_props.custom_property(name, item);
-        self
-    }
-
-    pub fn doc_id(mut self, id: &str) -> Self {
-        self.settings = self.settings.doc_id(id);
-        self
-    }
-
-    pub fn default_tab_stop(mut self, stop: usize) -> Self {
-        self.settings = self.settings.default_tab_stop(stop);
-        self
-    }
-
-    pub fn add_doc_var(mut self, name: &str, val: &str) -> Self {
-        self.settings = self.settings.add_doc_var(name, val);
-        self
-    }
-
-    pub fn title_pg(mut self) -> Self {
-        self.document = self.document.title_pg();
-        self
-    }
-
     pub fn page_size(mut self, w: u32, h: u32) -> Self {
         self.document = self.document.page_size(PageSize::new().size(w, h));
         self
@@ -619,18 +286,8 @@ impl Docx {
         self
     }
 
-    pub fn page_orient(mut self, o: crate::docx::types::PageOrientationType) -> Self {
-        self.document = self.document.page_orient(o);
-        self
-    }
-
     pub fn default_size(mut self, size: usize) -> Self {
         self.styles = self.styles.default_size(size);
-        self
-    }
-
-    pub fn default_spacing(mut self, spacing: i32) -> Self {
-        self.styles = self.styles.default_spacing(spacing);
         self
     }
 
@@ -641,36 +298,6 @@ impl Docx {
 
     pub fn default_line_spacing(mut self, spacing: LineSpacing) -> Self {
         self.styles = self.styles.default_line_spacing(spacing);
-        self
-    }
-
-    pub fn taskpanes(mut self) -> Self {
-        self.taskpanes = Some(Taskpanes::new());
-        self.rels = self.rels.add_taskpanes_rel();
-        self.content_type = self.content_type.add_taskpanes();
-        self
-    }
-
-    pub fn web_extension(mut self, ext: WebExtension) -> Self {
-        self.web_extensions.push(ext);
-        self.taskpanes_rels = self.taskpanes_rels.add_rel();
-        self.content_type = self.content_type.add_web_extensions();
-        self
-    }
-
-    pub fn add_custom_item(mut self, id: &str, xml: &str) -> Self {
-        let x = CustomItem::new(xml);
-        self.content_type = self.content_type.add_custom_xml();
-        let rel = CustomItemRels::new().add_item();
-        self.custom_item_props.push(CustomItemProperty::new(id));
-        self.document_rels = self.document_rels.add_custom_item();
-        self.custom_item_rels.push(rel);
-        self.custom_items.push(x);
-        self
-    }
-
-    pub fn page_num_type(mut self, p: PageNumType) -> Self {
-        self.document = self.document.page_num_type(p);
         self
     }
 
@@ -685,23 +312,11 @@ impl Docx {
         let web_extensions = self.web_extensions.iter().map(|ext| ext.build()).collect();
         let custom_items = self.custom_items.iter().map(|xml| xml.build()).collect();
         let custom_item_props = self.custom_item_props.iter().map(|p| p.build()).collect();
-        let custom_item_rels = self
-            .custom_item_rels
-            .iter()
-            .map(|rel| rel.build())
-            .collect();
+        let custom_item_rels = self.custom_item_rels.iter().map(|rel| rel.build()).collect();
 
-        let headers = self
-            .document
-            .headers()
-            .map(|(_, header)| header.build())
-            .collect();
+        let headers = self.document.headers().map(|(_, header)| header.build()).collect();
 
-        let footers = self
-            .document
-            .footers()
-            .map(|(_, footer)| footer.build())
-            .collect();
+        let footers = self.document.footers().map(|(_, footer)| footer.build()).collect();
 
         let header_rels = build_sparse_relationships(package.header_rels);
         let footer_rels = build_sparse_relationships(package.footer_rels);
@@ -733,19 +348,6 @@ impl Docx {
         }
     }
 
-    /// Writes this document directly as a DOCX ZIP archive.
-    ///
-    /// Unlike [`Docx::build`] followed by [`XMLDocx::pack`], this method
-    /// streams XML package parts into the archive instead of retaining every
-    /// rendered part in a separate `Vec<u8>`.
-    pub fn pack<W>(mut self, writer: W) -> zip::result::ZipResult<()>
-    where
-        W: std::io::Write + std::io::Seek,
-    {
-        let package = self.prepare_package();
-        crate::docx::zipper::zip_docx(writer, self, package)
-    }
-
     fn reset(&self) {
         crate::docx::reset_para_id();
     }
@@ -774,10 +376,7 @@ impl Docx {
 
         for index in auto_toc_indexes {
             let mut children = std::mem::take(&mut self.document.children);
-            let toc = match std::mem::replace(
-                &mut children[index],
-                DocumentChild::TableOfContents(Box::default()),
-            ) {
+            let toc = match std::mem::replace(&mut children[index], DocumentChild::TableOfContents(Box::default())) {
                 DocumentChild::TableOfContents(toc) => *toc,
                 _ => unreachable!("collected index must still contain a table of contents"),
             };
@@ -839,8 +438,8 @@ impl Docx {
                     .iter()
                     .any(|style| style.name == Name::new(format!("toc {level}")))
                 {
-                    self.styles = std::mem::take(&mut self.styles)
-                        .add_style(crate::docx::documents::preset_styles::toc(level));
+                    self.styles =
+                        std::mem::take(&mut self.styles).add_style(crate::docx::documents::preset_styles::toc(level));
                 }
             }
         }
@@ -873,11 +472,7 @@ impl Docx {
         refresh_para_ids_in_docx(self, &duplicates, &mut used, &mut seen);
     }
 
-    fn insert_comment_to_map(
-        &self,
-        comment_map: &mut HashMap<usize, String>,
-        c: &CommentRangeStart,
-    ) {
+    fn insert_comment_to_map(&self, comment_map: &mut BTreeMap<usize, String>, c: &CommentRangeStart) {
         let comment = c.get_comment_ref();
         let comment_id = comment.id();
         for child in &comment.children {
@@ -893,9 +488,9 @@ impl Docx {
     fn update_dependencies(&mut self) {
         let mut comments: Vec<Comment> = vec![];
         let mut comments_extended: Vec<CommentExtended> = vec![];
-        let mut comment_map: HashMap<usize, String> = HashMap::new();
+        let mut comment_map: BTreeMap<usize, String> = BTreeMap::new();
 
-        let mut hyperlink_map: HashMap<String, String> = HashMap::new();
+        let mut hyperlink_map: BTreeMap<String, String> = BTreeMap::new();
 
         for child in &self.document.children {
             match child {
@@ -922,34 +517,18 @@ impl Docx {
                 DocumentChild::TableOfContents(toc) => {
                     for child in &toc.before_contents {
                         if let TocContent::Paragraph(paragraph) = child {
-                            collect_comment_map_in_paragraph(
-                                paragraph,
-                                &mut comment_map,
-                                &mut hyperlink_map,
-                            );
+                            collect_comment_map_in_paragraph(paragraph, &mut comment_map, &mut hyperlink_map);
                         }
                         if let TocContent::Table(table) = child {
-                            collect_comment_map_in_table(
-                                table,
-                                &mut comment_map,
-                                &mut hyperlink_map,
-                            );
+                            collect_comment_map_in_table(table, &mut comment_map, &mut hyperlink_map);
                         }
                     }
                     for child in &toc.after_contents {
                         if let TocContent::Paragraph(paragraph) = child {
-                            collect_comment_map_in_paragraph(
-                                paragraph,
-                                &mut comment_map,
-                                &mut hyperlink_map,
-                            );
+                            collect_comment_map_in_paragraph(paragraph, &mut comment_map, &mut hyperlink_map);
                         }
                         if let TocContent::Table(table) = child {
-                            collect_comment_map_in_table(
-                                table,
-                                &mut comment_map,
-                                &mut hyperlink_map,
-                            );
+                            collect_comment_map_in_table(table, &mut comment_map, &mut hyperlink_map);
                         }
                     }
                 }
@@ -959,9 +538,7 @@ impl Docx {
 
         if comment_map.is_empty() {
             for (id, path) in hyperlink_map {
-                self.document_rels
-                    .hyperlinks
-                    .push((id, path, "External".to_owned()));
+                self.document_rels.hyperlinks.push((id, path, "External".to_owned()));
             }
             return;
         }
@@ -971,12 +548,7 @@ impl Docx {
                 DocumentChild::Paragraph(paragraph) => {
                     for child in &paragraph.children {
                         if let ParagraphChild::CommentStart(c) = child {
-                            push_comment_and_comment_extended(
-                                &mut comments,
-                                &mut comments_extended,
-                                &comment_map,
-                                c,
-                            );
+                            push_comment_and_comment_extended(&mut comments, &mut comments_extended, &comment_map, c);
                         }
                         if let ParagraphChild::Hyperlink(h) = child {
                             if let HyperlinkData::External { rid, path } = &h.link {
@@ -1092,93 +664,25 @@ impl Docx {
             self.document_rels.has_comments = true;
         }
 
-        self.comments_extended
-            .add_comments_extended(comments_extended);
+        self.comments_extended.add_comments_extended(comments_extended);
 
         self.comments.add_comments(comments);
 
         for (id, d) in hyperlink_map {
-            self.document_rels
-                .hyperlinks
-                .push((id, d, "External".to_string())); // Now support external only
+            self.document_rels.hyperlinks.push((id, d, "External".to_string()));
+            // Now support external only
         }
     }
 
     // Traverse and clone comments from document and add to comments node.
     // reader only
-    pub(crate) fn store_comments(&mut self, comments: &[Comment]) {
-        let comments_by_id: HashMap<usize, &Comment> = comments
-            .iter()
-            .map(|comment| (comment.id(), comment))
-            .collect();
-        for child in &mut self.document.children {
-            match child {
-                DocumentChild::Paragraph(paragraph) => {
-                    for child in &mut paragraph.children {
-                        if let ParagraphChild::CommentStart(ref mut c) = child {
-                            let comment_id = c.get_id();
-                            if let Some(comment) = comments_by_id.get(&comment_id).copied() {
-                                let comment = Comment::clone(comment);
-                                c.as_mut().comment(comment);
-                            }
-                        }
-                        if let ParagraphChild::Insert(ref mut insert) = child {
-                            for child in &mut insert.children {
-                                if let InsertChild::CommentStart(ref mut c) = child {
-                                    let comment_id = c.get_id();
-                                    if let Some(comment) = comments_by_id.get(&comment_id).copied()
-                                    {
-                                        let comment = Comment::clone(comment);
-                                        c.as_mut().comment(comment);
-                                    }
-                                } else if let InsertChild::Delete(ref mut d) = child {
-                                    for child in &mut d.children {
-                                        if let DeleteChild::CommentStart(ref mut c) = child {
-                                            let comment_id = c.get_id();
-                                            if let Some(comment) =
-                                                comments_by_id.get(&comment_id).copied()
-                                            {
-                                                let comment = Comment::clone(comment);
-                                                c.as_mut().comment(comment);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if let ParagraphChild::Delete(ref mut delete) = child {
-                            for child in &mut delete.children {
-                                if let DeleteChild::CommentStart(ref mut c) = child {
-                                    let comment_id = c.get_id();
-                                    if let Some(comment) = comments_by_id.get(&comment_id).copied()
-                                    {
-                                        let comment = Comment::clone(comment);
-                                        c.as_mut().comment(comment);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                DocumentChild::Table(table) => store_comments_in_table(table, &comments_by_id),
-                _ => {}
-            }
-        }
-
-        if !comments.is_empty() {
-            self.document_rels.has_comments = true;
-        }
-    }
 
     /// Collects image relationships for every header in package order.
     ///
     /// Each entry deliberately uses a separate relationship scope while all
     /// entries share the package-wide media registry. Relationship creation
     /// order matches the order used to render and write header parts.
-    fn collect_header_images(
-        &mut self,
-        media: &mut MediaRegistry,
-    ) -> Vec<(usize, Vec<ImageIdAndPath>)> {
+    fn collect_header_images(&mut self, media: &mut MediaRegistry) -> Vec<(usize, Vec<ImageIdAndPath>)> {
         self.document
             .headers_mut()
             .enumerate()
@@ -1194,10 +698,7 @@ impl Docx {
     /// Relationship creation order matches the package writer. A shared
     /// registry prevents repeated footer and body images from being emitted as
     /// separate physical media files.
-    fn collect_footer_images(
-        &mut self,
-        media: &mut MediaRegistry,
-    ) -> Vec<(usize, Vec<ImageIdAndPath>)> {
+    fn collect_footer_images(&mut self, media: &mut MediaRegistry) -> Vec<(usize, Vec<ImageIdAndPath>)> {
         self.document
             .footers_mut()
             .enumerate()
@@ -1207,26 +708,14 @@ impl Docx {
             })
             .collect()
     }
-
-    /// Collects footnote references from the complete main document tree.
-    ///
-    /// This method remains available for callers that collect dependencies
-    /// explicitly. Normal package builds collect footnotes together with
-    /// images, avoiding a second traversal of the document tree.
-    pub fn collect_footnotes(&mut self) -> bool {
-        let footnotes = collect_document_footnotes(&mut self.document);
-        let is_footnotes = !footnotes.is_empty();
-        self.footnotes.add(footnotes);
-        is_footnotes
-    }
 }
 
 fn collect_dependencies_in_paragraph(
     paragraph: &Paragraph,
     comments: &mut Vec<Comment>,
     comments_extended: &mut Vec<CommentExtended>,
-    comment_map: &mut HashMap<usize, String>,
-    hyperlink_map: &mut HashMap<String, String>,
+    comment_map: &mut BTreeMap<usize, String>,
+    hyperlink_map: &mut BTreeMap<String, String>,
 ) {
     for child in &paragraph.children {
         if let ParagraphChild::CommentStart(c) = child {
@@ -1247,8 +736,8 @@ fn collect_dependencies_in_paragraph(
 
 fn collect_comment_map_in_paragraph(
     paragraph: &Paragraph,
-    comment_map: &mut HashMap<usize, String>,
-    hyperlink_map: &mut HashMap<String, String>,
+    comment_map: &mut BTreeMap<usize, String>,
+    hyperlink_map: &mut BTreeMap<String, String>,
 ) {
     for child in &paragraph.children {
         if let ParagraphChild::CommentStart(c) = child {
@@ -1281,8 +770,8 @@ fn collect_comment_map_in_paragraph(
 
 fn collect_comment_map_in_table(
     table: &Table,
-    comment_map: &mut HashMap<usize, String>,
-    hyperlink_map: &mut HashMap<String, String>,
+    comment_map: &mut BTreeMap<usize, String>,
+    hyperlink_map: &mut BTreeMap<String, String>,
 ) {
     for TableChild::TableRow(row) in &table.rows {
         for TableRowChild::TableCell(cell) in &row.cells {
@@ -1291,17 +780,11 @@ fn collect_comment_map_in_table(
                     TableCellContent::Paragraph(paragraph) => {
                         collect_comment_map_in_paragraph(paragraph, comment_map, hyperlink_map);
                     }
-                    TableCellContent::Table(table) => {
-                        collect_comment_map_in_table(table, comment_map, hyperlink_map)
-                    }
+                    TableCellContent::Table(table) => collect_comment_map_in_table(table, comment_map, hyperlink_map),
                     TableCellContent::StructuredDataTag(tag) => {
                         for child in &tag.children {
                             if let StructuredDataTagChild::Paragraph(paragraph) = child {
-                                collect_comment_map_in_paragraph(
-                                    paragraph,
-                                    comment_map,
-                                    hyperlink_map,
-                                );
+                                collect_comment_map_in_paragraph(paragraph, comment_map, hyperlink_map);
                             }
                             if let StructuredDataTagChild::Table(table) = child {
                                 collect_comment_map_in_table(table, comment_map, hyperlink_map);
@@ -1311,11 +794,7 @@ fn collect_comment_map_in_table(
                     TableCellContent::TableOfContents(t) => {
                         for child in &t.before_contents {
                             if let TocContent::Paragraph(paragraph) = child {
-                                collect_comment_map_in_paragraph(
-                                    paragraph,
-                                    comment_map,
-                                    hyperlink_map,
-                                );
+                                collect_comment_map_in_paragraph(paragraph, comment_map, hyperlink_map);
                             }
                             if let TocContent::Table(table) = child {
                                 collect_comment_map_in_table(table, comment_map, hyperlink_map);
@@ -1323,11 +802,7 @@ fn collect_comment_map_in_table(
                         }
                         for child in &t.after_contents {
                             if let TocContent::Paragraph(paragraph) = child {
-                                collect_comment_map_in_paragraph(
-                                    paragraph,
-                                    comment_map,
-                                    hyperlink_map,
-                                );
+                                collect_comment_map_in_paragraph(paragraph, comment_map, hyperlink_map);
                             }
                             if let TocContent::Table(table) = child {
                                 collect_comment_map_in_table(table, comment_map, hyperlink_map);
@@ -1344,8 +819,8 @@ fn collect_dependencies_in_table(
     table: &Table,
     comments: &mut Vec<Comment>,
     comments_extended: &mut Vec<CommentExtended>,
-    comment_map: &mut HashMap<usize, String>,
-    hyperlink_map: &mut HashMap<String, String>,
+    comment_map: &mut BTreeMap<usize, String>,
+    hyperlink_map: &mut BTreeMap<String, String>,
 ) {
     for TableChild::TableRow(row) in &table.rows {
         for TableRowChild::TableCell(cell) in &row.cells {
@@ -1360,13 +835,9 @@ fn collect_dependencies_in_table(
                             hyperlink_map,
                         );
                     }
-                    TableCellContent::Table(table) => collect_dependencies_in_table(
-                        table,
-                        comments,
-                        comments_extended,
-                        comment_map,
-                        hyperlink_map,
-                    ),
+                    TableCellContent::Table(table) => {
+                        collect_dependencies_in_table(table, comments, comments_extended, comment_map, hyperlink_map)
+                    }
                     TableCellContent::StructuredDataTag(tag) => {
                         for child in &tag.children {
                             if let StructuredDataTagChild::Paragraph(paragraph) = child {
@@ -1429,89 +900,6 @@ fn collect_dependencies_in_table(
                                     comment_map,
                                     hyperlink_map,
                                 );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn store_comments_in_paragraph(
-    paragraph: &mut Paragraph,
-    comments_by_id: &HashMap<usize, &Comment>,
-) {
-    for child in &mut paragraph.children {
-        if let ParagraphChild::CommentStart(ref mut c) = child {
-            let comment_id = c.get_id();
-            if let Some(comment) = comments_by_id.get(&comment_id).copied() {
-                let comment = Comment::clone(comment);
-                c.as_mut().comment(comment);
-            }
-        }
-        if let ParagraphChild::Insert(ref mut insert) = child {
-            for child in &mut insert.children {
-                if let InsertChild::CommentStart(ref mut c) = child {
-                    let comment_id = c.get_id();
-                    if let Some(comment) = comments_by_id.get(&comment_id).copied() {
-                        let comment = Comment::clone(comment);
-                        c.as_mut().comment(comment);
-                    }
-                }
-            }
-        }
-        if let ParagraphChild::Delete(ref mut delete) = child {
-            for child in &mut delete.children {
-                if let DeleteChild::CommentStart(ref mut c) = child {
-                    let comment_id = c.get_id();
-                    if let Some(comment) = comments_by_id.get(&comment_id).copied() {
-                        let comment = Comment::clone(comment);
-                        c.as_mut().comment(comment);
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn store_comments_in_table(table: &mut Table, comments_by_id: &HashMap<usize, &Comment>) {
-    for TableChild::TableRow(row) in &mut table.rows {
-        for TableRowChild::TableCell(cell) in &mut row.cells {
-            for content in &mut cell.children {
-                match content {
-                    TableCellContent::Paragraph(paragraph) => {
-                        store_comments_in_paragraph(paragraph, comments_by_id)
-                    }
-                    TableCellContent::Table(ref mut table) => {
-                        store_comments_in_table(table, comments_by_id);
-                    }
-                    TableCellContent::StructuredDataTag(ref mut tag) => {
-                        for child in &mut tag.children {
-                            if let StructuredDataTagChild::Paragraph(paragraph) = child {
-                                store_comments_in_paragraph(paragraph, comments_by_id);
-                            }
-                            if let StructuredDataTagChild::Table(table) = child {
-                                store_comments_in_table(table, comments_by_id);
-                            }
-                        }
-                    }
-                    TableCellContent::TableOfContents(ref mut t) => {
-                        for child in &mut t.before_contents {
-                            if let TocContent::Paragraph(paragraph) = child {
-                                store_comments_in_paragraph(paragraph, comments_by_id);
-                            }
-                            if let TocContent::Table(table) = child {
-                                store_comments_in_table(table, comments_by_id);
-                            }
-                        }
-
-                        for child in &mut t.after_contents {
-                            if let TocContent::Paragraph(paragraph) = child {
-                                store_comments_in_paragraph(paragraph, comments_by_id);
-                            }
-                            if let TocContent::Table(table) = child {
-                                store_comments_in_table(table, comments_by_id);
                             }
                         }
                     }
@@ -1538,16 +926,11 @@ fn collect_para_ids_in_docx<'a>(docx: &'a Docx, counts: &mut HashMap<&'a str, us
     }
 }
 
-fn collect_para_ids_in_document_child<'a>(
-    child: &'a DocumentChild,
-    counts: &mut HashMap<&'a str, usize>,
-) {
+fn collect_para_ids_in_document_child<'a>(child: &'a DocumentChild, counts: &mut HashMap<&'a str, usize>) {
     match child {
         DocumentChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
         DocumentChild::Table(table) => collect_para_ids_in_table(table, counts),
-        DocumentChild::StructuredDataTag(tag) => {
-            collect_para_ids_in_structured_data_tag(tag, counts)
-        }
+        DocumentChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
         DocumentChild::TableOfContents(toc) => collect_para_ids_in_toc(toc, counts),
         DocumentChild::Section(section) => collect_para_ids_in_section(section, counts),
         DocumentChild::CommentStart(c) => collect_para_ids_in_comment(&c.comment, counts),
@@ -1560,9 +943,7 @@ fn collect_para_ids_in_section<'a>(section: &'a Section, counts: &mut HashMap<&'
         match child {
             SectionChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
             SectionChild::Table(table) => collect_para_ids_in_table(table, counts),
-            SectionChild::StructuredDataTag(tag) => {
-                collect_para_ids_in_structured_data_tag(tag, counts)
-            }
+            SectionChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
             SectionChild::TableOfContents(toc) => collect_para_ids_in_toc(toc, counts),
             SectionChild::CommentStart(c) => collect_para_ids_in_comment(&c.comment, counts),
             _ => {}
@@ -1571,10 +952,7 @@ fn collect_para_ids_in_section<'a>(section: &'a Section, counts: &mut HashMap<&'
     collect_para_ids_in_section_property(&section.property, counts);
 }
 
-fn collect_para_ids_in_section_property<'a>(
-    property: &'a SectionProperty,
-    counts: &mut HashMap<&'a str, usize>,
-) {
+fn collect_para_ids_in_section_property<'a>(property: &'a SectionProperty, counts: &mut HashMap<&'a str, usize>) {
     if let Some((_, header)) = property.header.as_ref() {
         collect_para_ids_in_header(header, counts);
     }
@@ -1600,9 +978,7 @@ fn collect_para_ids_in_header<'a>(header: &'a Header, counts: &mut HashMap<&'a s
         match child {
             HeaderChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
             HeaderChild::Table(table) => collect_para_ids_in_table(table, counts),
-            HeaderChild::StructuredDataTag(tag) => {
-                collect_para_ids_in_structured_data_tag(tag, counts)
-            }
+            HeaderChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
         }
     }
 }
@@ -1612,9 +988,7 @@ fn collect_para_ids_in_footer<'a>(footer: &'a Footer, counts: &mut HashMap<&'a s
         match child {
             FooterChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
             FooterChild::Table(table) => collect_para_ids_in_table(table, counts),
-            FooterChild::StructuredDataTag(tag) => {
-                collect_para_ids_in_structured_data_tag(tag, counts)
-            }
+            FooterChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
         }
     }
 }
@@ -1639,13 +1013,9 @@ fn collect_para_ids_in_table<'a>(table: &'a Table, counts: &mut HashMap<&'a str,
         for TableRowChild::TableCell(cell) in &row.cells {
             for content in &cell.children {
                 match content {
-                    TableCellContent::Paragraph(paragraph) => {
-                        collect_para_ids_in_paragraph(paragraph, counts)
-                    }
+                    TableCellContent::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
                     TableCellContent::Table(table) => collect_para_ids_in_table(table, counts),
-                    TableCellContent::StructuredDataTag(tag) => {
-                        collect_para_ids_in_structured_data_tag(tag, counts)
-                    }
+                    TableCellContent::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
                     TableCellContent::TableOfContents(toc) => collect_para_ids_in_toc(toc, counts),
                 }
             }
@@ -1653,10 +1023,7 @@ fn collect_para_ids_in_table<'a>(table: &'a Table, counts: &mut HashMap<&'a str,
     }
 }
 
-fn collect_para_ids_in_paragraph<'a>(
-    paragraph: &'a Paragraph,
-    counts: &mut HashMap<&'a str, usize>,
-) {
+fn collect_para_ids_in_paragraph<'a>(paragraph: &'a Paragraph, counts: &mut HashMap<&'a str, usize>) {
     *counts.entry(paragraph.id.as_str()).or_insert(0) += 1;
 
     for child in &paragraph.children {
@@ -1667,21 +1034,14 @@ fn collect_para_ids_in_paragraph<'a>(
             ParagraphChild::Delete(delete) => collect_para_ids_in_delete(delete, counts),
             ParagraphChild::MoveFrom(moved) => collect_para_ids_in_move_from(moved, counts),
             ParagraphChild::MoveTo(moved) => collect_para_ids_in_move_to(moved, counts),
-            ParagraphChild::Hyperlink(hyperlink) => {
-                collect_para_ids_in_hyperlink(hyperlink, counts)
-            }
-            ParagraphChild::StructuredDataTag(tag) => {
-                collect_para_ids_in_structured_data_tag(tag, counts)
-            }
+            ParagraphChild::Hyperlink(hyperlink) => collect_para_ids_in_hyperlink(hyperlink, counts),
+            ParagraphChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
             _ => {}
         }
     }
 }
 
-fn collect_para_ids_in_hyperlink<'a>(
-    hyperlink: &'a Hyperlink,
-    counts: &mut HashMap<&'a str, usize>,
-) {
+fn collect_para_ids_in_hyperlink<'a>(hyperlink: &'a Hyperlink, counts: &mut HashMap<&'a str, usize>) {
     for child in &hyperlink.children {
         match child {
             ParagraphChild::Run(run) => collect_para_ids_in_run(run, counts),
@@ -1690,12 +1050,8 @@ fn collect_para_ids_in_hyperlink<'a>(
             ParagraphChild::Delete(delete) => collect_para_ids_in_delete(delete, counts),
             ParagraphChild::MoveFrom(moved) => collect_para_ids_in_move_from(moved, counts),
             ParagraphChild::MoveTo(moved) => collect_para_ids_in_move_to(moved, counts),
-            ParagraphChild::Hyperlink(hyperlink) => {
-                collect_para_ids_in_hyperlink(hyperlink, counts)
-            }
-            ParagraphChild::StructuredDataTag(tag) => {
-                collect_para_ids_in_structured_data_tag(tag, counts)
-            }
+            ParagraphChild::Hyperlink(hyperlink) => collect_para_ids_in_hyperlink(hyperlink, counts),
+            ParagraphChild::StructuredDataTag(tag) => collect_para_ids_in_structured_data_tag(tag, counts),
             _ => {}
         }
     }
@@ -1751,23 +1107,14 @@ fn collect_para_ids_in_run<'a>(run: &'a Run, counts: &mut HashMap<&'a str, usize
     }
 }
 
-fn collect_para_ids_in_structured_data_tag<'a>(
-    tag: &'a StructuredDataTag,
-    counts: &mut HashMap<&'a str, usize>,
-) {
+fn collect_para_ids_in_structured_data_tag<'a>(tag: &'a StructuredDataTag, counts: &mut HashMap<&'a str, usize>) {
     for child in &tag.children {
         match child {
             StructuredDataTagChild::Run(run) => collect_para_ids_in_run(run, counts),
-            StructuredDataTagChild::Paragraph(paragraph) => {
-                collect_para_ids_in_paragraph(paragraph, counts)
-            }
+            StructuredDataTagChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
             StructuredDataTagChild::Table(table) => collect_para_ids_in_table(table, counts),
-            StructuredDataTagChild::CommentStart(c) => {
-                collect_para_ids_in_comment(&c.comment, counts)
-            }
-            StructuredDataTagChild::StructuredDataTag(inner) => {
-                collect_para_ids_in_structured_data_tag(inner, counts)
-            }
+            StructuredDataTagChild::CommentStart(c) => collect_para_ids_in_comment(&c.comment, counts),
+            StructuredDataTagChild::StructuredDataTag(inner) => collect_para_ids_in_structured_data_tag(inner, counts),
             _ => {}
         }
     }
@@ -1791,12 +1138,7 @@ fn refresh_para_ids_in_docx(
     for child in &mut docx.document.children {
         refresh_para_ids_in_document_child(child, duplicates, used, seen);
     }
-    refresh_para_ids_in_section_property(
-        &mut docx.document.section_property,
-        duplicates,
-        used,
-        seen,
-    );
+    refresh_para_ids_in_section_property(&mut docx.document.section_property, duplicates, used, seen);
 
     for comment in &mut docx.comments.comments {
         refresh_para_ids_in_comment(comment, duplicates, used, seen);
@@ -1816,20 +1158,12 @@ fn refresh_para_ids_in_document_child(
     seen: &mut HashSet<String>,
 ) {
     match child {
-        DocumentChild::Paragraph(paragraph) => {
-            refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-        }
+        DocumentChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
         DocumentChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
-        DocumentChild::StructuredDataTag(tag) => {
-            refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
-        }
+        DocumentChild::StructuredDataTag(tag) => refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen),
         DocumentChild::TableOfContents(toc) => refresh_para_ids_in_toc(toc, duplicates, used, seen),
-        DocumentChild::Section(section) => {
-            refresh_para_ids_in_section(section, duplicates, used, seen)
-        }
-        DocumentChild::CommentStart(c) => {
-            refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-        }
+        DocumentChild::Section(section) => refresh_para_ids_in_section(section, duplicates, used, seen),
+        DocumentChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
         _ => {}
     }
 }
@@ -1842,19 +1176,13 @@ fn refresh_para_ids_in_section(
 ) {
     for child in &mut section.children {
         match child {
-            SectionChild::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            SectionChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             SectionChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
             SectionChild::StructuredDataTag(tag) => {
                 refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
             }
-            SectionChild::TableOfContents(toc) => {
-                refresh_para_ids_in_toc(toc, duplicates, used, seen)
-            }
-            SectionChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
+            SectionChild::TableOfContents(toc) => refresh_para_ids_in_toc(toc, duplicates, used, seen),
+            SectionChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
             _ => {}
         }
     }
@@ -1895,13 +1223,9 @@ fn refresh_para_ids_in_header(
 ) {
     for child in &mut header.children {
         match child {
-            HeaderChild::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            HeaderChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             HeaderChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
-            HeaderChild::StructuredDataTag(tag) => {
-                refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
-            }
+            HeaderChild::StructuredDataTag(tag) => refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen),
         }
     }
 }
@@ -1914,13 +1238,9 @@ fn refresh_para_ids_in_footer(
 ) {
     for child in &mut footer.children {
         match child {
-            FooterChild::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            FooterChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             FooterChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
-            FooterChild::StructuredDataTag(tag) => {
-                refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
-            }
+            FooterChild::StructuredDataTag(tag) => refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen),
         }
     }
 }
@@ -1933,17 +1253,13 @@ fn refresh_para_ids_in_toc(
 ) {
     for child in &mut toc.before_contents {
         match child {
-            TocContent::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            TocContent::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             TocContent::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
         }
     }
     for child in &mut toc.after_contents {
         match child {
-            TocContent::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            TocContent::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             TocContent::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
         }
     }
@@ -1962,15 +1278,11 @@ fn refresh_para_ids_in_table(
                     TableCellContent::Paragraph(paragraph) => {
                         refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
                     }
-                    TableCellContent::Table(table) => {
-                        refresh_para_ids_in_table(table, duplicates, used, seen)
-                    }
+                    TableCellContent::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
                     TableCellContent::StructuredDataTag(tag) => {
                         refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
                     }
-                    TableCellContent::TableOfContents(toc) => {
-                        refresh_para_ids_in_toc(toc, duplicates, used, seen)
-                    }
+                    TableCellContent::TableOfContents(toc) => refresh_para_ids_in_toc(toc, duplicates, used, seen),
                 }
             }
         }
@@ -1988,24 +1300,12 @@ fn refresh_para_ids_in_paragraph(
     for child in &mut paragraph.children {
         match child {
             ParagraphChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            ParagraphChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
-            ParagraphChild::Insert(insert) => {
-                refresh_para_ids_in_insert(insert, duplicates, used, seen)
-            }
-            ParagraphChild::Delete(delete) => {
-                refresh_para_ids_in_delete(delete, duplicates, used, seen)
-            }
-            ParagraphChild::MoveFrom(moved) => {
-                refresh_para_ids_in_move_from(moved, duplicates, used, seen)
-            }
-            ParagraphChild::MoveTo(moved) => {
-                refresh_para_ids_in_move_to(moved, duplicates, used, seen)
-            }
-            ParagraphChild::Hyperlink(hyperlink) => {
-                refresh_para_ids_in_hyperlink(hyperlink, duplicates, used, seen)
-            }
+            ParagraphChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
+            ParagraphChild::Insert(insert) => refresh_para_ids_in_insert(insert, duplicates, used, seen),
+            ParagraphChild::Delete(delete) => refresh_para_ids_in_delete(delete, duplicates, used, seen),
+            ParagraphChild::MoveFrom(moved) => refresh_para_ids_in_move_from(moved, duplicates, used, seen),
+            ParagraphChild::MoveTo(moved) => refresh_para_ids_in_move_to(moved, duplicates, used, seen),
+            ParagraphChild::Hyperlink(hyperlink) => refresh_para_ids_in_hyperlink(hyperlink, duplicates, used, seen),
             ParagraphChild::StructuredDataTag(tag) => {
                 refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
             }
@@ -2023,24 +1323,12 @@ fn refresh_para_ids_in_hyperlink(
     for child in &mut hyperlink.children {
         match child {
             ParagraphChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            ParagraphChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
-            ParagraphChild::Insert(insert) => {
-                refresh_para_ids_in_insert(insert, duplicates, used, seen)
-            }
-            ParagraphChild::Delete(delete) => {
-                refresh_para_ids_in_delete(delete, duplicates, used, seen)
-            }
-            ParagraphChild::MoveFrom(moved) => {
-                refresh_para_ids_in_move_from(moved, duplicates, used, seen)
-            }
-            ParagraphChild::MoveTo(moved) => {
-                refresh_para_ids_in_move_to(moved, duplicates, used, seen)
-            }
-            ParagraphChild::Hyperlink(hyperlink) => {
-                refresh_para_ids_in_hyperlink(hyperlink, duplicates, used, seen)
-            }
+            ParagraphChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
+            ParagraphChild::Insert(insert) => refresh_para_ids_in_insert(insert, duplicates, used, seen),
+            ParagraphChild::Delete(delete) => refresh_para_ids_in_delete(delete, duplicates, used, seen),
+            ParagraphChild::MoveFrom(moved) => refresh_para_ids_in_move_from(moved, duplicates, used, seen),
+            ParagraphChild::MoveTo(moved) => refresh_para_ids_in_move_to(moved, duplicates, used, seen),
+            ParagraphChild::Hyperlink(hyperlink) => refresh_para_ids_in_hyperlink(hyperlink, duplicates, used, seen),
             ParagraphChild::StructuredDataTag(tag) => {
                 refresh_para_ids_in_structured_data_tag(tag, duplicates, used, seen)
             }
@@ -2058,12 +1346,8 @@ fn refresh_para_ids_in_insert(
     for child in &mut insert.children {
         match child {
             InsertChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            InsertChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
-            InsertChild::Delete(delete) => {
-                refresh_para_ids_in_delete(delete, duplicates, used, seen)
-            }
+            InsertChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
+            InsertChild::Delete(delete) => refresh_para_ids_in_delete(delete, duplicates, used, seen),
             _ => {}
         }
     }
@@ -2078,9 +1362,7 @@ fn refresh_para_ids_in_delete(
     for child in &mut delete.children {
         match child {
             DeleteChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            DeleteChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
+            DeleteChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
             DeleteChild::CommentEnd(_) => {}
         }
     }
@@ -2095,9 +1377,7 @@ fn refresh_para_ids_in_move_from(
     for child in &mut moved.children {
         match child {
             MoveFromChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            MoveFromChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
+            MoveFromChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
             MoveFromChild::CommentEnd(_) => {}
         }
     }
@@ -2112,12 +1392,8 @@ fn refresh_para_ids_in_move_to(
     for child in &mut moved.children {
         match child {
             MoveToChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
-            MoveToChild::Delete(delete) => {
-                refresh_para_ids_in_delete(delete, duplicates, used, seen)
-            }
-            MoveToChild::CommentStart(c) => {
-                refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
-            }
+            MoveToChild::Delete(delete) => refresh_para_ids_in_delete(delete, duplicates, used, seen),
+            MoveToChild::CommentStart(c) => refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen),
             _ => {}
         }
     }
@@ -2144,15 +1420,11 @@ fn refresh_para_ids_in_structured_data_tag(
 ) {
     for child in &mut tag.children {
         match child {
-            StructuredDataTagChild::Run(run) => {
-                refresh_para_ids_in_run(run, duplicates, used, seen)
-            }
+            StructuredDataTagChild::Run(run) => refresh_para_ids_in_run(run, duplicates, used, seen),
             StructuredDataTagChild::Paragraph(paragraph) => {
                 refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
             }
-            StructuredDataTagChild::Table(table) => {
-                refresh_para_ids_in_table(table, duplicates, used, seen)
-            }
+            StructuredDataTagChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
             StructuredDataTagChild::CommentStart(c) => {
                 refresh_para_ids_in_comment(&mut c.comment, duplicates, used, seen)
             }
@@ -2172,9 +1444,7 @@ fn refresh_para_ids_in_comment(
 ) {
     for child in &mut comment.children {
         match child {
-            CommentChild::Paragraph(paragraph) => {
-                refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen)
-            }
+            CommentChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
             CommentChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
         }
     }
@@ -2223,7 +1493,7 @@ fn next_unique_paragraph_id(used: &HashSet<String>) -> String {
 fn push_comment_and_comment_extended(
     comments: &mut Vec<Comment>,
     comments_extended: &mut Vec<CommentExtended>,
-    comment_map: &HashMap<usize, String>,
+    comment_map: &BTreeMap<usize, String>,
     c: &CommentRangeStart,
 ) {
     let comment = c.get_comment_ref();
@@ -2234,8 +1504,7 @@ fn push_comment_and_comment_extended(
             let comment_extended = CommentExtended::new(para_id);
             if let Some(parent_comment_id) = comment.parent_comment_id {
                 if let Some(parent_para_id) = comment_map.get(&parent_comment_id) {
-                    comments_extended
-                        .push(comment_extended.parent_paragraph_id(parent_para_id.clone()));
+                    comments_extended.push(comment_extended.parent_paragraph_id(parent_para_id.clone()));
                 }
             } else {
                 comments_extended.push(comment_extended);
@@ -2330,4 +1599,3 @@ fn update_document_by_toc(
     document_children[toc_index] = DocumentChild::TableOfContents(Box::new(toc));
     document_children
 }
-

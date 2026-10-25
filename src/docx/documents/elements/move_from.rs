@@ -27,42 +27,7 @@ impl Default for MoveFrom {
     }
 }
 
-impl MoveFrom {
-    pub fn new() -> MoveFrom {
-        Self {
-            children: vec![],
-            ..Default::default()
-        }
-    }
-
-    pub fn add_run(mut self, run: Run) -> MoveFrom {
-        self.children.push(MoveFromChild::Run(Box::new(run)));
-        self
-    }
-
-    pub fn add_comment_start(mut self, comment: Comment) -> MoveFrom {
-        self.children.push(MoveFromChild::CommentStart(Box::new(
-            CommentRangeStart::new(comment),
-        )));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> MoveFrom {
-        self.children
-            .push(MoveFromChild::CommentEnd(CommentRangeEnd::new(id)));
-        self
-    }
-
-    pub fn author(mut self, author: impl Into<String>) -> MoveFrom {
-        self.author = escape::escape_owned(author.into());
-        self
-    }
-
-    pub fn date(mut self, date: impl Into<String>) -> MoveFrom {
-        self.date = date.into();
-        self
-    }
-}
+impl MoveFrom {}
 
 impl HistoryId for MoveFrom {}
 
@@ -83,4 +48,3 @@ impl BuildXML for MoveFrom {
             .into_inner()
     }
 }
-

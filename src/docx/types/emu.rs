@@ -2,10 +2,6 @@
 // https://openpyxl.readthedocs.io/en/stable/api/openpyxl.utils.units.html
 type Emu = u32;
 
-pub fn to_px(v: Emu) -> u32 {
-    v / 9525
-}
-
 pub fn from_px(v: Emu) -> u32 {
     v * 9525
 }

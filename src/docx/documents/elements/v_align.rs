@@ -9,11 +9,7 @@ pub struct VAlign {
     val: VAlignType,
 }
 
-impl VAlign {
-    pub fn new(v: VAlignType) -> VAlign {
-        VAlign { val: v }
-    }
-}
+impl VAlign {}
 
 impl BuildXML for VAlign {
     fn build_to<W: Write>(
@@ -25,4 +21,3 @@ impl BuildXML for VAlign {
             .into_inner()
     }
 }
-

@@ -26,11 +26,6 @@ impl Styles {
         self
     }
 
-    pub fn default_spacing(mut self, spacing: i32) -> Self {
-        self.doc_defaults = self.doc_defaults.spacing(spacing);
-        self
-    }
-
     pub fn default_line_spacing(mut self, spacing: LineSpacing) -> Self {
         self.doc_defaults = self.doc_defaults.line_spacing(spacing);
         self
@@ -39,15 +34,6 @@ impl Styles {
     pub fn default_fonts(mut self, font: RunFonts) -> Self {
         self.doc_defaults = self.doc_defaults.fonts(font);
         self
-    }
-
-    pub(crate) fn doc_defaults(mut self, doc_defaults: DocDefaults) -> Self {
-        self.doc_defaults = doc_defaults;
-        self
-    }
-
-    pub fn find_style_by_id(&self, id: &str) -> Option<&Style> {
-        self.styles.iter().find(|s| s.style_id == id)
     }
 
     pub fn create_heading_style_map(&self) -> std::collections::HashMap<String, usize> {
@@ -95,4 +81,3 @@ impl BuildXML for Styles {
             .into_inner()
     }
 }
-

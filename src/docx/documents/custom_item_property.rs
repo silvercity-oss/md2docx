@@ -8,11 +8,7 @@ pub struct CustomItemProperty {
     id: String,
 }
 
-impl CustomItemProperty {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into() }
-    }
-}
+impl CustomItemProperty {}
 
 impl BuildXML for CustomItemProperty {
     fn build_to<W: Write>(

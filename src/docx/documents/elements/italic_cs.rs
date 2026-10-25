@@ -12,11 +12,6 @@ impl ItalicCs {
     pub fn new() -> ItalicCs {
         Default::default()
     }
-
-    pub fn disable(mut self) -> Self {
-        self.val = false;
-        self
-    }
 }
 
 impl Default for ItalicCs {

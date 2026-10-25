@@ -8,7 +8,6 @@ pub use self::custom::*;
 
 use crate::docx::documents::BuildXML;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocProps {
     pub app: AppProps,
@@ -31,11 +30,6 @@ impl DocProps {
 
     pub fn updated_at(mut self, date: &str) -> Self {
         self.core = self.core.updated_at(date);
-        self
-    }
-
-    pub fn custom_property(mut self, name: impl Into<String>, item: impl Into<String>) -> Self {
-        self.custom = self.custom.add_custom_property(name.into(), item.into());
         self
     }
 

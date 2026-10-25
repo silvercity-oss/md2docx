@@ -10,11 +10,7 @@ pub struct TableIndent {
     width_type: WidthType,
 }
 
-impl TableIndent {
-    pub fn new(width: i32, width_type: WidthType) -> TableIndent {
-        TableIndent { width, width_type }
-    }
-}
+impl TableIndent {}
 
 impl BuildXML for TableIndent {
     fn build_to<W: Write>(
@@ -26,4 +22,3 @@ impl BuildXML for TableIndent {
             .into_inner()
     }
 }
-

@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use crate::docx::documents::BuildXML;
-use crate::docx::types::ThemeColor;
 use crate::docx::xml_builder::*;
 
 /// A `<w:color>` color property.
@@ -30,27 +29,6 @@ impl Color {
             theme_tint: None,
         }
     }
-
-    /// Sets the theme color reference (`w:themeColor`).
-    pub fn theme_color(mut self, theme_color: ThemeColor) -> Color {
-        // Stored as the serialized ST_ThemeColor token (e.g. "accent1") so the
-        // builder and reader share a single string representation; the typed
-        // `ThemeColor` enum is the ergonomic boundary for callers.
-        self.theme_color = Some(theme_color.to_string());
-        self
-    }
-
-    /// Sets the theme shade modifier (`w:themeShade`), a hex byte such as `"BF"`.
-    pub fn theme_shade(mut self, theme_shade: impl Into<String>) -> Color {
-        self.theme_shade = Some(theme_shade.into());
-        self
-    }
-
-    /// Sets the theme tint modifier (`w:themeTint`), a hex byte such as `"99"`.
-    pub fn theme_tint(mut self, theme_tint: impl Into<String>) -> Color {
-        self.theme_tint = Some(theme_tint.into());
-        self
-    }
 }
 
 impl BuildXML for Color {
@@ -68,4 +46,3 @@ impl BuildXML for Color {
             .into_inner()
     }
 }
-

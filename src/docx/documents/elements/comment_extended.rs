@@ -19,11 +19,6 @@ impl CommentExtended {
         }
     }
 
-    pub fn done(mut self) -> CommentExtended {
-        self.done = true;
-        self
-    }
-
     pub fn parent_paragraph_id(mut self, id: impl Into<String>) -> CommentExtended {
         self.parent_paragraph_id = Some(id.into());
         self
@@ -40,4 +35,3 @@ impl BuildXML for CommentExtended {
             .into_inner()
     }
 }
-

@@ -1,10 +1,10 @@
 use super::*;
 // use crate::docx::create_header_rid;
 use crate::docx::documents::BuildXML;
+use crate::docx::macros::delegate_to_field;
 use crate::docx::types::*;
 use crate::docx::xml_builder::*;
 use crate::docx::Footer;
-use crate::docx::macros::delegate_to_field;
 use crate::docx::Header;
 use std::io::Write;
 
@@ -52,22 +52,10 @@ pub struct Section {
 }
 
 impl Section {
-    pub fn new() -> Section {
-        Default::default()
-    }
-
-    pub fn children(&self) -> &Vec<SectionChild> {
-        &self.children
-    }
-
     delegate_to_field! {
         property =>
         page_size(size: PageSize) -> Self,
         page_margin(margin: PageMargin) -> Self,
-        page_orient(o: PageOrientationType) -> Self,
-        doc_grid(doc_grid: DocGrid) -> Self,
-        text_direction(direction: String) -> Self,
-        title_pg() -> Self,
         // header(h: Header, rid: &str) -> Self,
         // first_header(h: Header, rid: &str) -> Self,
         // first_header_without_title_pg(h: Header, rid: &str) -> Self,
@@ -76,78 +64,6 @@ impl Section {
         // first_footer(h: Footer, rid: &str) -> Self,
         // first_footer_without_title_pg(h: Footer, rid: &str) -> Self,
         // even_footer(h: Footer, rid: &str) -> Self,
-        page_num_type(h: PageNumType) -> Self,
-    }
-
-    pub fn add_paragraph(mut self, p: Paragraph) -> Self {
-        if p.has_numbering {
-            self.has_numbering = true
-        }
-        self.children.push(SectionChild::Paragraph(Box::new(p)));
-        self
-    }
-
-    pub fn add_table(mut self, t: Table) -> Self {
-        if t.has_numbering {
-            self.has_numbering = true
-        }
-        self.children.push(SectionChild::Table(Box::new(t)));
-        self
-    }
-
-    pub fn add_bookmark_start(mut self, id: usize, name: impl Into<String>) -> Self {
-        self.children
-            .push(SectionChild::BookmarkStart(BookmarkStart::new(id, name)));
-        self
-    }
-
-    pub fn add_bookmark_end(mut self, id: usize) -> Self {
-        self.children
-            .push(SectionChild::BookmarkEnd(BookmarkEnd::new(id)));
-        self
-    }
-
-    pub fn add_comment_start(mut self, comment: Comment) -> Self {
-        self.children.push(SectionChild::CommentStart(Box::new(
-            CommentRangeStart::new(comment),
-        )));
-        self
-    }
-
-    pub fn add_comment_end(mut self, id: usize) -> Self {
-        self.children
-            .push(SectionChild::CommentEnd(CommentRangeEnd::new(id)));
-        self
-    }
-
-    pub fn header(mut self, header: Header) -> Self {
-        self.temp_header = Some(header);
-        self
-    }
-
-    pub fn first_header(mut self, header: Header) -> Self {
-        self.temp_first_header = Some(header);
-        self
-    }
-
-    pub fn even_header(mut self, header: Header) -> Self {
-        self.temp_even_header = Some(header);
-        self
-    }
-
-    pub fn footer(mut self, footer: Footer) -> Self {
-        self.temp_footer = Some(footer);
-        self
-    }
-
-    pub fn first_footer(mut self, footer: Footer) -> Self {
-        self.temp_first_footer = Some(footer);
-        self
-    }
-
-    pub fn even_footer(mut self, footer: Footer) -> Self {
-        self.temp_even_footer = Some(footer);
-        self
     }
 }
 
@@ -183,4 +99,3 @@ impl BuildXML for Section {
             .into_inner()
     }
 }
-

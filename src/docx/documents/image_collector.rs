@@ -7,9 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::document_tree::{visit_document, visit_footer, visit_header, DocumentTreeVisitor};
-use crate::docx::{
-    Document, Footer, Footnote, FootnoteReference, Header, ImageIdAndBuf, ImageIdAndPath, Pic,
-};
+use crate::docx::{Document, Footer, Footnote, FootnoteReference, Header, ImageIdAndBuf, ImageIdAndPath, Pic};
 
 /// Stores physical media once for the entire OPC package.
 ///
@@ -44,12 +42,7 @@ impl MediaRegistry {
         if let Some(index) = self
             .by_fingerprint
             .get(&fingerprint)
-            .and_then(|candidates| {
-                candidates
-                    .iter()
-                    .copied()
-                    .find(|index| self.media[*index].1 == bytes)
-            })
+            .and_then(|candidates| candidates.iter().copied().find(|index| self.media[*index].1 == bytes))
         {
             return index;
         }
@@ -58,10 +51,7 @@ impl MediaRegistry {
         let index = self.media.len();
         self.media.push((media_id.clone(), bytes));
         self.media_by_id.insert(media_id, index);
-        self.by_fingerprint
-            .entry(fingerprint)
-            .or_default()
-            .push(index);
+        self.by_fingerprint.entry(fingerprint).or_default().push(index);
         index
     }
 
@@ -86,9 +76,7 @@ impl MediaRegistry {
         }
 
         let (media_by_id, next_suffix_by_id) = (&self.media_by_id, &mut self.next_suffix_by_id);
-        let suffix = next_suffix_by_id
-            .entry(preferred_id.to_owned())
-            .or_insert(2);
+        let suffix = next_suffix_by_id.entry(preferred_id.to_owned()).or_insert(2);
 
         loop {
             let candidate = format!("{preferred_id}_{suffix}");
@@ -161,13 +149,8 @@ impl<'a> PackagePartCollector<'a> {
             return preferred_id.to_owned();
         }
 
-        let (relationship_ids, next_suffix_by_id) = (
-            &self.relationship_ids,
-            &mut self.next_relationship_suffix_by_id,
-        );
-        let suffix = next_suffix_by_id
-            .entry(preferred_id.to_owned())
-            .or_insert(2);
+        let (relationship_ids, next_suffix_by_id) = (&self.relationship_ids, &mut self.next_relationship_suffix_by_id);
+        let suffix = next_suffix_by_id.entry(preferred_id.to_owned()).or_insert(2);
 
         loop {
             let candidate = format!("{preferred_id}_{suffix}");
@@ -184,15 +167,12 @@ impl<'a> PackagePartCollector<'a> {
 impl DocumentTreeVisitor for PackagePartCollector<'_> {
     fn visit_picture(&mut self, picture: &mut Pic) {
         let preferred_relationship_id = self.relationship_id(&picture.id);
-        let media_index = self.registry.register(
-            &preferred_relationship_id,
-            std::mem::take(&mut picture.image),
-        );
+        let media_index = self
+            .registry
+            .register(&preferred_relationship_id, std::mem::take(&mut picture.image));
 
         if let Some(relationship_index) = self.relationships_by_media.get(&media_index) {
-            picture
-                .id
-                .clone_from(&self.relationships[*relationship_index].0);
+            picture.id.clone_from(&self.relationships[*relationship_index].0);
             return;
         }
 
@@ -200,8 +180,7 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
         let target = format!("media/{}.png", self.registry.media_id(media_index));
         let relationship_index = self.relationships.len();
         self.relationship_ids.insert(relationship_id.clone());
-        self.relationships_by_media
-            .insert(media_index, relationship_index);
+        self.relationships_by_media.insert(media_index, relationship_index);
         picture.id.clone_from(&relationship_id);
         self.relationships.push((relationship_id, target));
     }
@@ -212,58 +191,25 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
 }
 
 /// Collects package data from the complete main document tree in one pass.
-pub(crate) fn collect_document_part(
-    document: &mut Document,
-    registry: &mut MediaRegistry,
-) -> CollectedPart {
+pub(crate) fn collect_document_part(document: &mut Document, registry: &mut MediaRegistry) -> CollectedPart {
     let mut collector = PackagePartCollector::new(registry, None);
     visit_document(document, &mut collector);
     collector.finish()
 }
 
-/// Collects footnotes without consuming image buffers from the document tree.
-///
-/// This separate visitor keeps [`crate::docx::Docx::collect_footnotes`] compatible
-/// for callers that invoke it directly. Package preparation uses
-/// [`collect_document_part`] so images and footnotes are normally gathered in
-/// one traversal.
-pub(crate) fn collect_document_footnotes(document: &mut Document) -> Vec<Footnote> {
-    #[derive(Default)]
-    struct FootnoteCollector {
-        footnotes: Vec<Footnote>,
-    }
-
-    impl DocumentTreeVisitor for FootnoteCollector {
-        fn visit_footnote_reference(&mut self, reference: &FootnoteReference) {
-            self.footnotes.push(reference.into());
-        }
-    }
-
-    let mut collector = FootnoteCollector::default();
-    visit_document(document, &mut collector);
-    collector.footnotes
-}
-
 /// Collects package data from one header relationship scope.
-pub(crate) fn collect_header_part(
-    header: &mut Header,
-    registry: &mut MediaRegistry,
-) -> CollectedPart {
+pub(crate) fn collect_header_part(header: &mut Header, registry: &mut MediaRegistry) -> CollectedPart {
     let mut collector = PackagePartCollector::new(registry, Some("header"));
     visit_header(header, &mut collector);
     collector.finish()
 }
 
 /// Collects package data from one footer relationship scope.
-pub(crate) fn collect_footer_part(
-    footer: &mut Footer,
-    registry: &mut MediaRegistry,
-) -> CollectedPart {
+pub(crate) fn collect_footer_part(footer: &mut Footer, registry: &mut MediaRegistry) -> CollectedPart {
     let mut collector = PackagePartCollector::new(registry, Some("footer"));
     visit_footer(footer, &mut collector);
     collector.finish()
 }
-
 
 /// Cheap content fingerprint used only to bucket candidate duplicates; equality is always
 /// confirmed byte-for-byte.
