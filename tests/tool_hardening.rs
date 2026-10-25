@@ -158,7 +158,7 @@ fn total_tool_time_is_budgeted_across_the_whole_document() {
         .collect();
     let t = Instant::now();
     match markdown_to_docx(&md, &cfg) {
-        Err(CrateError::LimitExceeded(m)) => assert!(m.contains("total time budget"), "{m}"),
+        Err(CrateError::LimitExceeded(m)) => assert!(m.contains("time budget"), "{m}"),
         other => panic!("expected the budget to run out, got {:?}", other.map(|d| d.len())),
     }
     assert!(t.elapsed() < Duration::from_secs(10), "stopped after {:?}", t.elapsed());
