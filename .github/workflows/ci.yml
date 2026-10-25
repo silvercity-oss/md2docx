@@ -53,7 +53,7 @@ jobs:
       # skip elsewhere; everything else (OMML, CLI, Markdown coverage, security
       # gates, fuzz-style tests) runs on all three platforms.
       - name: Test
-        run: cargo test --all-targets --locked
+        run: cargo test --all-targets --locked --no-fail-fast
         env:
           REQUIRE_TEX: ${{ runner.os == 'Linux' && '1' || '' }}
 

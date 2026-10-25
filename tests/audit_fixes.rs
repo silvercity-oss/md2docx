@@ -303,8 +303,9 @@ fn image_paths_outside_the_base_get_the_same_answer_whether_or_not_they_exist() 
     std::fs::create_dir(fx.path("sub")).unwrap();
     assert!(markdown_to_docx("![x](sub/../fixture.png)\n", &cfg).is_ok());
     // An absolute path inside the base (not canonicalised: on Windows that gives `\\\\?\\C:`).
-    let abs = fx.path("fixture.png");
-    assert!(markdown_to_docx(&format!("![x](<{}>)\n", abs.display()), &cfg).is_ok());
+    // (Forward slashes: inside `<...>` a Markdown backslash would escape the next character.)
+    let abs = fx.path("fixture.png").to_string_lossy().replace('\\', "/");
+    assert!(markdown_to_docx(&format!("![x](<{abs}>)\n"), &cfg).is_ok());
     // And with access off nothing is read at all.
     let none = cfg.clone().with_image_access(ImageAccess::None);
     assert!(markdown_to_docx("![x](/etc/passwd)\n", &none).is_ok());

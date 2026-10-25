@@ -1,0 +1,10 @@
+# cargo-audit configuration (read by `cargo audit` in CI).
+#
+# zip 8.6.0 is flagged for three advisories that all concern *extracting* archives to disk
+# (`ZipArchive::extract` / `ZipStreamReader::extract`: symlink targets and SUID/SGID bits).
+# This crate never extracts anything: it writes one archive through docx-rs and reads that
+# archive back from memory by index to recompress it (see src/pack.rs). docx-rs 0.4.22, the
+# latest release, pins zip 8, so the fixed zip 9 cannot be used until docx-rs moves. Revisit when
+# a docx-rs release allows zip >= 9.
+[advisories]
+ignore = ["RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369"]
