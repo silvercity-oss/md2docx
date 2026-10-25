@@ -443,3 +443,34 @@ fn the_untrusted_diagram_timeout_cannot_be_raised() {
     assert!(run("20").status.success());
     assert!(run("5").status.success());
 }
+
+#[test]
+fn highlight_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("h.md");
+    std::fs::write(&input, "```rust\nfn main() {}\n```\n").unwrap();
+    let doc = |extra: &[&str]| {
+        let out = dir.path().join(format!("h{}.docx", extra.join("")));
+        let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .arg("-o")
+            .arg(&out)
+            .args(extra)
+            .output()
+            .unwrap();
+        (run, out)
+    };
+    let (run, out) = doc(&[]);
+    assert!(run.status.success());
+    let plain = zip_text(&std::fs::read(&out).unwrap(), "word/document.xml");
+    assert!(plain.contains("F2F2F2") && !plain.contains("569CD6"));
+    let (run, out) = doc(&["--highlight", "dark"]);
+    assert!(run.status.success());
+    let dark = zip_text(&std::fs::read(&out).unwrap(), "word/document.xml");
+    assert!(dark.contains("1E1E1E") && dark.contains("569CD6"));
+    let (run, out) = doc(&["--highlight", "light", "--untrusted"]);
+    assert!(run.status.success());
+    assert!(zip_text(&std::fs::read(&out).unwrap(), "word/document.xml").contains("0000FF"));
+    let (run, _) = doc(&["--highlight", "neon"]);
+    assert_eq!(run.status.code(), Some(2));
+}

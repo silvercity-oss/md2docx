@@ -194,7 +194,14 @@ fn a_huge_single_paragraph_block_is_fine() {
     // The untrusted limits apply as usual: this many lines is refused, not built.
     let mut u = Config::untrusted();
     u.document.code_blocks = CodeBlockLayout::SingleParagraph;
-    assert!(markdown_to_docx(&fenced(code), &u).is_ok());
+    // Every line is a run, so a block this long is over the untrusted element budget...
+    assert!(matches!(
+        markdown_to_docx(&fenced(code), &u),
+        Err(silvercity_oss::CrateError::LimitExceeded(m)) if m.contains("max_elements")
+    ));
+    // ...while a still very long one fits.
+    let fits = "let x = 1;\n".repeat(40_000);
+    assert!(markdown_to_docx(&fenced(fits.trim_end()), &u).is_ok());
     let more = "a\n".repeat(1_000_000);
     assert!(matches!(
         markdown_to_docx(&fenced(&more), &u),

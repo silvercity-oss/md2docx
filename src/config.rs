@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, TagStyle};
+use crate::highlight::Highlighting;
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -106,6 +107,9 @@ pub struct Limits {
     pub max_diagrams: usize,
     /// Size of one diagram's source text.
     pub max_graph_source_bytes: usize,
+    /// Longest code block that is syntax-highlighted; longer ones are drawn plain.
+    /// [`Config::untrusted`] sets 64 KiB.
+    pub max_highlight_bytes: usize,
     /// Size of one formula's LaTeX source.
     pub max_formula_bytes: usize,
     /// Size of one embedded image (a file, or a renderer's output).
@@ -140,6 +144,7 @@ impl Default for Limits {
             max_rendered_blocks: 500,
             max_diagrams: 100,
             max_graph_source_bytes: 64 * 1024,
+            max_highlight_bytes: 256 * 1024,
             max_formula_bytes: 16 * 1024,
             max_image_bytes: 25 * MIB,
             max_total_image_bytes: 150 * MIB,
@@ -448,6 +453,9 @@ pub struct Config {
     /// fastest, 9 smallest. Default 6. Pictures are always stored (they are
     /// compressed already).
     pub compression_level: u32,
+    /// Colour code blocks by language. `None` (the default) draws them plain.
+    /// See [`Highlighting`].
+    pub highlighting: Option<Highlighting>,
     /// Styles for HTML tags outside the built-in set (or overriding it), by
     /// lower-case tag name. See [`TagStyle`]. Empty by default.
     pub html_tags: BTreeMap<String, TagStyle>,
@@ -469,6 +477,7 @@ impl Default for Config {
             allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
             html_links: true,
             compression_level: 6,
+            highlighting: None,
             html_tags: BTreeMap::new(),
             fence_renderers: FenceRenderers::default(),
         }
@@ -505,6 +514,15 @@ impl Config {
                 "compression_level {} must be between 0 (stored) and 9 (smallest)",
                 self.compression_level
             )));
+        }
+        if let Some(h) = &self.highlighting {
+            h.theme.validate().map_err(bad)?;
+            for lang in h.languages.keys() {
+                validate_fence_language(lang).map_err(bad)?;
+            }
+            if h.languages.len() > 64 {
+                return Err(bad("at most 64 per-language highlighters may be registered".into()));
+            }
         }
         if self.html_tags.len() > 64 {
             return Err(bad("at most 64 custom html tags may be registered".into()));
@@ -563,6 +581,12 @@ impl Config {
         self
     }
 
+    /// Colour code blocks with `highlighting` (see [`Highlighting`] and [`crate::Theme`]).
+    pub fn with_highlighting(mut self, highlighting: Highlighting) -> Self {
+        self.highlighting = Some(highlighting);
+        self
+    }
+
     /// Set the deflate level of the finished `.docx` (0 to 9, default 6).
     pub fn with_compression_level(mut self, level: u32) -> Self {
         self.compression_level = level;
@@ -608,6 +632,7 @@ impl Config {
         c.limits = Limits {
             max_input_bytes: 2 * 1024 * 1024,
             max_rendered_blocks: 200,
+            max_highlight_bytes: 64 * 1024,
             max_formula_bytes: 4 * 1024,
             max_image_bytes: 5 * 1024 * 1024,
             max_total_image_bytes: 25 * 1024 * 1024,

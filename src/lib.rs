@@ -68,6 +68,7 @@
 //! * **Features.** `cli` (default) builds the `md2docx` binary. Library users
 //!   should depend on the crate with `default-features = false` to avoid
 //!   compiling `clap` and `shlex`.
+//! * **Syntax highlighting** for code blocks: [`Highlighting`], [`Theme`], [`Highlighter`].
 //! * **Extensible by the embedder, not the document author.**
 //!   [`Config::with_fence_renderer`] renders fenced blocks with your own code and
 //!   [`Config::with_html_tag`] styles custom HTML tags; both are safe with
@@ -83,7 +84,9 @@
 mod config;
 mod error;
 mod extend;
+mod highlight;
 mod html;
+mod lexers;
 pub mod omml;
 mod pack;
 mod parser;
@@ -109,6 +112,7 @@ pub use config::{
 };
 pub use error::{CrateError, Result};
 pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, TagStyle};
+pub use highlight::{BuiltinHighlighter, Highlighter, Highlighting, Span, Theme, TokenClass, TokenStyle};
 
 /// Convert Markdown text to the bytes of a `.docx` file.
 ///

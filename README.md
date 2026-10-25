@@ -80,6 +80,11 @@ let cfg = Config::untrusted()
   or highlight, or to a block with a fill, a left bar, an indent and a bold
   label. Attributes in the document are ignored, so the author can only switch
   styles *you* defined on and off. Names and colours are validated up front.
+* **Syntax highlighting** (`Config::with_highlighting(Highlighting::new(Theme::vscode_dark()))`,
+  `md2docx --highlight light|dark`): built-in lexers for 21 languages and the VS Code
+  Light+/Dark+ themes, or your own `Highlighter` (a closure works) for anything else. How
+  to plug in `syntect` or `tree-sitter` for better accuracy, with tested code, is in
+  [docs/highlighting.md](docs/highlighting.md).
 * `DocumentOptions` also sets `code_background`, `link_color` and
   `quote_bar_color`.
 * `Config::with_compression_level(0..=9)` sets how the finished `.docx` is
@@ -243,7 +248,7 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 | Block quotes (nested), GitHub alerts `> [!NOTE]` | Indented with a bar; alerts get a bold label line |
 | Bullet / ordered / nested / task lists, start numbers | Native Word numbering (each ordered list restarts); `☐`/`☑` for tasks |
 | Tables (alignment, inline formatting) | Word tables |
-| Fenced, tilde and indented code | By default one monospace shaded paragraph per line (`DocumentOptions::code_blocks`: `CodeBlockLayout::SingleParagraph` makes the whole block one paragraph with line breaks, so a triple-click selects it for copying; `--code-blocks single`), spaces and tabs kept, indented inside lists and quotes. The language after the fence is not shown and there is no syntax highlighting (`mermaid`, `dolphin` and math fences are handled as described above) |
+| Fenced, tilde and indented code | Optionally syntax-highlighted (see "Extending it"). By default one monospace shaded paragraph per line (`DocumentOptions::code_blocks`: `CodeBlockLayout::SingleParagraph` makes the whole block one paragraph with line breaks, so a triple-click selects it for copying; `--code-blocks single`), spaces and tabs kept, indented inside lists and quotes. The language after the fence is not shown (`mermaid`, `dolphin` and math fences are handled as described above) |
 | Thematic breaks | A rule |
 | Footnotes `[^1]` | Native Word footnotes (unknown labels stay literal) |
 | Definition lists | Bold term, indented definitions |
@@ -403,6 +408,9 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
   pulldown-cmark upgrade cannot add one silently); `tests/pathological.rs`: deep
   nesting, wide/tall tables, huge lines, delimiter runs, runaway HTML under a
   time budget.
+* `tests/highlighting.rs` and the lexer unit tests: every built-in lexer returns valid
+  spans on random and hostile text and runs in linear time; themes, custom highlighters
+  (including panicking and span-violating ones), round-trip of the code text.
 * `tests/code_blocks.rs`: both code layouts give back exactly the source text
   (spaces, tabs, blank lines, markup characters, Unicode), indentation, huge blocks.
 * `tests/extensions.rs`: fence renderers, tag styles, document colours, the

@@ -16,12 +16,14 @@ use docx_rs::{
     Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
 };
 use pulldown_cmark::{
-    Alignment, BlockQuoteKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd, TextMergeStream,
+    Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
+    TextMergeStream,
 };
 
 use crate::config::{CodeBlockLayout, Config, ImageAccess, MathMode};
 use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
+use crate::highlight::{self, Span, Theme, TokenClass};
 use crate::html::{self, Piece};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
@@ -298,6 +300,8 @@ struct Builder<'a> {
     /// Images opened inside the alt text of `image` (`![a ![b](x)](y)`).
     image_nesting: usize,
     code: Option<String>,
+    /// Language of the fenced code block being read, for highlighting.
+    code_lang: Option<String>,
     quote_depth: usize,
     lists: Vec<ListCtx>,
     ordered_numberings: Vec<Numbering>,
@@ -318,6 +322,71 @@ const MAX_INDENT_TWIPS: usize = 31_680;
 fn indent_twips(twips: usize) -> i32 {
     // MAX_INDENT_TWIPS is far below i32::MAX.
     i32::try_from(twips.min(MAX_INDENT_TWIPS)).unwrap_or(0)
+}
+
+/// One run of code text. Tabs become tab elements (a raw tab inside `<w:t>` is not reliably
+/// shown by Word); a theme colours it by `class`.
+fn code_run(text: &str, class: Option<TokenClass>, theme: Option<&Theme>) -> Run {
+    let mut run = Run::new();
+    for (i, part) in sanitize_xml_chars(text).split('\t').enumerate() {
+        if i > 0 {
+            run = run.add_tab();
+        }
+        if !part.is_empty() {
+            run = run.add_text(part);
+        }
+    }
+    if let Some(t) = theme {
+        let style = class.and_then(|c| t.style_of(c));
+        run = run.color(style.and_then(|s| s.color.as_deref()).unwrap_or(t.foreground.as_str()));
+        if style.is_some_and(|s| s.bold) {
+            run = run.bold();
+        }
+        if style.is_some_and(|s| s.italic) {
+            run = run.italic();
+        }
+    }
+    run
+}
+
+/// The runs of one code line: its text cut at the edges of the (validated, sorted) `spans`.
+/// `next_span` is the first span that may still reach this or a later line.
+fn code_line_runs(
+    body: &str,
+    (line_start, line_end): (usize, usize),
+    spans: &[Span],
+    next_span: &mut usize,
+    theme: Option<&Theme>,
+) -> Vec<Run> {
+    while *next_span < spans.len() && spans[*next_span].end <= line_start {
+        *next_span += 1;
+    }
+    let mut runs = Vec::new();
+    let mut at = line_start;
+    let mut k = *next_span;
+    while at < line_end {
+        match spans.get(k) {
+            Some(span) if span.start < line_end => {
+                if span.start > at {
+                    runs.push(code_run(&body[at..span.start], None, theme));
+                    at = span.start;
+                }
+                let end = span.end.min(line_end);
+                runs.push(code_run(&body[at..end], Some(span.class), theme));
+                at = end;
+                if span.end > line_end {
+                    break; // continues on the next line
+                }
+                k += 1;
+            }
+            _ => {
+                runs.push(code_run(&body[at..line_end], None, theme));
+                at = line_end;
+            }
+        }
+    }
+    *next_span = k;
+    runs
 }
 
 fn marker(nonce: &str, slot: usize) -> String {
@@ -460,6 +529,7 @@ impl<'a> Builder<'a> {
             image: None,
             image_nesting: 0,
             code: None,
+            code_lang: None,
             quote_depth: 0,
             lists: Vec::new(),
             ordered_numberings: Vec::new(),
@@ -748,6 +818,20 @@ impl<'a> Builder<'a> {
 
     fn code_block(&mut self, text: &str) {
         let body = text.strip_suffix('\n').unwrap_or(text);
+        let lang = self.code_lang.take();
+        let cfg: &'a Config = self.cfg;
+        let theme = cfg.highlighting.as_ref().map(|h| &h.theme);
+        let spans: Vec<Span> = match (cfg.highlighting.as_ref(), lang.as_deref()) {
+            (Some(h), Some(l)) => match highlight::highlight_block(h, l, body, cfg.limits.max_highlight_bytes) {
+                Ok(spans) => spans.unwrap_or_default(),
+                Err(e) => {
+                    self.budget_error.get_or_insert(e);
+                    return;
+                }
+            },
+            _ => Vec::new(),
+        };
+        let fill = theme.map_or(cfg.document.code_background.as_str(), |t| t.background.as_str());
         let left = match (self.lists.last(), self.quote_depth) {
             (Some(ctx), _) if ctx.item_open => Some(indent_twips(720 * (ctx.level + 1))),
             (_, q) if q > 0 => Some(indent_twips(360usize.saturating_mul(q))),
@@ -755,54 +839,58 @@ impl<'a> Builder<'a> {
         };
         let new_paragraph = || {
             let mut p = Paragraph::new().style("CodeBlock");
-            p.property = p
-                .property
-                .shading(Shading::new().fill(self.cfg.document.code_background.as_str()));
+            p.property = p.property.shading(Shading::new().fill(fill));
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
             p
         };
-        // A raw tab inside `<w:t>` is not reliably shown by Word; use a real tab element.
-        let add_line = |mut run: Run, line: &str| {
-            let line = sanitize_xml_chars(line.trim_end_matches('\r'));
-            for (i, part) in line.split('\t').enumerate() {
-                if i > 0 {
-                    run = run.add_tab();
-                }
-                if !part.is_empty() {
-                    run = run.add_text(part);
-                }
-            }
-            run
-        };
-        match self.cfg.document.code_blocks {
+        // Each line as (start, end) byte offsets in `body`, without the line ending.
+        let mut lines: Vec<(usize, usize)> = Vec::new();
+        let mut start = 0;
+        for line in body.split('\n') {
+            lines.push((start, start + line.trim_end_matches('\r').len()));
+            start += line.len() + 1;
+        }
+        let mut next_span = 0;
+        match cfg.document.code_blocks {
             CodeBlockLayout::LinePerParagraph => {
-                for line in body.split('\n') {
+                for range in lines {
                     if self.budget_error.is_some() {
                         break;
                     }
-                    let p = new_paragraph().add_run(add_line(Run::new(), line));
+                    let mut runs = code_line_runs(body, range, &spans, &mut next_span, theme);
+                    if runs.is_empty() {
+                        runs.push(Run::new());
+                    }
+                    self.charge(runs.len());
+                    let mut p = new_paragraph();
+                    for r in runs {
+                        p = p.add_run(r);
+                    }
                     self.emit(p);
                 }
             }
             CodeBlockLayout::SingleParagraph => {
                 // One paragraph per chunk of lines: LibreOffice's layout time grows with the
                 // square of the lines in a paragraph (100k lines took 12 minutes).
-                let all: Vec<&str> = body.split('\n').collect();
-                for chunk in all.chunks(SINGLE_PARAGRAPH_MAX_LINES) {
+                for chunk in lines.chunks(SINGLE_PARAGRAPH_MAX_LINES) {
                     if self.budget_error.is_some() {
                         break;
                     }
-                    let mut run = Run::new();
-                    for (i, line) in chunk.iter().enumerate() {
+                    let mut p = new_paragraph();
+                    let mut count = chunk.len() / 16;
+                    for (i, range) in chunk.iter().enumerate() {
                         if i > 0 {
-                            run = run.add_break(BreakType::TextWrapping);
+                            p = p.add_run(Run::new().add_break(BreakType::TextWrapping));
                         }
-                        run = add_line(run, line);
+                        let runs = code_line_runs(body, *range, &spans, &mut next_span, theme);
+                        count += runs.len();
+                        for r in runs {
+                            p = p.add_run(r);
+                        }
                     }
-                    self.charge(chunk.len() / 16);
-                    let p = new_paragraph().add_run(run);
+                    self.charge(count);
                     self.emit(p);
                 }
             }
@@ -1469,9 +1557,13 @@ impl<'a> Builder<'a> {
                 self.flush();
                 self.def_depth += 1;
             }
-            Tag::CodeBlock(_) => {
+            Tag::CodeBlock(kind) => {
                 self.flush();
                 self.code = Some(String::new());
+                self.code_lang = match kind {
+                    CodeBlockKind::Fenced(info) => highlight::fence_language(&info),
+                    CodeBlockKind::Indented => None,
+                };
             }
             Tag::List(first) => {
                 self.flush();

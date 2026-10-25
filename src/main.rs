@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 use silvercity_oss::{
-    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine,
-    MathMode as LibMathMode, MermaidEngine as LibMermaidEngine,
+    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, Highlighting, ImageAccess as LibImageAccess,
+    MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Theme,
 };
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +24,16 @@ pub enum MermaidEngine {
     Merman,
     /// `mmdc`: the official Mermaid CLI; drives a headless Chrome.
     Mmdc,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Highlight {
+    /// Plain grey code blocks (default).
+    None,
+    /// Syntax highlighting in the VS Code Light+ colours.
+    Light,
+    /// Syntax highlighting in the VS Code Dark+ colours.
+    Dark,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +157,14 @@ pub struct Args {
         help = "Code block layout: one paragraph per line, or the whole block as one paragraph (triple-click selects it)"
     )]
     pub code_blocks: CodeBlocks,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = Highlight::None,
+        help = "Syntax-highlight code blocks with the built-in lexers (Rust, Python, JS/TS, Java, C/C++, C#, Go, Kotlin, Swift, Ruby, PHP, SQL, Bash, JSON, YAML, TOML, HTML/XML, CSS, diff)"
+    )]
+    pub highlight: Highlight,
 }
 
 /// Split a command template with POSIX shell rules (via `shlex`) and check it
@@ -199,6 +217,11 @@ fn config(args: &Args) -> Config {
         cfg
     };
     cfg.compression_level = args.compression_level;
+    cfg.highlighting = match args.highlight {
+        Highlight::None => None,
+        Highlight::Light => Some(Highlighting::new(Theme::vscode_light())),
+        Highlight::Dark => Some(Highlighting::new(Theme::vscode_dark())),
+    };
     cfg.document.code_blocks = match args.code_blocks {
         CodeBlocks::Lines => CodeBlockLayout::LinePerParagraph,
         CodeBlocks::Single => CodeBlockLayout::SingleParagraph,

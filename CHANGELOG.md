@@ -37,6 +37,13 @@ First release.
 - `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
 
 ### Extension points
+- **Syntax highlighting** (`Config::with_highlighting`, `Highlighting`, `Theme`,
+  `TokenClass`, `Highlighter`, `BuiltinHighlighter`; `md2docx --highlight`): built-in
+  lexers for Rust, Python, JavaScript, TypeScript, Java, C, C++, C#, Go, Kotlin, Swift,
+  Ruby, PHP, SQL, Bash, JSON, YAML, TOML, HTML/XML, CSS and diff (linear time, no
+  dependencies), VS Code Light+/Dark+ themes, custom themes, and custom highlighters per
+  language or as a fallback (spans are validated, panics are caught). `docs/highlighting.md`
+  shows `syntect` and `tree-sitter` integrations. `Limits::max_highlight_bytes`.
 - `Config::with_fence_renderer(lang, renderer)`: render fenced blocks with your own
   code (`FenceRenderer` trait or a closure) to a PNG; replaces the external command
   when registered for `mermaid`/`dolphin`. Panics are caught, output is checked like
