@@ -105,21 +105,26 @@ pub(crate) const OMML_NS: &str = "http://schemas.openxmlformats.org/officeDocume
 /// a bare `<w:document>`), is idempotent, and refuses to continue when `m:` is
 /// already bound to a different namespace, since silently overriding it would
 /// corrupt the document.
+#[cfg(test)]
 pub(crate) fn ensure_math_namespace(xml: &str) -> std::result::Result<String, OmmlError> {
-    const ROOT: &str = "<w:document";
+    ensure_math_namespace_in(xml, "<w:document")
+}
+
+/// [`ensure_math_namespace`] for another part's root element (`"<w:footnotes"`).
+pub(crate) fn ensure_math_namespace_in(xml: &str, root: &str) -> std::result::Result<String, OmmlError> {
     let mut from = 0;
     let start = loop {
-        let Some(rel) = xml[from..].find(ROOT) else {
-            return err("document.xml has no <w:document> root element");
+        let Some(rel) = xml[from..].find(root) else {
+            return err(format!("the part has no {root}> root element"));
         };
         let at = from + rel;
-        match xml[at + ROOT.len()..].chars().next() {
+        match xml[at + root.len()..].chars().next() {
             Some(c) if c.is_whitespace() || c == '>' || c == '/' => break at,
-            _ => from = at + ROOT.len(), // e.g. <w:documentProtection
+            _ => from = at + root.len(), // e.g. <w:documentProtection
         }
     };
     // End of the start tag, skipping '>' inside quoted attribute values.
-    let name_end = start + ROOT.len();
+    let name_end = start + root.len();
     let mut quote: Option<char> = None;
     let mut tag_end = None;
     for (i, c) in xml[name_end..].char_indices() {
@@ -135,7 +140,7 @@ pub(crate) fn ensure_math_namespace(xml: &str) -> std::result::Result<String, Om
         }
     }
     let Some(tag_end) = tag_end else {
-        return err("unterminated <w:document> start tag");
+        return err(format!("unterminated {root}> start tag"));
     };
     let attrs = &xml[name_end..tag_end];
     if let Some(pos) = attrs.find("xmlns:m=") {

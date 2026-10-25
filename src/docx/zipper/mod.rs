@@ -60,6 +60,10 @@ where
     zip.write_all(&xml.comments_extended)?;
     zip.start_file("word/footnotes.xml", options)?;
     zip.write_all(&xml.footnotes)?;
+    if !xml.footnote_rels.is_empty() {
+        zip.start_file("word/_rels/footnotes.xml.rels", options)?;
+        zip.write_all(&xml.footnote_rels)?;
+    }
 
     for (i, h) in xml.headers.iter().enumerate() {
         zip.start_file(format!("word/header{}.xml", i + 1), options)?;

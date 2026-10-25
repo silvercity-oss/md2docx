@@ -7,7 +7,26 @@ use footnote_id::generate_footnote_id;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Footnote {
     pub id: usize,
-    pub content: Vec<Paragraph>,
+    pub content: Vec<FootnoteChild>,
+}
+
+/// A block inside a footnote: a paragraph or a table.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FootnoteChild {
+    Paragraph(Paragraph),
+    Table(Box<Table>),
+}
+
+impl BuildXML for FootnoteChild {
+    fn build_to<W: Write>(
+        &self,
+        stream: crate::docx::xml::writer::EventWriter<W>,
+    ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
+        match self {
+            FootnoteChild::Paragraph(p) => p.build_to(stream),
+            FootnoteChild::Table(t) => t.build_to(stream),
+        }
+    }
 }
 
 impl Default for Footnote {
@@ -25,8 +44,12 @@ impl Footnote {
     }
 
     pub fn add_content(&mut self, p: Paragraph) -> Self {
-        self.content.push(p);
+        self.content.push(FootnoteChild::Paragraph(p));
         self.clone()
+    }
+
+    pub fn add_table(&mut self, t: Table) {
+        self.content.push(FootnoteChild::Table(Box::new(t)));
     }
 }
 impl From<&FootnoteReference> for Footnote {
@@ -45,8 +68,7 @@ impl BuildXML for Footnote {
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         // To ensure docx compatible XML serialization for footnotes, we default to an empty paragraph.
         let mut footnote = self.clone();
-        if self.content == vec![] {
-            eprintln!("{footnote:?}");
+        if self.content.is_empty() {
             footnote.add_content(Paragraph::new());
         }
 

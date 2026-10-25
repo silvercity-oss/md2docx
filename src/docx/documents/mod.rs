@@ -21,6 +21,7 @@ mod footer;
 mod footer_id;
 mod footer_rels;
 mod footnote_id;
+mod footnote_rels;
 mod footnotes;
 mod header;
 mod header_id;
@@ -66,6 +67,7 @@ pub use font_table::*;
 pub use footer::*;
 pub use footer_id::*;
 pub use footer_rels::*;
+pub use footnote_rels::*;
 pub use footnotes::*;
 pub use header::*;
 pub use header_id::*;
@@ -83,7 +85,9 @@ pub use web_settings::*;
 pub use webextension::*;
 pub use xml_docx::*;
 
-use self::image_collector::{collect_document_part, collect_footer_part, collect_header_part, MediaRegistry};
+use self::image_collector::{
+    collect_document_part, collect_footer_part, collect_footnote_part, collect_header_part, MediaRegistry,
+};
 
 #[derive(Debug, Clone)]
 pub struct Image(pub Vec<u8>);
@@ -143,6 +147,7 @@ pub(crate) struct PackageMetadata {
     pub(crate) header_rels: Vec<(usize, HeaderRels)>,
     /// Non-empty footer relationships keyed by zero-based part index.
     pub(crate) footer_rels: Vec<(usize, FooterRels)>,
+    pub(crate) footnote_rels: Option<FootnoteRels>,
 }
 
 /// Expands sparse relationships only through the last part that needs them.
@@ -318,6 +323,7 @@ impl Docx {
 
         let footers = self.document.footers().map(|(_, footer)| footer.build()).collect();
 
+        let footnote_rels = package.footnote_rels.as_ref().map(|r| r.build()).unwrap_or_default();
         let header_rels = build_sparse_relationships(package.header_rels);
         let footer_rels = build_sparse_relationships(package.footer_rels);
 
@@ -331,6 +337,7 @@ impl Docx {
             document_rels: self.document_rels.build(),
             header_rels,
             footer_rels,
+            footnote_rels,
             settings: self.settings.build(),
             font_table: self.font_table.build(),
             numberings: self.numberings.build(),
@@ -424,10 +431,19 @@ impl Docx {
             })
             .collect();
 
+        let mut footnote_rels = None;
         if !document_part.footnotes.is_empty() {
             self.footnotes.add(document_part.footnotes);
             self.content_type = std::mem::take(&mut self.content_type).add_footnotes();
             self.document_rels.has_footnotes = true;
+            // Pictures and links inside footnotes have their own relationship scope.
+            let part = collect_footnote_part(&mut self.footnotes, &mut media);
+            if !part.relationships.is_empty() || !part.hyperlinks.is_empty() {
+                let mut rels = FootnoteRels::new();
+                rels.images = part.relationships;
+                rels.hyperlinks = part.hyperlinks;
+                footnote_rels = Some(rels);
+            }
         }
 
         if has_toc {
@@ -448,6 +464,7 @@ impl Docx {
             media: media.into_media(),
             header_rels,
             footer_rels,
+            footnote_rels,
         }
     }
 
@@ -920,8 +937,11 @@ fn collect_para_ids_in_docx<'a>(docx: &'a Docx, counts: &mut HashMap<&'a str, us
     }
 
     for footnote in &docx.footnotes.footnotes {
-        for paragraph in &footnote.content {
-            collect_para_ids_in_paragraph(paragraph, counts);
+        for child in &footnote.content {
+            match child {
+                FootnoteChild::Paragraph(paragraph) => collect_para_ids_in_paragraph(paragraph, counts),
+                FootnoteChild::Table(table) => collect_para_ids_in_table(table, counts),
+            }
         }
     }
 }
@@ -1145,8 +1165,11 @@ fn refresh_para_ids_in_docx(
     }
 
     for footnote in &mut docx.footnotes.footnotes {
-        for paragraph in &mut footnote.content {
-            refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen);
+        for child in &mut footnote.content {
+            match child {
+                FootnoteChild::Paragraph(paragraph) => refresh_para_ids_in_paragraph(paragraph, duplicates, used, seen),
+                FootnoteChild::Table(table) => refresh_para_ids_in_table(table, duplicates, used, seen),
+            }
         }
     }
 }

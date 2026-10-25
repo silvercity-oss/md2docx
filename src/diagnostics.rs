@@ -70,16 +70,6 @@ codes! {
     ImageDisabled => ("image.disabled", Warning, "a local image was not embedded because image access is disabled"),
     /// The bytes are not a PNG, JPEG or GIF this build can decode, or are corrupt.
     ImageUnsupported => ("image.unsupported", Warning, "an image could not be embedded (unsupported or corrupt)"),
-    /// A picture inside a footnote is shown as its alt text.
-    FootnoteImage => ("footnote.image", Warning, "a picture inside a footnote was replaced by its alt text"),
-    /// A diagram inside a footnote is replaced by a placeholder.
-    FootnoteDiagram => ("footnote.diagram", Warning, "a diagram inside a footnote was replaced by a placeholder"),
-    /// An equation inside a footnote is shown as its LaTeX source.
-    FootnoteMath => ("footnote.math", Warning, "an equation inside a footnote is shown as LaTeX source text"),
-    /// A table inside a footnote is dropped.
-    FootnoteTable => ("footnote.table", Warning, "a table inside a footnote was dropped"),
-    /// A hyperlink inside a footnote keeps its text but loses its target.
-    FootnoteLink => ("footnote.link", Warning, "a link inside a footnote lost its target"),
     /// A footnote reference inside a footnote is left as written.
     FootnoteNested => ("footnote.nested", Warning, "a footnote reference inside a footnote was left as text"),
     /// `[^label]` with no definition is left as written.

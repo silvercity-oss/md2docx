@@ -139,6 +139,25 @@ fn libreoffice_opens_saves_and_reopens_every_fixture() {
                     notes.contains("The first note") && notes.contains("The second note"),
                     "{notes}"
                 );
+                // (LibreOffice cannot hold a table inside a footnote and drops it when saving; Word
+                // can. The table is asserted on the file we write, in tests/footnote_content.rs.)
+                assert!(
+                    zip_text(&original.docx, "word/footnotes.xml").contains("<w:tbl>"),
+                    "{stem}: the table in the footnote was not written"
+                );
+                assert!(
+                    notes.contains("<w:drawing>"),
+                    "{stem}: the picture in the footnote was lost"
+                );
+                assert!(
+                    notes.contains("<m:oMath"),
+                    "{stem}: the equation in the footnote was flattened"
+                );
+                assert!(
+                    notes.contains("w:hyperlink")
+                        || zip_text(&saved_bytes, "word/_rels/footnotes.xml.rels").contains("example.com/note"),
+                    "{stem}: the link in the footnote was lost"
+                );
             }
             "05-diagram" => {
                 assert_eq!(document.matches("<w:drawing>").count(), 1);

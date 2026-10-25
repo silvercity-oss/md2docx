@@ -5,10 +5,10 @@
 //! dependency collectors complete when new package metadata is added.
 
 use crate::docx::{
-    Delete, DeleteChild, Document, DocumentChild, DrawingData, Footer, FooterChild, Header, HeaderChild, Hyperlink,
-    Insert, InsertChild, MoveFrom, MoveFromChild, MoveTo, MoveToChild, Paragraph, ParagraphChild, Pic, Run, RunChild,
-    Section, SectionChild, StructuredDataTag, StructuredDataTagChild, Table, TableCellContent, TableChild,
-    TableOfContents, TableRowChild,
+    Delete, DeleteChild, Document, DocumentChild, DrawingData, Footer, FooterChild, FootnoteChild, Footnotes, Header,
+    HeaderChild, Hyperlink, Insert, InsertChild, MoveFrom, MoveFromChild, MoveTo, MoveToChild, Paragraph,
+    ParagraphChild, Pic, Run, RunChild, Section, SectionChild, StructuredDataTag, StructuredDataTagChild, Table,
+    TableCellContent, TableChild, TableOfContents, TableRowChild,
 };
 
 /// Receives package-relevant nodes while the document tree is traversed.
@@ -27,6 +27,9 @@ pub(crate) trait DocumentTreeVisitor {
     /// Visits an embedded DrawingML picture.
     fn visit_picture(&mut self, _picture: &mut Pic) {}
 
+    /// Visits a hyperlink before its children are traversed.
+    fn visit_hyperlink(&mut self, _link: &Hyperlink) {}
+
     /// Visits a footnote reference stored in a run.
     fn visit_footnote_reference(&mut self, _reference: &crate::docx::FootnoteReference) {}
 }
@@ -38,6 +41,18 @@ pub(crate) trait DocumentTreeVisitor {
 pub(crate) fn visit_document(document: &mut Document, visitor: &mut impl DocumentTreeVisitor) {
     for child in &mut document.children {
         visit_document_child(child, visitor);
+    }
+}
+
+/// Traverses the content of every footnote (a relationship scope of its own).
+pub(crate) fn visit_footnotes(footnotes: &mut Footnotes, visitor: &mut impl DocumentTreeVisitor) {
+    for footnote in &mut footnotes.footnotes {
+        for child in &mut footnote.content {
+            match child {
+                FootnoteChild::Paragraph(paragraph) => visit_paragraph(paragraph, visitor),
+                FootnoteChild::Table(table) => visit_table(table, visitor),
+            }
+        }
     }
 }
 
@@ -157,6 +172,7 @@ fn visit_paragraph_children(children: &mut [ParagraphChild], visitor: &mut impl 
 }
 
 fn visit_hyperlink(link: &mut Hyperlink, visitor: &mut impl DocumentTreeVisitor) {
+    visitor.visit_hyperlink(link);
     visit_paragraph_children(&mut link.children, visitor);
 }
 

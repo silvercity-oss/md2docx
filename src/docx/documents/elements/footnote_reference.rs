@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::docx::documents::BuildXML;
-use crate::docx::{xml_builder::*, Footnote, Paragraph};
+use crate::docx::{xml_builder::*, Footnote, FootnoteChild};
 
 #[derive(Debug, Clone, PartialEq)]
 
@@ -9,7 +9,7 @@ pub struct FootnoteReference {
     pub id: usize,
     pub custom_mark_follows: Option<bool>,
     pub style: String,
-    pub content: Vec<Paragraph>,
+    pub content: Vec<FootnoteChild>,
 }
 
 impl FootnoteReference {}

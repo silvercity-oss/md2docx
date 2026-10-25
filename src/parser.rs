@@ -27,7 +27,6 @@ use crate::extend::TagStyle;
 use crate::highlight::{self, Span, Theme, TokenClass};
 use crate::html::{self, Piece};
 use crate::images::{ImagePipeline, Outcome, Picture, Unsupported};
-use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
 use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
 
@@ -257,6 +256,8 @@ struct OmmlSlot {
     xml: String,
     /// Decided when the paragraph is flushed: replace the whole `<w:p>`.
     block: bool,
+    /// The marker is in `footnotes.xml` rather than `document.xml`.
+    footnote: bool,
 }
 
 /// A footnote definition: its events with their source ranges, and the whole definition's range.
@@ -1250,7 +1251,7 @@ impl<'a> Builder<'a> {
         }
         let dest = ctx.dest.as_str();
         // The host's own byte assets come first: the document only names a key.
-        if !self.in_footnote {
+        {
             if let Some(bytes) = self.resolve_asset(dest)? {
                 let origin = format!("asset `{}`", sanitize_xml_chars(dest));
                 if let Some(why) = self.embed(
@@ -1277,13 +1278,8 @@ impl<'a> Builder<'a> {
         // Remote and inline images are never fetched or decoded (no network
         // access by design); keep the alt text so nothing vanishes silently.
         let remote = lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("data:");
-        if remote || self.in_footnote || self.cfg.image_access == ImageAccess::None {
-            if self.in_footnote {
-                self.note(
-                    Code::FootnoteImage,
-                    format!("image `{}` inside a footnote was replaced by its alt text", short(dest)),
-                );
-            } else if remote {
+        if remote || self.cfg.image_access == ImageAccess::None {
+            if remote {
                 self.note(
                     Code::ImageRemote,
                     format!(
@@ -1326,26 +1322,6 @@ impl<'a> Builder<'a> {
     }
 
     fn asset(&mut self, asset: &Asset) -> Result<()> {
-        if self.in_footnote {
-            // Footnote parts cannot carry pictures or OMML here; show the source.
-            match asset.kind {
-                AssetKind::Graph => {
-                    self.note(
-                        Code::FootnoteDiagram,
-                        "a diagram inside a footnote was replaced by a placeholder",
-                    );
-                    self.placeholder("", "diagram");
-                }
-                _ => {
-                    self.note(
-                        Code::FootnoteMath,
-                        "an equation inside a footnote is shown as its LaTeX source",
-                    );
-                    self.text(&asset.original);
-                }
-            }
-            return Ok(());
-        }
         let dpi = match asset.kind {
             AssetKind::Graph => self.cfg.graphs.dpi,
             // Formulas are typeset at 12pt; body text is 11pt.
@@ -1363,6 +1339,7 @@ impl<'a> Builder<'a> {
                 self.omml.push(OmmlSlot {
                     xml: body.clone(),
                     block: false,
+                    footnote: self.in_footnote,
                 });
                 self.push(Child::Omml {
                     slot: self.omml.len() - 1,
@@ -1817,8 +1794,8 @@ impl<'a> Builder<'a> {
 
     fn footnote_reference(&mut self, label: &str) -> Result<()> {
         let key = label.to_lowercase();
-        let (events, def_range) = match self.footnotes.get(&key) {
-            Some(def) if !self.in_footnote => (def.events.clone(), def.range.clone()),
+        let events = match self.footnotes.get(&key) {
+            Some(def) if !self.in_footnote => def.events.clone(),
             _ => {
                 // Unknown label, or a reference inside a footnote: keep it as written.
                 if self.in_footnote {
@@ -1855,35 +1832,47 @@ impl<'a> Builder<'a> {
         let mut sub = Builder::new(self.pre, self.cfg, self.nonce.clone());
         sub.in_footnote = true;
         sub.anchors = Arc::clone(&self.anchors);
+        // One budget for the whole document: the footnote's pictures, equations and element
+        // count are charged to the same pipeline and slot list as the body's.
         sub.elements = self.elements;
-        for (ev, range) in events {
-            sub.at = range;
-            sub.feed(ev)?;
-        }
-        sub.flush();
+        sub.images = std::mem::take(&mut self.images);
+        sub.resolved = std::mem::take(&mut self.resolved);
+        sub.omml = std::mem::take(&mut self.omml);
+        let fed = (|| -> Result<()> {
+            for (ev, range) in events {
+                sub.at = range;
+                sub.feed(ev)?;
+            }
+            sub.flush();
+            Ok(())
+        })();
         self.elements = sub.elements;
+        self.images = std::mem::take(&mut sub.images);
+        self.resolved = std::mem::take(&mut sub.resolved);
+        self.omml = std::mem::take(&mut sub.omml);
+        fed?;
         if let Some(e) = sub.budget_error.take() {
             return Err(e);
         }
+        self.stats.pictures += sub.stats.pictures;
+        self.stats.tables += sub.stats.tables;
+        self.stats.equations += sub.stats.equations;
+        self.stats.hyperlinks += sub.stats.hyperlinks;
+        self.stats.code_blocks += sub.stats.code_blocks;
         self.diags.absorb(std::mem::take(&mut sub.diags));
         let mut note = Footnote::new();
         let mut any = false;
-        let mut tables = 0usize;
         for block in sub.blocks {
             match block {
                 Block::Para(p) => {
                     note.add_content(*p);
                     any = true;
                 }
-                Block::Table(_) => tables += 1,
+                Block::Table(t) => {
+                    note.add_table(*t);
+                    any = true;
+                }
             }
-        }
-        if tables > 0 {
-            self.diags.push(
-                Code::FootnoteTable,
-                format!("{tables} table(s) inside footnote [^{label}] were dropped"),
-                Loc::Rewritten(def_range),
-            );
         }
         if !any {
             note.add_content(Paragraph::new());
@@ -2171,7 +2160,7 @@ impl<'a> Builder<'a> {
                 if let Some(link) = self.link.take() {
                     // `[x](#some-heading)` jumps to that heading.
                     let heading = link.url.strip_prefix('#').and_then(|f| self.heading_for(f));
-                    if let (Some(n), false) = (heading, self.in_footnote) {
+                    if let Some(n) = heading {
                         self.finish_link(LinkTarget::Heading(n), link.children);
                         return Ok(());
                     }
@@ -2227,22 +2216,6 @@ impl<'a> Builder<'a> {
     }
 
     fn finish_link(&mut self, target: LinkTarget, children: Vec<Child>) {
-        if self.in_footnote {
-            self.note(
-                Code::FootnoteLink,
-                "a link inside a footnote keeps its text but loses its target",
-            );
-            // footnotes.xml has no relationships part here, so a hyperlink would point at a
-            // relationship id that does not exist and make the package invalid. Keep the
-            // text, styled as a link.
-            for c in children {
-                match c {
-                    Child::Run(r) | Child::Picture { run: r, .. } => self.push(Child::Run(r.style("Hyperlink"))),
-                    other => self.push(other),
-                }
-            }
-            return;
-        }
         let mut h = match target {
             LinkTarget::External(url) => Hyperlink::new(url, HyperlinkType::External),
             LinkTarget::Heading(n) => Hyperlink::new(bookmark_name(n), HyperlinkType::Anchor),
@@ -2329,10 +2302,10 @@ fn rfind_open(doc: &str, tag: &str, before: usize) -> Option<usize> {
 /// Each marker is located with a forward-moving cursor (markers occur in slot
 /// order) and the output is assembled in one pass, so the cost is linear in
 /// the document size however many equations it holds.
-fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
+fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> Result<String> {
     let mut edits: Vec<(usize, usize, String)> = Vec::with_capacity(slots.len());
     let mut cursor = 0;
-    for (idx, slot) in slots.iter().enumerate() {
+    for (idx, slot) in slots.iter().enumerate().filter(|(_, s)| s.footnote == footnotes) {
         let m = marker(nonce, idx);
         let lost = || CrateError::DocxGenerationError(format!("equation placeholder {idx} missing from document.xml"));
         let at = match doc[cursor..].find(&m) {
@@ -2378,7 +2351,8 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
     }
     out.push_str(&doc[last..]);
     // Declare the math namespace on the root, as Word does.
-    ensure_math_namespace(&out).map_err(|e| CrateError::DocxGenerationError(e.to_string()))
+    crate::omml::ensure_math_namespace_in(&out, if footnotes { "<w:footnotes" } else { "<w:document" })
+        .map_err(|e| CrateError::DocxGenerationError(e.to_string()))
 }
 
 // ------------------------------------------------------------------ driver
@@ -2532,7 +2506,12 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
         debug_assert!(cfg.math.mode == MathMode::NativeOmml);
         let xml = String::from_utf8(std::mem::take(&mut parts.document))
             .map_err(|e| CrateError::DocxGenerationError(format!("document.xml is not UTF-8: {e}")))?;
-        parts.document = inject_omml(&xml, &b.nonce, &b.omml)?.into_bytes();
+        parts.document = inject_omml(&xml, &b.nonce, &b.omml, false)?.into_bytes();
+        if b.omml.iter().any(|s| s.footnote) {
+            let notes = String::from_utf8(std::mem::take(&mut parts.footnotes))
+                .map_err(|e| CrateError::DocxGenerationError(format!("footnotes.xml is not UTF-8: {e}")))?;
+            parts.footnotes = inject_omml(&notes, &b.nonce, &b.omml, true)?.into_bytes();
+        }
     }
 
     let in_memory = crate::pack::uncompressed_size(&parts);

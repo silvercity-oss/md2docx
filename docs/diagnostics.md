@@ -13,11 +13,6 @@ Get them with `convert` / `convert_file` (with the document), `analyze` (without
 | `image.remote` | warning | A remote or inline image was not embedded. | Embed the image through an `ImageResolver`/`AssetMap` (the key may be the URL itself), or accept the alt text. |
 | `image.disabled` | warning | A local image was not embedded because image access is disabled. | Supply the bytes through an `ImageResolver`/`AssetMap`; for your own documents use `Config::trusted()`. |
 | `image.unsupported` | warning | An image could not be embedded (unsupported or corrupt). | Use PNG, JPEG or GIF; check the file is not truncated. |
-| `footnote.image` | warning | A picture inside a footnote was replaced by its alt text. | Move the picture out of the footnote. |
-| `footnote.diagram` | warning | A diagram inside a footnote was replaced by a placeholder. | Move the diagram out of the footnote. |
-| `footnote.math` | warning | An equation inside a footnote is shown as LaTeX source text. | Move the equation into the text, or accept the LaTeX source. |
-| `footnote.table` | warning | A table inside a footnote was dropped. | Move the table out of the footnote. |
-| `footnote.link` | warning | A link inside a footnote lost its target. | Write the address out as text in the footnote. |
 | `footnote.nested` | warning | A footnote reference inside a footnote was left as text. | Do not reference footnotes from footnotes. |
 | `footnote.undefined` | warning | A footnote reference has no definition. | Add the definition `[^label]: text`, or escape the bracket. |
 | `footnote.unreferenced` | warning | A footnote definition is never referenced, so its content was dropped. | Reference it from the text, or delete the definition. |

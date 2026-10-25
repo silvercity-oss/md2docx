@@ -22,6 +22,8 @@ pub struct XMLDocx {
     pub header_rels: Vec<Vec<u8>>,
     pub footers: Vec<Vec<u8>>,
     pub footer_rels: Vec<Vec<u8>>,
+    /// `word/_rels/footnotes.xml.rels`; empty when no footnote has a picture or link.
+    pub footnote_rels: Vec<u8>,
     pub comments_extended: Vec<u8>,
     pub taskpanes: Option<Vec<u8>>,
     pub taskpanes_rels: Vec<u8>,

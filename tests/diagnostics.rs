@@ -69,18 +69,6 @@ fn unsupported_image_bytes_are_reported_even_when_the_host_supplied_them() {
 }
 
 #[test]
-fn footnote_content_that_cannot_be_kept_is_reported_at_its_definition() {
-    let md = "x[^1] y[^2] z[^3]\n\n[^1]: ![pic](pic.png)\n\n[^2]: see [site](https://example.com) and $q$\n\n[^3]: intro\n\n    | a | b |\n    |---|---|\n    | 1 | 2 |\n";
-    let cfg = Config::native_math().with_image_access(silvercity_oss::ImageAccess::None);
-    let d = convert(md, &cfg).unwrap().diagnostics;
-    assert_eq!(at(md, only(&d, Code::FootnoteImage)), "![pic](pic.png)");
-    assert!(only(&d, Code::FootnoteLink).span.is_some());
-    assert_eq!(at(md, only(&d, Code::FootnoteMath)), "$q$");
-    let table = only(&d, Code::FootnoteTable);
-    assert!(at(md, table).starts_with("[^3]:"), "{}", at(md, table));
-}
-
-#[test]
 fn footnote_references_without_a_home_are_reported() {
     let md = "Known[^a], unknown[^zz].\n\n[^a]: Has a body with a nested ref[^a].\n\n[^unused]: Nobody points here.\n";
     let d = run(md);

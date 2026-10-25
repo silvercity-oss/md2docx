@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::document_tree::{visit_document, visit_footer, visit_header, DocumentTreeVisitor};
+use super::document_tree::{visit_document, visit_footer, visit_footnotes, visit_header, DocumentTreeVisitor};
 use crate::docx::{Document, Footer, Footnote, FootnoteReference, Header, ImageIdAndBuf, ImageIdAndPath, Pic};
 
 /// Stores physical media once for the entire OPC package.
@@ -93,6 +93,8 @@ impl MediaRegistry {
 /// Data collected from one relationship scope during a tree walk.
 pub(crate) struct CollectedPart {
     pub(crate) relationships: Vec<ImageIdAndPath>,
+    /// External hyperlinks (relationship id, target) met in this part.
+    pub(crate) hyperlinks: Vec<(String, String)>,
     pub(crate) footnotes: Vec<Footnote>,
 }
 
@@ -111,6 +113,8 @@ struct PackagePartCollector<'a> {
     /// Maps media to the owning relationship entry, avoiding another owned ID.
     relationships_by_media: HashMap<usize, usize>,
     footnotes: Vec<Footnote>,
+    hyperlinks: Vec<(String, String)>,
+    seen_links: HashSet<String>,
 }
 
 impl<'a> PackagePartCollector<'a> {
@@ -123,12 +127,15 @@ impl<'a> PackagePartCollector<'a> {
             next_relationship_suffix_by_id: HashMap::new(),
             relationships_by_media: HashMap::new(),
             footnotes: Vec::new(),
+            hyperlinks: Vec::new(),
+            seen_links: HashSet::new(),
         }
     }
 
     fn finish(self) -> CollectedPart {
         CollectedPart {
             relationships: self.relationships,
+            hyperlinks: self.hyperlinks,
             footnotes: self.footnotes,
         }
     }
@@ -185,6 +192,14 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
         self.relationships.push((relationship_id, target));
     }
 
+    fn visit_hyperlink(&mut self, link: &crate::docx::Hyperlink) {
+        if let crate::docx::HyperlinkData::External { rid, path } = &link.link {
+            if self.seen_links.insert(rid.clone()) {
+                self.hyperlinks.push((rid.clone(), path.clone()));
+            }
+        }
+    }
+
     fn visit_footnote_reference(&mut self, reference: &FootnoteReference) {
         self.footnotes.push(reference.into());
     }
@@ -194,6 +209,16 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
 pub(crate) fn collect_document_part(document: &mut Document, registry: &mut MediaRegistry) -> CollectedPart {
     let mut collector = PackagePartCollector::new(registry, None);
     visit_document(document, &mut collector);
+    collector.finish()
+}
+
+/// Collects pictures and links used inside footnotes (their own relationship scope).
+pub(crate) fn collect_footnote_part(
+    footnotes: &mut crate::docx::Footnotes,
+    registry: &mut MediaRegistry,
+) -> CollectedPart {
+    let mut collector = PackagePartCollector::new(registry, Some("footnote"));
+    visit_footnotes(footnotes, &mut collector);
     collector.finish()
 }
 
