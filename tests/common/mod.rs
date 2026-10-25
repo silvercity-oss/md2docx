@@ -45,6 +45,16 @@ pub fn zip_text(docx: &[u8], name: &str) -> String {
     s.replace(" />", "/>")
 }
 
+pub fn zip_bytes(docx: &[u8], name: &str) -> Vec<u8> {
+    let mut z = zip::ZipArchive::new(Cursor::new(docx)).unwrap();
+    let mut v = Vec::new();
+    z.by_name(name)
+        .unwrap_or_else(|_| panic!("{name} missing"))
+        .read_to_end(&mut v)
+        .unwrap();
+    v
+}
+
 pub fn media_count(docx: &[u8]) -> usize {
     zip_entries(docx)
         .iter()

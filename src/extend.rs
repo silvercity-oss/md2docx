@@ -140,6 +140,93 @@ where
     }
 }
 
+/// Supplies the bytes of images the document refers to, chosen by the **host**.
+///
+/// This is how an embedder that stores its own images (an object store, a database, a set of
+/// accepted attachments) gives the converter exact bytes without letting the document pick a
+/// file path or a URL: the Markdown only names a key, and nothing is read from disk or fetched
+/// from the network for it. Register one with
+/// [`Config::with_image_resolver`](crate::Config::with_image_resolver). [`AssetMap`] covers the
+/// common case of a fixed set.
+///
+/// ```
+/// use silvercity_oss::{markdown_to_docx, AssetMap, Config};
+///
+/// # fn png() -> Vec<u8> { let mut p = Vec::new(); image::RgbaImage::new(40, 20)
+/// #     .write_to(&mut std::io::Cursor::new(&mut p), image::ImageFormat::Png).unwrap(); p }
+/// let mut assets = AssetMap::new();
+/// assets.insert("accepted/diagram-7", png());
+/// let cfg = Config::default().with_image_resolver(assets);
+/// let docx = markdown_to_docx("![Login flow](accepted/diagram-7)", &cfg).unwrap();
+/// assert!(docx.starts_with(b"PK"));
+/// ```
+///
+/// # Contract
+///
+/// * `reference` is the destination exactly as written in the Markdown (`![alt](reference)`,
+///   `<img src="reference">`). It is untrusted text: look it up, never open it as a path.
+/// * Return `Ok(Some(bytes))` to supply the image, `Ok(None)` for "not mine" (the converter then
+///   falls back to [`Config::image_access`](crate::Config) and, for the default
+///   [`ImageAccess::None`](crate::ImageAccess), shows the alt text), or `Err` to fail the
+///   conversion.
+/// * The bytes are held to the same limits as any other image and fully decoded and
+///   re-encoded; they are never trusted because the host supplied them.
+/// * Called on the converting thread, at most once per distinct reference per conversion. A
+///   panic is caught and reported as an error. The call is synchronous and cannot be
+///   interrupted.
+pub trait ImageResolver: Send + Sync {
+    /// The bytes for `reference`, if the host has them.
+    fn resolve(&self, reference: &str) -> Result<Option<Arc<[u8]>>, FenceError>;
+}
+
+impl<F> ImageResolver for F
+where
+    F: Fn(&str) -> Result<Option<Arc<[u8]>>, FenceError> + Send + Sync,
+{
+    fn resolve(&self, reference: &str) -> Result<Option<Arc<[u8]>>, FenceError> {
+        self(reference)
+    }
+}
+
+impl fmt::Debug for dyn ImageResolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ImageResolver")
+    }
+}
+
+/// A fixed set of images keyed by the reference the Markdown uses; an [`ImageResolver`].
+#[derive(Debug, Clone, Default)]
+pub struct AssetMap(BTreeMap<String, Arc<[u8]>>);
+
+impl AssetMap {
+    /// An empty map.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Make `bytes` available as `![..](key)`. Replaces an earlier entry for `key`.
+    pub fn insert(&mut self, key: impl Into<String>, bytes: impl Into<Arc<[u8]>>) -> &mut Self {
+        self.0.insert(key.into(), bytes.into());
+        self
+    }
+
+    /// Number of images.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// True when the map holds no image.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl ImageResolver for AssetMap {
+    fn resolve(&self, reference: &str) -> Result<Option<Arc<[u8]>>, FenceError> {
+        Ok(self.0.get(reference).cloned())
+    }
+}
+
 /// The renderers registered on a [`Config`](crate::Config), by lower-case
 /// fence language.
 #[derive(Clone, Default)]

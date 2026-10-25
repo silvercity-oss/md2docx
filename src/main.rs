@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 use silvercity_oss::{
-    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, DiagramFailure, Highlighting,
-    ImageAccess as LibImageAccess, MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Theme,
+    convert_file, CodeBlockLayout, CommandSpec, Config, DiagramFailure, Highlighting, ImageAccess as LibImageAccess,
+    LossPolicy, MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Severity, Theme,
 };
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +152,26 @@ pub struct Args {
 
     #[arg(
         long,
+        help = "Fail instead of writing a document that could not be converted faithfully (a dropped image or link, a diagram left as code, an unknown LaTeX command, ...). Every problem is listed with its line and column"
+    )]
+    pub strict: bool,
+
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Create the temporary working directory under DIR instead of the system temp directory (DIR must exist)"
+    )]
+    pub scratch_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        help = "Stop the whole conversion after this long [default: none; 120 with --untrusted]"
+    )]
+    pub deadline: Option<u64>,
+
+    #[arg(
+        long,
         help = "If a mermaid/dolphin block cannot be rendered (tool missing, invalid diagram), keep it as a code block instead of failing"
     )]
     pub keep_failed_diagrams: bool,
@@ -223,6 +243,15 @@ fn config(args: &Args) -> Config {
         cfg
     };
     cfg.compression_level = args.compression_level;
+    if args.strict {
+        cfg.loss_policy = LossPolicy::Reject;
+    }
+    if let Some(dir) = &args.scratch_dir {
+        cfg.scratch_dir = Some(dir.clone());
+    }
+    if let Some(seconds) = args.deadline {
+        cfg.limits.max_conversion_time = Some(Duration::from_secs(seconds));
+    }
     if args.keep_failed_diagrams {
         cfg.graphs.on_failure = DiagramFailure::KeepAsCode;
     }
@@ -299,13 +328,36 @@ fn write_atomically(out: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// `file:line:column: warning[code]: message`, the shape editors and CI understand.
+fn describe(input: &Path, d: &silvercity_oss::Diagnostic) -> String {
+    let place = d
+        .span
+        .as_ref()
+        .map_or_else(String::new, |s| format!(":{}:{}", s.line, s.column));
+    format!("{}{place}: {}[{}]: {}", input.display(), d.severity, d.code, d.message)
+}
+
 fn run(args: &Args) -> Result<PathBuf, String> {
     let out = args.output.clone().unwrap_or_else(|| args.input.with_extension("docx"));
     if is_same_file(&args.input, &out) {
         return Err(format!("refusing to overwrite the input file {}", args.input.display()));
     }
-    let bytes = markdown_file_to_docx(&args.input, &config(args)).map_err(|e| e.to_string())?;
-    write_atomically(&out, &bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    let conversion = match convert_file(&args.input, &config(args)) {
+        Ok(c) => c,
+        Err(silvercity_oss::CrateError::LossyContent { diagnostics }) => {
+            for d in &diagnostics {
+                eprintln!("{}", describe(&args.input, d));
+            }
+            return Err("the document cannot be converted faithfully (--strict); nothing was written".into());
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    for d in &conversion.diagnostics {
+        if d.severity >= Severity::Warning {
+            eprintln!("{}", describe(&args.input, d));
+        }
+    }
+    write_atomically(&out, &conversion.docx).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
     Ok(out)
 }
 

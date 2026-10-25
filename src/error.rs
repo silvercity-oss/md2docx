@@ -47,6 +47,14 @@ pub enum CrateError {
         detail: String,
     },
 
+    /// [`LossPolicy::Reject`](crate::LossPolicy) refused a document that could not be converted
+    /// faithfully. `diagnostics` lists every finding (not only the warnings).
+    #[error("{}", lossy_summary(diagnostics))]
+    LossyContent {
+        /// What could not be carried over, with spans in the original Markdown.
+        diagnostics: Vec<crate::Diagnostic>,
+    },
+
     /// The host cancelled the conversion with a [`CancelToken`](crate::CancelToken).
     #[error("conversion cancelled: {0}")]
     Cancelled(String),
@@ -78,7 +86,10 @@ impl CrateError {
     pub fn is_input_error(&self) -> bool {
         matches!(
             self,
-            CrateError::InvalidMarkdown(_) | CrateError::LimitExceeded(_) | CrateError::UnsafeContent(_)
+            CrateError::InvalidMarkdown(_)
+                | CrateError::LimitExceeded(_)
+                | CrateError::UnsafeContent(_)
+                | CrateError::LossyContent { .. }
         )
     }
 
@@ -87,6 +98,20 @@ impl CrateError {
             path: path.into(),
             source,
         }
+    }
+}
+
+fn lossy_summary(diagnostics: &[crate::Diagnostic]) -> String {
+    let warnings: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity >= crate::Severity::Warning)
+        .collect();
+    match warnings.first() {
+        Some(first) => format!(
+            "the document cannot be converted faithfully ({} finding(s)); first: {first}",
+            warnings.len()
+        ),
+        None => "the document cannot be converted faithfully".to_string(),
     }
 }
 

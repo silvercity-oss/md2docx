@@ -35,7 +35,7 @@ impl GraphKind {
         }
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             GraphKind::Mermaid => "mermaid",
             GraphKind::Dolphin => "dolphin",

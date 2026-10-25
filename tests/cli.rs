@@ -508,3 +508,113 @@ fn output_permissions_follow_the_umask_and_existing_files() {
     assert_eq!(mode(&private), 0o600);
     assert!(std::fs::read(&private).unwrap().starts_with(b"PK"));
 }
+
+// ---- strict mode and diagnostics
+
+#[test]
+fn findings_are_printed_with_line_and_column_and_do_not_stop_a_permissive_run() {
+    let fx = Fixture::new();
+    let input = fx.path("doc.md");
+    std::fs::write(&input, "# Title\n\nSee [the spec](docs/spec.md) for details.\n").unwrap();
+    let out = md2docx(&[path_str(&input)]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("doc.md:3:5: warning[link.dropped]"), "{err}");
+    assert!(fx.path("doc.docx").exists());
+}
+
+#[test]
+fn strict_refuses_a_lossy_document_lists_everything_and_writes_nothing() {
+    let fx = Fixture::new();
+    let input = fx.path("lossy.md");
+    std::fs::write(
+        &input,
+        "[a](gone.md)\n\n![remote](https://example.com/x.png)\n\n```mermaid\ngraph TD\n```\n",
+    )
+    .unwrap();
+    let out = md2docx(&["--strict", "--untrusted", path_str(&input)]);
+    assert!(!out.status.success());
+    let err = stderr(&out);
+    for code in ["link.dropped", "image.remote", "diagram.not-rendered"] {
+        assert!(err.contains(&format!("[{code}]")), "{code} missing:\n{err}");
+    }
+    assert!(err.contains("nothing was written"), "{err}");
+    assert!(!fx.path("lossy.docx").exists());
+    // A clean document passes strict.
+    let clean = fx.path("clean.md");
+    std::fs::write(&clean, "# Fine\n\nJust text and $x^2$.\n").unwrap();
+    assert!(md2docx(&["--strict", path_str(&clean)]).status.success());
+}
+
+#[test]
+fn the_scratch_directory_option_moves_the_working_directory() {
+    let fx = Fixture::new();
+    let root = tempfile::tempdir().unwrap();
+    let input = fx.path("m.md");
+    std::fs::write(&input, "# Math\n\n$$x$$\n").unwrap();
+    assert!(md2docx(&["--scratch-dir", path_str(root.path()), path_str(&input)])
+        .status
+        .success());
+    assert_eq!(
+        std::fs::read_dir(root.path()).unwrap().count(),
+        0,
+        "scratch removed afterwards"
+    );
+    let missing = md2docx(&["--scratch-dir", "/definitely/not/there", path_str(&input)]);
+    // Nothing needs files here (native math), so a bad root is not touched ...
+    assert!(missing.status.success());
+    // ... but a document that does need scratch space says so.
+    let fenced = fx.path("d.md");
+    std::fs::write(&fenced, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
+    let bad = md2docx(&["--scratch-dir", "/definitely/not/there", path_str(&fenced)]);
+    assert!(!bad.status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_force_killed_conversion_leaves_only_what_sweep_scratch_can_recover() {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let fx = Fixture::new();
+    let root = tempfile::tempdir().unwrap();
+    let pidfile = fx.path("tool.pid");
+    let tool = script(
+        fx.dir.path(),
+        "slow-mermaid",
+        &format!("echo $$ > '{}'\nexec sleep 300", pidfile.display()),
+    );
+    let input = fx.path("slow.md");
+    std::fs::write(&input, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        .args([
+            "--scratch-dir",
+            path_str(root.path()),
+            "--mermaid-command",
+            &format!("{tool} {{input}} {{output}}"),
+            path_str(&input),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !pidfile.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(pidfile.exists(), "the tool never started");
+    // Forced termination: no destructor runs.
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let leftovers: Vec<_> = std::fs::read_dir(root.path()).unwrap().flatten().collect();
+    assert_eq!(leftovers.len(), 1, "the job directory is what recovery has to find");
+    assert!(leftovers[0].file_name().to_string_lossy().starts_with("silvercity-"));
+
+    // Recovery by the host, then reaping what the killed worker left running (a real host does
+    // both: the scratch directory is its own, and a cgroup or job object ends the processes).
+    assert_eq!(silvercity_oss::sweep_scratch(root.path(), Duration::ZERO).unwrap(), 1);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_string();
+    let _ = Command::new("kill").args(["-9", &pid]).status();
+}

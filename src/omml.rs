@@ -158,6 +158,13 @@ pub(crate) fn ensure_math_namespace(xml: &str) -> std::result::Result<String, Om
 
 /// Convert LaTeX math (without `$` delimiters) to the inner XML of `<m:oMath>`.
 pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
+    latex_to_omml_checked(latex).map(|(xml, _)| xml)
+}
+
+/// Like [`latex_to_omml`], and also lists the commands the converter does not know, in order of
+/// first use (at most 16, without repeats). An unknown command is not an error: it is kept in the
+/// equation as visible literal text, and this list is how a caller learns that happened.
+pub fn latex_to_omml_checked(latex: &str) -> std::result::Result<(String, Vec<String>), OmmlError> {
     if let Some(c) = latex.chars().find(|&c| !crate::safety::is_xml_char(c)) {
         return err(format!("character U+{:04X} cannot appear in a document", c as u32));
     }
@@ -165,6 +172,7 @@ pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
         s: latex.chars().collect(),
         i: 0,
         depth: 0,
+        unknown: Vec::new(),
     };
     let nodes = p.seq(&Style::default(), false)?;
     if p.i < p.s.len() {
@@ -181,7 +189,7 @@ pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
     }
     let mut out = String::new();
     render_seq(&nodes, &mut out);
-    Ok(out)
+    Ok((out, p.unknown))
 }
 
 // ---------------------------------------------------------------- parsing
@@ -195,6 +203,8 @@ struct Parser {
     s: Vec<char>,
     i: usize,
     depth: usize,
+    /// Commands that were not recognised (first 16, distinct).
+    unknown: Vec<String>,
 }
 
 fn is_nary_body_stop(c: char) -> bool {
@@ -544,8 +554,15 @@ impl Parser {
                         s: raw.chars().collect(),
                         i: 0,
                         depth: self.depth,
+                        unknown: Vec::new(),
                     };
-                    return p.seq(&st, false);
+                    let nodes = p.seq(&st, false);
+                    for u in p.unknown {
+                        if self.unknown.len() < 16 && !self.unknown.contains(&u) {
+                            self.unknown.push(u);
+                        }
+                    }
+                    return nodes;
                 }
                 return Ok(vec![self.run(raw, &st)]);
             }
@@ -658,6 +675,9 @@ impl Parser {
         }
 
         // Unknown: keep it visible rather than silently dropping content.
+        if self.unknown.len() < 16 && !self.unknown.iter().any(|u| u == n) {
+            self.unknown.push(n.to_string());
+        }
         Ok(vec![self.run(
             format!("\\{n}"),
             &Style {

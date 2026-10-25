@@ -52,7 +52,13 @@ pub(crate) fn closes_hidden(raw: &str, name: &str) -> bool {
     raw.to_ascii_lowercase().contains(&format!("</{name}"))
 }
 
+#[cfg(test)]
 pub(crate) fn tokenize(html: &str) -> Vec<Piece> {
+    tokenize_reporting(html, &mut Vec::new())
+}
+
+/// Like [`tokenize`], and records the name of every hidden element whose content was dropped.
+pub(crate) fn tokenize_reporting(html: &str, dropped: &mut Vec<String>) -> Vec<Piece> {
     let lower = html.to_ascii_lowercase(); // same byte offsets as `html`
     let mut out = Vec::new();
     let mut text = String::new();
@@ -116,6 +122,9 @@ pub(crate) fn tokenize(html: &str) -> Vec<Piece> {
         let attrs = html[attrs_start..end].trim_end_matches('/').trim().to_string();
         i = end + 1;
         if !closing && HIDDEN.contains(&name.as_str()) {
+            if dropped.len() < 16 {
+                dropped.push(name.clone());
+            }
             let close = format!("</{name}");
             i = lower[i..].find(&close).map_or(html.len(), |e| {
                 let from = i + e;

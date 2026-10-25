@@ -83,6 +83,7 @@
 
 mod config;
 mod control;
+mod diagnostics;
 mod docx;
 mod error;
 mod extend;
@@ -114,18 +115,35 @@ pub use config::{
     MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize,
 };
 pub use control::CancelToken;
+pub use diagnostics::{Code, Diagnostic, LossPolicy, Report, Severity, SourceSpan, Stats};
 pub use error::{CrateError, Result};
-pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, RenderContext, TagStyle};
+pub use extend::{
+    AssetMap, BlockStyle, FenceError, FenceRenderer, FenceRenderers, ImageResolver, RenderContext, TagStyle,
+};
 pub use highlight::{BuiltinHighlighter, Highlighter, Highlighting, Span, Theme, TokenClass, TokenStyle};
 pub use renderer::sweep_scratch;
+
+/// A finished document with what the conversion found.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Conversion {
+    /// The `.docx` file.
+    pub docx: Vec<u8>,
+    /// What could not be carried over faithfully, and what was merely noted. Empty of
+    /// [`Severity::Warning`] findings exactly when the document matches its source.
+    pub diagnostics: Vec<Diagnostic>,
+    /// What was produced, for cross-checking against a preview.
+    pub stats: Stats,
+}
 
 /// Convert Markdown text to the bytes of a `.docx` file.
 ///
 /// Returns [`CrateError::InvalidConfig`] for out-of-range options before doing
-/// any work.
+/// any work. Findings are not returned: use [`convert`] to see them, or set
+/// [`LossPolicy::Reject`] on the [`Config`] to make a lossy document an error.
 pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
     let mut out = std::io::Cursor::new(Vec::new());
-    markdown_to_docx_writer(markdown, config, &mut out)?;
+    convert_to_writer(markdown, config, &mut out)?;
     Ok(out.into_inner())
 }
 
@@ -134,15 +152,56 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 /// before packaging. If packaging itself fails (including the result exceeding
 /// `Limits::max_output_bytes`), the writer may hold a partial archive: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
+    convert_to_writer(markdown, config, writer).map(|_| ())
+}
+
+/// Like [`markdown_to_docx`], and also returns the findings and statistics.
+///
+/// With the default [`LossPolicy::Allow`] a document that had to be degraded is returned with
+/// [`Severity::Warning`] diagnostics saying what and where (spans point into `markdown`). With
+/// [`LossPolicy::Reject`] such a document is [`CrateError::LossyContent`] and nothing is
+/// returned.
+pub fn convert(markdown: &str, config: &Config) -> Result<Conversion> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    let report = convert_to_writer(markdown, config, &mut out)?;
+    Ok(Conversion {
+        docx: out.into_inner(),
+        diagnostics: report.diagnostics,
+        stats: report.stats,
+    })
+}
+
+/// Like [`markdown_to_docx_writer`], and returns the findings and statistics.
+pub fn convert_to_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<Report> {
     config.validate()?;
     let ctl = control::Ctl::new(config);
     let pre = preprocess::preprocess_with(markdown, config, &ctl)?;
-    parser::build_docx(&pre, config, writer)
+    parser::build_docx(&pre, config, markdown, writer)
+}
+
+/// Run the whole conversion except writing the archive, and return what it found.
+///
+/// This applies the same limits, renders the same diagrams and formulas and builds the same
+/// document as [`convert`], so the findings match what a real conversion reports, at a fraction of
+/// the cost (nothing is compressed or kept). [`Config::loss_policy`] is not applied: the caller
+/// decides what to do with the findings. Use it to preview or validate before committing to a
+/// conversion.
+pub fn analyze(markdown: &str, config: &Config) -> Result<Report> {
+    config.validate()?;
+    let ctl = control::Ctl::new(config);
+    let pre = preprocess::preprocess_with(markdown, config, &ctl)?;
+    parser::build_parts(&pre, config, markdown).map(|built| built.report)
 }
 
 /// Convert a Markdown file. Relative image paths resolve against the file's
 /// directory unless `config.base_dir` is set.
 pub fn markdown_file_to_docx(path: &Path, config: &Config) -> Result<Vec<u8>> {
+    convert_file(path, config).map(|c| c.docx)
+}
+
+/// Like [`markdown_file_to_docx`], and also returns the findings and statistics. Spans refer to
+/// the file's text.
+pub fn convert_file(path: &Path, config: &Config) -> Result<Conversion> {
     // Bounded read: a huge file or a device like /dev/zero must not be slurped into memory.
     let max = u64::try_from(config.limits.max_input_bytes).unwrap_or(u64::MAX);
     let bytes = safety::read_regular_file(path, &path.display().to_string(), max)?;
@@ -156,5 +215,5 @@ pub fn markdown_file_to_docx(path: &Path, config: &Config) -> Result<Vec<u8>> {
             .map(|p| if p.as_os_str().is_empty() { Path::new(".") } else { p })
             .map(Path::to_path_buf);
     }
-    markdown_to_docx(&text, &cfg)
+    convert(&text, &cfg)
 }

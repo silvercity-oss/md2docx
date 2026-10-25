@@ -5,7 +5,8 @@
 //! runs and swapped for real `<m:oMath>` XML in the rendered `document.xml`
 //! before the package is zipped (see [`inject_omml`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -16,16 +17,16 @@ use crate::docx::{
     Shading, SpecialIndentType, Start, Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
 };
 use pulldown_cmark::{
-    Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
-    TextMergeStream,
+    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
 };
 
 use crate::config::{CodeBlockLayout, Config, ImageAccess, MathMode};
+use crate::diagnostics::{Code, Collector, Loc, Report, Stats};
 use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
 use crate::highlight::{self, Span, Theme, TokenClass};
 use crate::html::{self, Piece};
-use crate::images::{ImagePipeline, Outcome, Picture};
+use crate::images::{ImagePipeline, Outcome, Picture, Unsupported};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
 use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
@@ -258,6 +259,46 @@ struct OmmlSlot {
     block: bool,
 }
 
+/// A footnote definition: its events with their source ranges, and the whole definition's range.
+struct FootnoteDef<'a> {
+    events: Vec<(Event<'a>, Range<usize>)>,
+    range: Range<usize>,
+}
+
+/// `Parser` events with their source ranges and adjacent text merged (escapes, entities and stray
+/// delimiters become one run, not one each), like `pulldown_cmark::TextMergeStream` does without
+/// ranges.
+struct MergedEvents<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> {
+    inner: std::iter::Peekable<I>,
+}
+
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> Iterator for MergedEvents<'a, I> {
+    type Item = (Event<'a>, Range<usize>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (event, mut range) = self.inner.next()?;
+        let Event::Text(first) = event else {
+            return Some((event, range));
+        };
+        let mut text = first.into_string();
+        while matches!(self.inner.peek(), Some((Event::Text(_), _))) {
+            if let Some((Event::Text(more), r)) = self.inner.next() {
+                text.push_str(&more);
+                range.end = r.end;
+            }
+        }
+        Some((Event::Text(CowStr::from(text)), range))
+    }
+}
+
+fn merged_events(markdown: &str) -> MergedEvents<'_, impl Iterator<Item = (Event<'_>, Range<usize>)>> {
+    MergedEvents {
+        inner: Parser::new_ext(markdown, markdown_options(false))
+            .into_offset_iter()
+            .peekable(),
+    }
+}
+
 struct Builder<'a> {
     pre: &'a Preprocessed,
     cfg: &'a Config,
@@ -265,13 +306,22 @@ struct Builder<'a> {
     base_dir: PathBuf,
     nonce: String,
     /// Footnote bodies by label, collected before the main pass.
-    footnotes: HashMap<String, Vec<Event<'a>>>,
+    footnotes: HashMap<String, FootnoteDef<'a>>,
+    /// Labels of the footnotes referenced from the main text.
+    referenced: HashSet<String>,
+    /// What could not be carried over, for the report.
+    diags: Collector,
+    /// Source range (in the rewritten Markdown) of the event being handled.
+    at: Range<usize>,
+    stats: Stats,
     /// True while building the content of a footnote (no pictures/OMML there).
     in_footnote: bool,
     /// Bytes of footnote content expanded so far (amplification guard).
     footnote_bytes: usize,
     /// Bytes of images embedded so far.
     images: ImagePipeline,
+    /// The host resolver's answers by key, so each is asked for once.
+    resolved: HashMap<String, Option<Arc<[u8]>>>,
     html: Option<String>,
     /// The open code buffer came from an HTML `<pre>`.
     html_pre: bool,
@@ -440,7 +490,7 @@ fn heading_anchors(markdown: &str) -> HashMap<String, usize> {
     let mut in_definition = false;
     let mut open: Option<(Option<String>, String)> = None;
     let mut number = 0;
-    for event in TextMergeStream::new(Parser::new_ext(markdown, markdown_options(false))) {
+    for (event, _) in merged_events(markdown) {
         match event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
             Event::End(TagEnd::FootnoteDefinition) => in_definition = false,
@@ -573,10 +623,27 @@ fn fit_to_page(g: &Geometry, mut we: u128, mut he: u128) -> Option<(u32, u32)> {
     Some((u32::try_from(we.max(1)).ok()?, u32::try_from(he.max(1)).ok()?))
 }
 
+/// A destination shortened for a message (they can be long, and they are untrusted text).
+fn short(dest: &str) -> String {
+    const MAX: usize = 80;
+    let mut s: String = dest.chars().filter(|c| !c.is_control()).take(MAX).collect();
+    if dest.chars().count() > MAX {
+        s.push('\u{2026}');
+    }
+    s
+}
+
+/// Most distinct image keys whose resolver answers are remembered; beyond it each use asks again.
+const MAX_RESOLVED_KEYS: usize = 4096;
+
 /// Accessible description of a rendered asset: the diagram's or formula's own source, flattened
 /// and shortened, so a screen reader user is not left with an unlabelled picture.
 fn asset_description(asset: &Asset) -> String {
     const MAX_CHARS: usize = 250;
+    // What the author wrote beats anything derived from the source.
+    if let Some(alt) = asset.alt.as_deref().filter(|a| !a.trim().is_empty()) {
+        return alt.to_string();
+    }
     let flat: String = asset.original.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut text: String = flat.chars().take(MAX_CHARS).collect();
     if flat.chars().count() > MAX_CHARS {
@@ -628,9 +695,14 @@ impl<'a> Builder<'a> {
             base_dir: cfg.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
             nonce,
             footnotes: HashMap::new(),
+            referenced: HashSet::new(),
+            diags: Collector::default(),
+            at: 0..0,
+            stats: Stats::default(),
             in_footnote: false,
             footnote_bytes: 0,
             images: ImagePipeline::new(),
+            resolved: HashMap::new(),
             html: None,
             html_pre: false,
             hidden: None,
@@ -667,6 +739,35 @@ impl<'a> Builder<'a> {
             next_num_id: BULLET_NUM_ID + 1,
             table: None,
             omml: Vec::new(),
+        }
+    }
+
+    // ---- findings
+
+    /// Record something that could not be carried over, at the event being handled.
+    fn note(&mut self, code: Code, message: impl Into<String>) {
+        let at = self.at.clone();
+        self.diags.push(code, message, Loc::Rewritten(at));
+    }
+
+    /// Footnote definitions that no reference reached are not part of the document.
+    fn report_unreferenced_footnotes(&mut self) {
+        let mut missing: Vec<(&String, &FootnoteDef<'a>)> = self
+            .footnotes
+            .iter()
+            .filter(|(label, _)| !self.referenced.contains(*label))
+            .collect();
+        missing.sort_by_key(|(_, def)| def.range.start);
+        let found: Vec<(String, Range<usize>)> = missing
+            .into_iter()
+            .map(|(label, def)| (label.clone(), def.range.clone()))
+            .collect();
+        for (label, range) in found {
+            self.diags.push(
+                Code::FootnoteUnreferenced,
+                format!("footnote [^{label}] is defined but never referenced, so its content is not in the document"),
+                Loc::Rewritten(range),
+            );
         }
     }
 
@@ -793,7 +894,7 @@ impl<'a> Builder<'a> {
                     ..
                 }
             );
-        let block_omml = match (solo, children.first()) {
+        let lone_display_equation = match (solo, children.first()) {
             (true, Some(Child::Omml { slot, display: true })) => Some(*slot),
             _ => None,
         };
@@ -824,6 +925,8 @@ impl<'a> Builder<'a> {
             }
         }
 
+        // A task-list glyph shares the paragraph with the equation, so then it stays inline.
+        let block_omml = lone_display_equation.filter(|_| task.is_none());
         if let Some(checked) = task {
             let glyph = if checked { "\u{2611} " } else { "\u{2610} " };
             p = p.add_run(Run::new().add_text(glyph));
@@ -959,6 +1062,7 @@ impl<'a> Builder<'a> {
     }
 
     fn code_block(&mut self, text: &str) {
+        self.stats.code_blocks += 1;
         let body = text.strip_suffix('\n').unwrap_or(text);
         let lang = self.code_lang.take();
         let cfg: &'a Config = self.cfg;
@@ -1088,7 +1192,7 @@ impl<'a> Builder<'a> {
         alt: &str,
         title: &str,
         kind: AssetKind,
-    ) -> Result<bool> {
+    ) -> Result<Option<Unsupported>> {
         match self.images.normalize(&self.cfg.limits, &self.pre.ctl, bytes, origin)? {
             Outcome::Picture(pic) => {
                 let pic = place_picture(&self.geo, &pic, dpi, origin, width, alt, title)?;
@@ -1096,10 +1200,34 @@ impl<'a> Builder<'a> {
                     run: Run::new().add_image(pic),
                     kind,
                 });
-                Ok(true)
+                self.stats.pictures += 1;
+                Ok(None)
             }
-            Outcome::Unsupported(_) => Ok(false),
+            Outcome::Unsupported(why) => Ok(Some(why)),
         }
+    }
+
+    /// Ask the host's [`ImageResolver`] (once per distinct key) for the bytes behind `key`.
+    fn resolve_asset(&mut self, key: &str) -> Result<Option<Arc<[u8]>>> {
+        let Some(resolver) = self.cfg.image_resolver.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(known) = self.resolved.get(key) {
+            return Ok(known.clone());
+        }
+        self.pre.ctl.check()?;
+        let failed = |detail: String| CrateError::ExternalToolFailed {
+            program: "image resolver".into(),
+            detail,
+        };
+        let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resolver.resolve(key)))
+            .map_err(|_| failed("the resolver panicked".into()))?
+            .map_err(|e| failed(e.to_string()))?;
+        self.pre.ctl.check()?;
+        if self.resolved.len() < MAX_RESOLVED_KEYS {
+            self.resolved.insert(key.to_string(), answer.clone());
+        }
+        Ok(answer)
     }
 
     fn image(&mut self, ctx: ImageCtx) -> Result<()> {
@@ -1108,11 +1236,41 @@ impl<'a> Builder<'a> {
             return self.asset(&asset);
         }
         let dest = ctx.dest.as_str();
+        // The host's own byte assets come first: the document only names a key.
+        if !self.in_footnote {
+            if let Some(bytes) = self.resolve_asset(dest)? {
+                let origin = format!("asset `{}`", sanitize_xml_chars(dest));
+                if let Some(why) = self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
+                    self.note(
+                        Code::ImageUnsupported,
+                        format!("image `{}` was not embedded: {}", short(dest), why.describe()),
+                    );
+                    self.placeholder(&ctx.alt, "image");
+                }
+                return Ok(());
+            }
+        }
         let lower = dest.to_ascii_lowercase();
         // Remote and inline images are never fetched or decoded (no network
         // access by design); keep the alt text so nothing vanishes silently.
         let remote = lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("data:");
         if remote || self.in_footnote || self.cfg.image_access == ImageAccess::None {
+            if self.in_footnote {
+                self.note(
+                    Code::FootnoteImage,
+                    format!("image `{}` inside a footnote was replaced by its alt text", short(dest)),
+                );
+            } else if remote {
+                self.note(
+                    Code::ImageRemote,
+                    format!(
+                        "image `{}` is remote or inline and is never fetched; its alt text is shown",
+                        short(dest)
+                    ),
+                );
+            } else {
+                self.note(Code::ImageDisabled, format!("image `{}` was not embedded: local image access is disabled and the host supplied no bytes for it", short(dest)));
+            }
             self.placeholder(&ctx.alt, dest);
             return Ok(());
         }
@@ -1123,8 +1281,12 @@ impl<'a> Builder<'a> {
             self.cfg.limits.max_image_bytes,
         )?;
         let origin = path.display().to_string();
-        if !self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
+        if let Some(why) = self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
             // A format we cannot embed (SVG, WebP, corrupt data): keep the alt text.
+            self.note(
+                Code::ImageUnsupported,
+                format!("image `{}` was not embedded: {}", short(dest), why.describe()),
+            );
             self.placeholder(&ctx.alt, "image");
         }
         Ok(())
@@ -1134,8 +1296,20 @@ impl<'a> Builder<'a> {
         if self.in_footnote {
             // Footnote parts cannot carry pictures or OMML here; show the source.
             match asset.kind {
-                AssetKind::Graph => self.placeholder("", "diagram"),
-                _ => self.text(&asset.original),
+                AssetKind::Graph => {
+                    self.note(
+                        Code::FootnoteDiagram,
+                        "a diagram inside a footnote was replaced by a placeholder",
+                    );
+                    self.placeholder("", "diagram");
+                }
+                _ => {
+                    self.note(
+                        Code::FootnoteMath,
+                        "an equation inside a footnote is shown as its LaTeX source",
+                    );
+                    self.text(&asset.original);
+                }
             }
             return Ok(());
         }
@@ -1161,22 +1335,32 @@ impl<'a> Builder<'a> {
                     slot: self.omml.len() - 1,
                     display,
                 });
+                self.stats.equations += 1;
                 return Ok(());
             }
         };
-        if self.embed(&bytes, &origin, dpi, None, &alt, "", asset.kind)? {
-            Ok(())
-        } else {
-            Err(CrateError::ExternalToolFailed {
+        let title = asset.title.clone().unwrap_or_default();
+        match self.embed(&bytes, &origin, dpi, None, &alt, &title, asset.kind)? {
+            None => Ok(()),
+            Some(_) => Err(CrateError::ExternalToolFailed {
                 program: "renderer".into(),
                 detail: format!("{origin} is not a decodable image"),
-            })
+            }),
         }
     }
 
     // ---- lists and tables
 
     fn start_list(&mut self, first: Option<u64>) {
+        if self.lists.len() > MAX_LIST_LEVEL {
+            self.note(
+                Code::ListDepthClamped,
+                format!(
+                    "list nesting deeper than {} levels is flattened to the deepest level",
+                    MAX_LIST_LEVEL + 1
+                ),
+            );
+        }
         let level = self.lists.len().min(MAX_LIST_LEVEL);
         let num_id = match first {
             None => BULLET_NUM_ID,
@@ -1253,7 +1437,15 @@ impl<'a> Builder<'a> {
         if block {
             self.flush();
         }
-        for piece in html::tokenize(raw) {
+        let mut dropped = Vec::new();
+        let pieces = html::tokenize_reporting(raw, &mut dropped);
+        for name in dropped {
+            self.note(
+                Code::HtmlUnsupported,
+                format!("the content of a raw HTML <{name}> element is never shown and was dropped"),
+            );
+        }
+        for piece in pieces {
             if self.budget_error.is_some() {
                 break;
             }
@@ -1418,9 +1610,32 @@ impl<'a> Builder<'a> {
             return;
         }
         if !self.cfg.html_links || self.link.is_some() {
-            return; // links off, or already inside a link: keep the text only
+            // links off, or already inside a link: keep the text only
+            if let Some(h) = html::attr(attrs, "href") {
+                let why = if self.link.is_some() {
+                    "it is inside another link"
+                } else {
+                    "HTML links are turned off"
+                };
+                self.note(
+                    Code::LinkHtmlDropped,
+                    format!("a raw HTML link to `{}` was not made a hyperlink: {why}", short(&h)),
+                );
+            }
+            return;
         }
-        let url = html::attr(attrs, "href").and_then(|h| safe_link(&h, &self.cfg.allowed_link_schemes));
+        let href = html::attr(attrs, "href");
+        let url = href
+            .as_deref()
+            .and_then(|h| safe_link(h, &self.cfg.allowed_link_schemes));
+        if url.is_none() {
+            if let Some(h) = &href {
+                self.note(
+                    Code::LinkHtmlDropped,
+                    format!("a raw HTML link to `{}` is not an allowed destination", short(h)),
+                );
+            }
+        }
         if let Some(url) = url {
             self.link = Some(LinkCtx {
                 url,
@@ -1500,6 +1715,7 @@ impl<'a> Builder<'a> {
         if !t.rows.is_empty() {
             // (Word rejects a table without rows, so an empty one is dropped.)
             let cols = t.aligns.len().max(t.max_cols).max(1);
+            self.stats.tables += 1;
             let table = Table::new(t.rows)
                 .set_grid(vec![self.geo.content_w / cols; cols])
                 .width(self.geo.content_w, WidthType::Dxa);
@@ -1533,19 +1749,58 @@ impl<'a> Builder<'a> {
 
     // ---- footnotes
 
+    /// The parser only makes a footnote reference of `[^label]` when `label` has a definition, so
+    /// an undefined one arrives as plain text; report it so it is not mistaken for a footnote.
+    fn undefined_footnote_marks(&mut self, text: &str) {
+        let mut rest = text;
+        while let Some(open) = rest.find("[^") {
+            let after = &rest[open + 2..];
+            let Some(close) = after.find(']') else { break };
+            let label = &after[..close];
+            if !label.is_empty() && !label.contains(char::is_whitespace) && !label.contains('[') {
+                // Exact bytes when the event is verbatim source (no escapes or entities in it).
+                let at = if self.at.len() == text.len() {
+                    let start = self.at.start + (text.len() - rest.len()) + open;
+                    start..start + close + 3
+                } else {
+                    self.at.clone()
+                };
+                self.diags.push(
+                    Code::FootnoteUndefined,
+                    format!("the footnote reference [^{label}] has no definition and was left as text"),
+                    Loc::Rewritten(at),
+                );
+            }
+            rest = &after[close + 1..];
+        }
+    }
+
     fn footnote_reference(&mut self, label: &str) -> Result<()> {
-        let events = match self.footnotes.get(&label.to_lowercase()) {
-            Some(e) if !self.in_footnote => e.clone(),
+        let key = label.to_lowercase();
+        let (events, def_range) = match self.footnotes.get(&key) {
+            Some(def) if !self.in_footnote => (def.events.clone(), def.range.clone()),
             _ => {
                 // Unknown label, or a reference inside a footnote: keep it as written.
+                if self.in_footnote {
+                    self.note(
+                        Code::FootnoteNested,
+                        format!("the reference [^{label}] inside a footnote was left as text"),
+                    );
+                } else {
+                    self.note(
+                        Code::FootnoteUndefined,
+                        format!("the footnote reference [^{label}] has no definition"),
+                    );
+                }
                 self.text(&format!("[^{label}]"));
                 return Ok(());
             }
         };
+        self.referenced.insert(key);
         // A short definition referenced thousands of times must not balloon the file.
         let size: usize = events
             .iter()
-            .map(|e| match e {
+            .map(|(e, _)| match e {
                 Event::Text(t) | Event::Code(t) | Event::Html(t) | Event::InlineHtml(t) => t.len(),
                 _ => 8,
             })
@@ -1561,7 +1816,8 @@ impl<'a> Builder<'a> {
         sub.in_footnote = true;
         sub.anchors = Arc::clone(&self.anchors);
         sub.elements = self.elements;
-        for ev in events {
+        for (ev, range) in events {
+            sub.at = range;
             sub.feed(ev)?;
         }
         sub.flush();
@@ -1569,18 +1825,31 @@ impl<'a> Builder<'a> {
         if let Some(e) = sub.budget_error.take() {
             return Err(e);
         }
+        self.diags.absorb(std::mem::take(&mut sub.diags));
         let mut note = Footnote::new();
         let mut any = false;
+        let mut tables = 0usize;
         for block in sub.blocks {
-            if let Block::Para(p) = block {
-                note.add_content(*p);
-                any = true;
+            match block {
+                Block::Para(p) => {
+                    note.add_content(*p);
+                    any = true;
+                }
+                Block::Table(_) => tables += 1,
             }
+        }
+        if tables > 0 {
+            self.diags.push(
+                Code::FootnoteTable,
+                format!("{tables} table(s) inside footnote [^{label}] were dropped"),
+                Loc::Rewritten(def_range),
+            );
         }
         if !any {
             note.add_content(Paragraph::new());
         }
         self.push(Child::Run(Run::new().add_footnote_reference(note)));
+        self.stats.footnotes += 1;
         Ok(())
     }
 
@@ -1632,6 +1901,7 @@ impl<'a> Builder<'a> {
                 } else if let Some(img) = self.image.as_mut() {
                     img.alt.push_str(&t);
                 } else {
+                    self.undefined_footnote_marks(&t);
                     self.text(&t);
                 }
             }
@@ -1660,6 +1930,12 @@ impl<'a> Builder<'a> {
             }
             Event::InlineHtml(h) => {
                 self.hidden = html::unclosed_hidden(&h);
+                if let Some(name) = self.hidden {
+                    self.note(
+                        Code::HtmlUnsupported,
+                        format!("the content of a raw HTML <{name}> element is never shown and was dropped"),
+                    );
+                }
                 self.html_fragment(&h, false)?;
             }
             Event::Html(h) => match self.html.as_mut() {
@@ -1699,6 +1975,9 @@ impl<'a> Builder<'a> {
                     HeadingLevel::H6 => 6,
                 };
                 self.start_para(ParaKind::Heading(n));
+                if !self.in_footnote {
+                    self.stats.headings += 1;
+                }
                 self.cur_heading = None;
                 if !self.in_footnote {
                     self.cur_heading = Some(self.next_heading);
@@ -1791,6 +2070,11 @@ impl<'a> Builder<'a> {
                 if let Some(outer) = self.table.take() {
                     if self.outer_tables.len() < MAX_NESTED_TABLES {
                         self.outer_tables.push(outer);
+                    } else {
+                        self.note(
+                            Code::TableDropped,
+                            format!("tables nested deeper than {MAX_NESTED_TABLES} levels lose their outer table"),
+                        );
                     }
                 }
                 self.table = Some(TableState {
@@ -1861,6 +2145,20 @@ impl<'a> Builder<'a> {
                         Some(url) => self.finish_link(LinkTarget::External(url), link.children),
                         // Not an allowed destination: keep the visible text, drop the target.
                         None => {
+                            if link.url.starts_with('#') {
+                                self.note(
+                                    Code::LinkAnchorMissing,
+                                    format!("no heading has the anchor `{}`", short(&link.url)),
+                                );
+                            } else {
+                                self.note(
+                                    Code::LinkDropped,
+                                    format!(
+                                        "the link target `{}` is not an allowed destination; only its text was kept",
+                                        short(&link.url)
+                                    ),
+                                );
+                            }
                             for c in link.children {
                                 self.push(c);
                             }
@@ -1896,6 +2194,10 @@ impl<'a> Builder<'a> {
 
     fn finish_link(&mut self, target: LinkTarget, children: Vec<Child>) {
         if self.in_footnote {
+            self.note(
+                Code::FootnoteLink,
+                "a link inside a footnote keeps its text but loses its target",
+            );
             // footnotes.xml has no relationships part here, so a hyperlink would point at a
             // relationship id that does not exist and make the package invalid. Keep the
             // text, styled as a link.
@@ -1924,6 +2226,7 @@ impl<'a> Builder<'a> {
             }
         }
         self.push(Child::Link(h));
+        self.stats.hyperlinks += 1;
         for c in loose {
             self.push(c);
         }
@@ -2002,17 +2305,27 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
             Some(rel) => cursor + rel,
             None => doc.find(&m).ok_or_else(lost)?, // out of order: fall back to a full search
         };
-        let (open_tag, close_tag, replacement) = if slot.block {
-            (
-                "w:p",
-                "</w:p>",
-                format!("<w:p><m:oMathPara><m:oMath>{}</m:oMath></m:oMathPara></w:p>", slot.xml),
-            )
+        let (open_tag, close_tag) = if slot.block {
+            ("w:p", "</w:p>")
         } else {
-            ("w:r", "</w:r>", format!("<m:oMath>{}</m:oMath>", slot.xml))
+            ("w:r", "</w:r>")
         };
         let start = rfind_open(doc, open_tag, at).ok_or_else(lost)?;
         let end = doc[at..].find(close_tag).ok_or_else(lost)? + at + close_tag.len();
+        let replacement = if slot.block {
+            // Keep the paragraph's own properties: list numbering, quote or custom-block indent.
+            let para = &doc[start..end];
+            let props = para
+                .find("<w:pPr>")
+                .and_then(|a| para[a..].find("</w:pPr>").map(|b| &para[a..a + b + "</w:pPr>".len()]))
+                .unwrap_or("");
+            format!(
+                "<w:p>{props}<m:oMathPara><m:oMath>{}</m:oMath></m:oMathPara></w:p>",
+                slot.xml
+            )
+        } else {
+            format!("<m:oMath>{}</m:oMath>", slot.xml)
+        };
         cursor = end;
         edits.push((start, end, replacement));
     }
@@ -2036,22 +2349,21 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
 
 // ------------------------------------------------------------------ driver
 
-/// Stage 2 + 3: parse the rewritten Markdown and emit the `.docx` bytes.
 /// Footnote bodies by label (the first definition of a label wins).
-fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
+fn collect_footnotes(markdown: &str) -> HashMap<String, FootnoteDef<'_>> {
     let mut map = HashMap::new();
-    let mut open: Option<(String, Vec<Event<'_>>)> = None;
-    for ev in TextMergeStream::new(Parser::new_ext(markdown, markdown_options(false))) {
+    let mut open: Option<(String, Vec<(Event<'_>, Range<usize>)>, Range<usize>)> = None;
+    for (ev, range) in merged_events(markdown) {
         match ev {
-            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_lowercase(), Vec::new())),
+            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_lowercase(), Vec::new(), range)),
             Event::End(TagEnd::FootnoteDefinition) => {
-                if let Some((label, events)) = open.take() {
-                    map.entry(label).or_insert(events);
+                if let Some((label, events, whole)) = open.take() {
+                    map.entry(label).or_insert(FootnoteDef { events, range: whole });
                 }
             }
             other => {
-                if let Some((_, events)) = open.as_mut() {
-                    events.push(other);
+                if let Some((_, events, _)) = open.as_mut() {
+                    events.push((other, range));
                 }
             }
         }
@@ -2059,7 +2371,33 @@ fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
     map
 }
 
-pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &Config, writer: W) -> Result<()> {
+/// The document parts and what was found while building them.
+pub(crate) struct Built {
+    pub parts: crate::docx::XMLDocx,
+    pub report: Report,
+}
+
+/// Convert, then check the finished document, then write it. `original` is the text the caller
+/// passed in; findings point into it.
+pub fn build_docx<W: std::io::Write + std::io::Seek>(
+    pre: &Preprocessed,
+    cfg: &Config,
+    original: &str,
+    writer: W,
+) -> Result<Report> {
+    let Built { parts, report } = build_parts(pre, cfg, original)?;
+    if cfg.loss_policy == crate::LossPolicy::Reject && report.has_warnings() {
+        return Err(CrateError::LossyContent {
+            diagnostics: report.diagnostics,
+        });
+    }
+    pre.ctl.check()?;
+    crate::pack::pack(parts, cfg.compression_level, cfg.limits.max_output_bytes, writer)?;
+    Ok(report)
+}
+
+/// Build every part of the document except the archive.
+pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> Result<Built> {
     // Identifier counters restart for every conversion, so equal input gives equal ids and one
     // conversion cannot observe another's progress.
     let _ids = crate::docx::IdScope::new();
@@ -2069,8 +2407,8 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
     b.anchors = Arc::new(heading_anchors(&pre.markdown));
 
     let mut in_definition = false;
-    // Adjacent text events (escapes, entities, stray delimiters) become one run, not one each.
-    for event in TextMergeStream::new(Parser::new_ext(&pre.markdown, markdown_options(false))) {
+    let mut events = 0usize;
+    for (event, range) in merged_events(&pre.markdown) {
         // Footnote bodies are emitted where they are referenced, not in place.
         match &event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
@@ -2081,10 +2419,16 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
             _ => {}
         }
         if !in_definition {
+            events += 1;
+            if events % 256 == 0 {
+                pre.ctl.check()?;
+            }
+            b.at = range;
             b.feed(event)?;
         }
     }
     b.finish_html();
+    b.report_unreferenced_footnotes();
 
     let (bullets, ordered) = numbering_definitions();
     let now = now_rfc3339();
@@ -2156,7 +2500,16 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
             cfg.limits.max_uncompressed_bytes
         )));
     }
-    crate::pack::pack(parts, cfg.compression_level, cfg.limits.max_output_bytes, writer)
+
+    let mut collected = pre.diags.clone();
+    collected.absorb(std::mem::take(&mut b.diags));
+    Ok(Built {
+        parts,
+        report: Report {
+            diagnostics: crate::diagnostics::finish(&collected, &pre.offsets, original),
+            stats: b.stats,
+        },
+    })
 }
 
 #[cfg(test)]

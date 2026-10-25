@@ -10,6 +10,7 @@ use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
 use crate::config::{Config, DiagramFailure, MathMode};
 use crate::control::Ctl;
+use crate::diagnostics::{Code, Collector, Edit, Loc, OffsetMap};
 use crate::error::{CrateError, Result};
 use crate::omml;
 use crate::parser::markdown_options;
@@ -45,6 +46,10 @@ pub enum AssetSource {
 pub struct Asset {
     /// What the asset is.
     pub kind: AssetKind,
+    /// Alternative text the author gave in the fence's info string (`alt="..."`), if any.
+    pub alt: Option<String>,
+    /// Title the author gave in the fence's info string (`title="..."`), if any.
+    pub title: Option<String>,
     /// Its rendered content.
     pub source: AssetSource,
     /// Original graph/LaTeX text, used for the image's description.
@@ -63,6 +68,10 @@ pub struct Preprocessed {
     pub(crate) meta: (Option<String>, Option<String>),
     /// Cancellation and deadline of this conversion, shared with the later stages.
     pub(crate) ctl: Ctl,
+    /// What Stage 1 found that the conversion could not carry over.
+    pub(crate) diags: Collector,
+    /// How to map positions in `markdown` back to the text the caller passed in.
+    pub(crate) offsets: OffsetMap,
     _workspace: Option<Workspace>,
 }
 
@@ -76,6 +85,41 @@ fn escape_dest(path: &str) -> String {
     path.replace('\\', "\\\\")
 }
 
+/// `alt="..."` and `title="..."` after the language on a fence's info string. They describe the
+/// picture the block becomes; they never select a renderer or a path.
+#[derive(Debug, Clone, Default)]
+struct FenceAttrs {
+    alt: Option<String>,
+    title: Option<String>,
+}
+
+const MAX_FENCE_ATTR_CHARS: usize = 500;
+
+fn fence_attrs(info: &str) -> FenceAttrs {
+    let mut attrs = FenceAttrs::default();
+    // Skip the language word, then read key="value" / key='value' pairs.
+    let mut rest = info.trim_start();
+    rest = rest.split_once(char::is_whitespace).map_or("", |(_, r)| r);
+    while let Some(eq) = rest.find('=') {
+        let key = rest[..eq].trim().rsplit(char::is_whitespace).next().unwrap_or("");
+        let after = &rest[eq + 1..];
+        let Some(quote) = after.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+            rest = after;
+            continue;
+        };
+        let body = &after[1..];
+        let Some(end) = body.find(quote) else { break };
+        let value: String = body[..end].chars().take(MAX_FENCE_ATTR_CHARS).collect();
+        match key.to_ascii_lowercase().as_str() {
+            "alt" if attrs.alt.is_none() => attrs.alt = Some(value),
+            "title" if attrs.title.is_none() => attrs.title = Some(value),
+            _ => {}
+        }
+        rest = &body[end + 1..];
+    }
+    attrs
+}
+
 /// Who renders a fenced block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Fence {
@@ -86,7 +130,7 @@ enum Fence {
 }
 
 enum Found {
-    Graph(Fence, String),
+    Graph(Fence, String, FenceAttrs),
     Math { latex: String, display: bool },
 }
 
@@ -98,15 +142,37 @@ enum Found {
 /// content that sits between two horizontal rules. To avoid eating a document
 /// that merely starts with a rule, the block must look like metadata: empty,
 /// or its first non-blank line is `key: value` (YAML) / `key = value` (TOML).
-fn blank_front_matter(md: &str) -> std::borrow::Cow<'_, str> {
+fn blank_front_matter(md: &str) -> (std::borrow::Cow<'_, str>, Option<Edit>) {
     let body = md.strip_prefix('\u{feff}').unwrap_or(md);
     match front_matter(body) {
         Some(fm) => {
             let blanked: String = body[..fm.consumed].chars().filter(|&c| c == '\n').collect();
-            format!("{blanked}{}", &body[fm.consumed..]).into()
+            let edit = Edit {
+                old: 0..(md.len() - body.len() + fm.consumed),
+                new_len: blanked.len(),
+            };
+            (format!("{blanked}{}", &body[fm.consumed..]).into(), Some(edit))
         }
-        None => md.into(),
+        None => (md.into(), None),
     }
+}
+
+/// Where `sanitize_xml_chars` removed characters from `text`: one edit per run of removed ones.
+fn removed_characters(text: &str) -> Vec<Edit> {
+    let mut edits: Vec<Edit> = Vec::new();
+    for (i, c) in text.char_indices() {
+        if crate::safety::is_xml_char(c) {
+            continue;
+        }
+        match edits.last_mut() {
+            Some(last) if last.old.end == i => last.old.end = i + c.len_utf8(),
+            _ => edits.push(Edit {
+                old: i..i + c.len_utf8(),
+                new_len: 0,
+            }),
+        }
+    }
+    edits
 }
 
 /// A metadata block found at the very start of a document.
@@ -213,10 +279,35 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
     if markdown.contains('\0') {
         return Err(CrateError::InvalidMarkdown("input contains NUL bytes".into()));
     }
+    let mut diags = Collector::default();
+    let mut offsets = OffsetMap::default();
     // Control characters are illegal in XML; left in, Word calls the file corrupt.
-    let markdown = sanitize_xml_chars(markdown);
-    let meta = front_matter_meta(&markdown);
-    let markdown = &*blank_front_matter(&markdown);
+    let sanitized = sanitize_xml_chars(markdown);
+    if matches!(sanitized, std::borrow::Cow::Owned(_)) {
+        offsets.sanitize = removed_characters(markdown);
+        let removed: usize = offsets
+            .sanitize
+            .iter()
+            .map(|e| markdown[e.old.clone()].chars().count())
+            .sum();
+        let first = offsets.sanitize.first().map(|e| e.old.clone());
+        diags.push(
+            Code::InputControlCharacters,
+            format!("{removed} character(s) that cannot appear in a Word document were removed"),
+            first.map_or(Loc::None, Loc::Original),
+        );
+    }
+    let meta = front_matter_meta(&sanitized);
+    let (blanked, front) = blank_front_matter(&sanitized);
+    if let Some(edit) = front {
+        diags.push(
+            Code::InputFrontMatter,
+            "the metadata block at the start was used for the title and author and is not rendered",
+            Loc::Prepared(0..edit.new_len),
+        );
+        offsets.blank = vec![edit];
+    }
+    let markdown = &*blanked;
     let too_many = || {
         CrateError::LimitExceeded(format!(
             "more than {} diagrams and formulas in one document",
@@ -227,7 +318,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
     // Pass 1: locate everything to replace, using real CommonMark parsing so
     // code spans, escapes and nested containers are handled correctly.
     let mut found: Vec<(Range<usize>, Found)> = Vec::new();
-    let mut open_graph: Option<(Range<usize>, Fence, String)> = None;
+    let mut open_graph: Option<(Range<usize>, Fence, String, FenceAttrs)> = None;
     let mut diagrams = 0usize;
     for (event, range) in Parser::new_ext(markdown, markdown_options(true)).into_offset_iter() {
         match event {
@@ -248,16 +339,28 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                         .map(Fence::Builtin),
                 };
                 if let Some(fence) = fence {
-                    open_graph = Some((range, fence, String::new()));
+                    open_graph = Some((range, fence, String::new(), fence_attrs(&info)));
+                } else if let Some(kind) = GraphKind::from_info(&info) {
+                    // Left as an ordinary code block: the author asked for a picture.
+                    let why = if !cfg.graphs.enabled {
+                        "diagram rendering is disabled"
+                    } else {
+                        "this configuration only renders Mermaid"
+                    };
+                    diags.push(
+                        Code::DiagramNotRendered,
+                        format!("a {} block was left as a code block: {why}", kind.name()),
+                        Loc::Prepared(range.clone()),
+                    );
                 }
             }
             Event::Text(t) => {
-                if let Some((_, _, buf)) = open_graph.as_mut() {
+                if let Some((_, _, buf, _)) = open_graph.as_mut() {
                     buf.push_str(&t);
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
-                if let Some((range, fence, buf)) = open_graph.take() {
+                if let Some((range, fence, buf, attrs)) = open_graph.take() {
                     if buf.trim().is_empty() {
                         return Err(CrateError::InvalidMarkdown(format!(
                             "empty {fence:?} block at line {}",
@@ -273,7 +376,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                         )));
                     }
                     diagrams += 1;
-                    found.push((range, Found::Graph(fence, buf)));
+                    found.push((range, Found::Graph(fence, buf, attrs)));
                 }
             }
             Event::InlineMath(m) | Event::DisplayMath(m) if m.len() > limits.max_formula_bytes => {
@@ -317,7 +420,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
     // does not break them.
     let needs_files = found.iter().any(|(_, f)| match f {
         // An embedder's renderer returns its PNG in memory and needs no scratch directory.
-        Found::Graph(Fence::Custom(_), _) => false,
+        Found::Graph(Fence::Custom(_), ..) => false,
         Found::Graph(..) => true,
         Found::Math { .. } => cfg.math.mode == MathMode::ImageFallback,
     });
@@ -343,7 +446,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
         ctl.check()?;
         let is_fence = matches!(item, Found::Graph(..));
         let (dest, alt, asset) = match item {
-            Found::Graph(fence, source) => {
+            Found::Graph(fence, source, attrs) => {
                 let rendered: Result<(String, AssetSource)> = match &fence {
                     Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg)
                         .map(|png| (png.to_string_lossy().into_owned(), AssetSource::Png(png))),
@@ -365,9 +468,14 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                 let (dest, source_of) = match rendered {
                     Ok(done) => done,
                     // The block stays what it was written as: an ordinary code block.
-                    Err(CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCLI { .. })
+                    Err(e @ (CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCLI { .. }))
                         if cfg.graphs.on_failure == DiagramFailure::KeepAsCode =>
                     {
+                        diags.push(
+                            Code::DiagramKeptAsCode,
+                            format!("the diagram could not be rendered ({e}) and was kept as a code block"),
+                            Loc::Prepared(range.clone()),
+                        );
                         continue;
                     }
                     Err(e) => return Err(e),
@@ -377,6 +485,8 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                     "Rendered Graph",
                     Asset {
                         kind: AssetKind::Graph,
+                        alt: attrs.alt,
+                        title: attrs.title,
                         source: source_of,
                         original: source,
                     },
@@ -403,18 +513,30 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                             "Rendered Math",
                             Asset {
                                 kind,
+                                alt: None,
+                                title: None,
                                 source: AssetSource::Png(png),
                                 original: latex,
                             },
                         )
                     }
                     MathMode::NativeOmml => {
-                        let body = omml::latex_to_omml(&latex).map_err(|e| {
+                        let (body, unknown) = omml::latex_to_omml_checked(&latex).map_err(|e| {
                             CrateError::InvalidMarkdown(format!(
                                 "bad math at line {}: {e}",
                                 line_of(markdown, range.start)
                             ))
                         })?;
+                        if !unknown.is_empty() {
+                            diags.push(
+                                Code::MathUnknownCommand,
+                                format!(
+                                    "unsupported LaTeX command(s) {} are shown as literal text",
+                                    unknown.iter().map(|c| format!("\\{c}")).collect::<Vec<_>>().join(", ")
+                                ),
+                                Loc::Prepared(range.clone()),
+                            );
+                        }
                         let dest = format!("silvercity-omml{nonce}:{omml_count}");
                         omml_count += 1;
                         (
@@ -422,6 +544,8 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                             "Rendered Math",
                             Asset {
                                 kind,
+                                alt: None,
+                                title: None,
                                 source: AssetSource::Omml(body),
                                 original: latex,
                             },
@@ -452,6 +576,14 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
 
     let mut out = markdown.to_string();
     replacements.sort_by_key(|r| std::cmp::Reverse(r.0.start));
+    offsets.rewrite = replacements
+        .iter()
+        .rev()
+        .map(|(range, text)| Edit {
+            old: range.clone(),
+            new_len: text.len(),
+        })
+        .collect();
     for (range, text) in replacements {
         out.replace_range(range, &text);
     }
@@ -461,6 +593,8 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
         assets,
         meta,
         ctl: ctl.clone(),
+        diags,
+        offsets,
         _workspace: workspace,
     })
 }
@@ -472,7 +606,7 @@ mod tests {
 
     #[test]
     fn front_matter_only_at_the_start_and_only_if_it_looks_like_metadata() {
-        let blank = |s: &str| blank_front_matter(s).into_owned();
+        let blank = |s: &str| blank_front_matter(s).0.into_owned();
         assert_eq!(blank("---\ntitle: x\ntags: [a]\n---\nBody\n"), "\n\n\n\nBody\n");
         assert_eq!(blank("+++\ntitle = \"x\"\n+++\nBody"), "\n\n\nBody");
         assert_eq!(blank("\u{feff}---\na: b\n---\nBody"), "\n\n\nBody");
@@ -501,6 +635,24 @@ mod tests {
                 _ => None,
             })
             .expect("an image")
+    }
+
+    #[test]
+    fn fence_attributes_are_read_after_the_language_only() {
+        let a = fence_attrs("mermaid alt=\"Login flow\" title='The \"happy\" path'");
+        assert_eq!(a.alt.as_deref(), Some("Login flow"));
+        assert_eq!(a.title.as_deref(), Some("The \"happy\" path"));
+        assert!(fence_attrs("mermaid").alt.is_none());
+        assert!(fence_attrs("alt=\"x\"").alt.is_none(), "the first word is the language");
+        assert!(fence_attrs("mermaid alt=unquoted").alt.is_none());
+        assert!(fence_attrs("mermaid alt=\"never closed").alt.is_none());
+        assert_eq!(
+            fence_attrs(&format!("m alt=\"{}\"", "a".repeat(2000)))
+                .alt
+                .unwrap()
+                .len(),
+            500
+        );
     }
 
     #[test]

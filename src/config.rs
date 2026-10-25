@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::control::CancelToken;
-use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, TagStyle};
+use crate::diagnostics::LossPolicy;
+use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, ImageResolver, TagStyle};
 use crate::highlight::Highlighting;
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
@@ -582,6 +583,14 @@ pub struct Config {
     pub scratch_dir: Option<PathBuf>,
     /// A token the host can use to stop a running conversion; see [`CancelToken`](crate::CancelToken).
     pub cancel: Option<CancelToken>,
+    /// What to do with a document that cannot be converted faithfully; see [`LossPolicy`].
+    /// Default [`LossPolicy::Allow`]: degrade as documented and report. A host that must not
+    /// deliver a degraded document sets [`LossPolicy::Reject`].
+    pub loss_policy: LossPolicy,
+    /// Supplies image bytes by key, chosen by the host; never reads a path or the network. See
+    /// [`ImageResolver`]. Consulted before [`Config::image_access`], so it works with
+    /// [`ImageAccess::None`].
+    pub image_resolver: Option<Arc<dyn ImageResolver>>,
 }
 
 /// The default is the **untrusted-input policy**: [`Config::untrusted`]. A host that wants
@@ -687,6 +696,19 @@ impl Config {
     /// Choose the Mermaid renderer.
     pub fn with_mermaid_engine(mut self, engine: MermaidEngine) -> Self {
         self.graphs.use_engine(engine);
+        self
+    }
+
+    /// Choose what happens to a document that cannot be converted faithfully.
+    pub fn with_loss_policy(mut self, policy: LossPolicy) -> Self {
+        self.loss_policy = policy;
+        self
+    }
+
+    /// Let the host supply image bytes by key (see [`ImageResolver`] and [`crate::AssetMap`]).
+    /// Replaces an earlier resolver.
+    pub fn with_image_resolver(mut self, resolver: impl ImageResolver + 'static) -> Self {
+        self.image_resolver = Some(Arc::new(resolver));
         self
     }
 
@@ -823,6 +845,8 @@ impl Config {
             fence_renderers: FenceRenderers::default(),
             scratch_dir: None,
             cancel: None,
+            loss_policy: LossPolicy::default(),
+            image_resolver: None,
         }
     }
 
