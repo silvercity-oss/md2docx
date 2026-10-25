@@ -52,7 +52,6 @@ pub(crate) fn closes_hidden(raw: &str, name: &str) -> bool {
     raw.to_ascii_lowercase().contains(&format!("</{name}"))
 }
 
-#[cfg(test)]
 pub(crate) fn tokenize(html: &str) -> Vec<Piece> {
     tokenize_reporting(html, &mut Vec::new())
 }

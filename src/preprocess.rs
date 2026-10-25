@@ -323,7 +323,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
     let mut found: Vec<(Range<usize>, Found)> = Vec::new();
     let mut open_graph: Option<(Range<usize>, Fence, String, FenceAttrs)> = None;
     let mut diagrams = 0usize;
-    for (event, range) in Parser::new_ext(markdown, markdown_options(true)).into_offset_iter() {
+    for (event, range) in Parser::new_ext(markdown, markdown_options(true, cfg.superscript_subscript)).into_offset_iter() {
         match event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                 // A renderer registered by the embedder wins, whatever the other settings.

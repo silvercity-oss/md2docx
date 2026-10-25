@@ -32,7 +32,7 @@ use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
 /// every formula has been rewritten, and any leftover `$` is literal text).
-pub(crate) fn markdown_options(math: bool) -> Options {
+pub(crate) fn markdown_options(math: bool, sup_sub: bool) -> Options {
     let mut o = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
@@ -42,6 +42,9 @@ pub(crate) fn markdown_options(math: bool) -> Options {
         | Options::ENABLE_HEADING_ATTRIBUTES;
     if math {
         o |= Options::ENABLE_MATH;
+    }
+    if sup_sub {
+        o |= Options::ENABLE_SUPERSCRIPT | Options::ENABLE_SUBSCRIPT;
     }
     o
 }
@@ -190,6 +193,8 @@ enum Child {
         run: Run,
         kind: AssetKind,
     },
+    /// An empty bookmark an HTML `id`/`name` anchor links can jump to.
+    Bookmark(usize),
     /// Index into `Builder::omml`.
     Omml {
         slot: usize,
@@ -214,6 +219,8 @@ struct ListCtx {
 struct LinkCtx {
     url: String,
     children: Vec<Child>,
+    /// An internal target (heading or HTML anchor number) instead of `url`.
+    bookmark: Option<usize>,
 }
 
 /// Width requested for an image by an HTML `width=` attribute.
@@ -245,6 +252,9 @@ struct TableState {
     html: bool,
     /// Widest row seen so far (HTML tables have no header to count columns).
     max_cols: usize,
+    /// Characters in the cell being built, and the longest cell seen in each column.
+    cell_chars: usize,
+    col_chars: Vec<usize>,
 }
 
 enum Block {
@@ -298,9 +308,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> Iterator for MergedEvent
     }
 }
 
-fn merged_events(markdown: &str) -> MergedEvents<'_, impl Iterator<Item = (Event<'_>, Range<usize>)>> {
+fn merged_events(markdown: &str, sup_sub: bool) -> MergedEvents<'_, impl Iterator<Item = (Event<'_>, Range<usize>)>> {
     MergedEvents {
-        inner: Parser::new_ext(markdown, markdown_options(false))
+        inner: Parser::new_ext(markdown, markdown_options(false, sup_sub))
             .into_offset_iter()
             .peekable(),
     }
@@ -314,6 +324,8 @@ struct Builder<'a> {
     nonce: String,
     /// Footnote bodies by label, collected before the main pass.
     footnotes: HashMap<String, FootnoteDef<'a>>,
+    /// HTML anchors already given their bookmark.
+    emitted_anchors: HashSet<usize>,
     /// Labels of the footnotes referenced from the main text.
     referenced: HashSet<String>,
     /// What could not be carried over, for the report.
@@ -381,6 +393,79 @@ struct Builder<'a> {
     next_num_id: usize,
     table: Option<TableState>,
     omml: Vec<OmmlSlot>,
+}
+
+enum UrlPiece<'t> {
+    Text(&'t str),
+    Url(&'t str),
+}
+
+/// Split `text` into plain text and bare web addresses (`http://…`, `https://…`, `www.…`), the
+/// way GitHub does: an address starts at a word boundary, runs to whitespace or `<`, and does
+/// not swallow the punctuation that ends a sentence or an unbalanced closing parenthesis.
+fn split_bare_urls(text: &str) -> Vec<UrlPiece<'_>> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut plain_from = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let rest = &text[i..];
+        let starts = rest.starts_with("http://") || rest.starts_with("https://") || rest.starts_with("www.");
+        let boundary = i == 0 || !text[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '/');
+        if starts && boundary {
+            let mut end = rest.find(|c: char| c.is_whitespace() || c == '<').unwrap_or(rest.len());
+            // Trailing punctuation belongs to the sentence, not the address.
+            let (opens, mut closes) = rest[..end]
+                .bytes()
+                .fold((0usize, 0usize), |(o, c), b| (o + usize::from(b == b'('), c + usize::from(b == b')')));
+            loop {
+                let Some(last) = rest[..end].chars().next_back() else { break };
+                let unbalanced_paren = last == ')' && closes > opens;
+                if matches!(last, '?' | '!' | '.' | ',' | ':' | '*' | '_' | '~' | '\'' | '"' | ';') || unbalanced_paren {
+                    closes -= usize::from(last == ')');
+                    end -= last.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            // `www.` alone, or a scheme with nothing after it, is not an address.
+            let candidate = &rest[..end];
+            let body = candidate.split_once("://").map_or(candidate, |(_, b)| b);
+            if body.len() > 4 && body.contains('.') || candidate.starts_with("http") && body.len() > 1 {
+                if plain_from < i {
+                    out.push(UrlPiece::Text(&text[plain_from..i]));
+                }
+                out.push(UrlPiece::Url(candidate));
+                i += end;
+                plain_from = i;
+                continue;
+            }
+        }
+        i += text[i..].chars().next().map_or(1, char::len_utf8);
+    }
+    if plain_from < text.len() {
+        out.push(UrlPiece::Text(&text[plain_from..]));
+    }
+    out
+}
+
+/// Column widths (twips, summing to `total`) in proportion to how much text each column holds,
+/// so a long description is not squeezed next to a two-character flag. Every column keeps at
+/// least a fixed share, and one verbose column cannot take everything.
+fn column_widths(total: usize, cols: usize, chars: &[usize]) -> Vec<usize> {
+    const MIN_WEIGHT: usize = 6;
+    const MAX_WEIGHT: usize = 48;
+    let weights: Vec<usize> = (0..cols)
+        .map(|i| chars.get(i).copied().unwrap_or(0).clamp(MIN_WEIGHT, MAX_WEIGHT))
+        .collect();
+    let sum: usize = weights.iter().sum::<usize>().max(1);
+    let mut widths: Vec<usize> = weights.iter().map(|w| total * w / sum).collect();
+    // Rounding: the last column takes what is left.
+    let used: usize = widths.iter().sum();
+    if let Some(last) = widths.last_mut() {
+        *last += total.saturating_sub(used);
+    }
+    widths
 }
 
 /// Longest paragraph a code block is split into in `CodeBlockLayout::SingleParagraph`.
@@ -471,8 +556,17 @@ enum LinkTarget {
 }
 
 /// Bookmark names must start with a letter and contain no spaces or hyphens.
-fn bookmark_name(heading: usize) -> String {
-    format!("md_h{heading}")
+/// Anchor numbers at or above this are HTML `id`/`name` targets, below it headings.
+const HTML_ANCHOR_BASE: usize = 1 << 20;
+/// Most HTML anchors one document may define.
+const MAX_HTML_ANCHORS: usize = 10_000;
+
+fn bookmark_name(n: usize) -> String {
+    if n >= HTML_ANCHOR_BASE {
+        format!("md_a{}", n - HTML_ANCHOR_BASE)
+    } else {
+        format!("md_h{n}")
+    }
 }
 
 /// GitHub's heading anchors: lower case, spaces to hyphens, punctuation dropped.
@@ -491,13 +585,14 @@ fn github_slug(text: &str) -> String {
 
 /// Anchor name -> number of the heading, for every Markdown heading outside footnotes, in
 /// document order. An explicit `{#id}` is used as written; repeated names get `-1`, `-2`...
-fn heading_anchors(markdown: &str) -> HashMap<String, usize> {
+fn heading_anchors(markdown: &str, sup_sub: bool) -> HashMap<String, usize> {
     let mut anchors = HashMap::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut in_definition = false;
     let mut open: Option<(Option<String>, String)> = None;
     let mut number = 0;
-    for (event, _) in merged_events(markdown) {
+    let mut html_found: Vec<String> = Vec::new();
+    for (event, _) in merged_events(markdown, sup_sub) {
         match event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
             Event::End(TagEnd::FootnoteDefinition) => in_definition = false,
@@ -506,6 +601,20 @@ fn heading_anchors(markdown: &str) -> HashMap<String, usize> {
             Event::Text(t) | Event::Code(t) => {
                 if let Some((_, text)) = open.as_mut() {
                     text.push_str(&t);
+                }
+            }
+            Event::Html(h) | Event::InlineHtml(h) => {
+                for piece in html::tokenize(&h) {
+                    if let Piece::Tag { closing: false, attrs, name } = piece {
+                        let target = html::attr(&attrs, "id")
+                            .or_else(|| if name == "a" { html::attr(&attrs, "name") } else { None });
+                        if let Some(target) = target.filter(|t| !t.is_empty() && t.len() <= 200) {
+                            let k = html_found.len();
+                            if k < MAX_HTML_ANCHORS && !html_found.contains(&target) {
+                                html_found.push(target);
+                            }
+                        }
+                    }
                 }
             }
             Event::End(TagEnd::Heading(_)) => {
@@ -520,6 +629,10 @@ fn heading_anchors(markdown: &str) -> HashMap<String, usize> {
             }
             _ => {}
         }
+    }
+    // Headings win a name they share with an HTML anchor.
+    for (k, name) in html_found.into_iter().enumerate() {
+        anchors.entry(name).or_insert(HTML_ANCHOR_BASE + k);
     }
     anchors
 }
@@ -711,6 +824,7 @@ impl<'a> Builder<'a> {
             base_dir: cfg.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
             nonce,
             footnotes: HashMap::new(),
+            emitted_anchors: HashSet::new(),
             referenced: HashSet::new(),
             diags: Collector::default(),
             at: 0..0,
@@ -857,13 +971,52 @@ impl<'a> Builder<'a> {
     }
 
     fn text(&mut self, t: &str) {
+        self.count_cell_chars(t.chars().count());
         let run = self.format(Run::new().add_text(sanitize_xml_chars(t)));
         self.push(Child::Run(run));
+    }
+
+    /// Body text from the Markdown parser: like [`Builder::text`], and, when
+    /// [`Config::autolink_bare_urls`] is on, bare `http://`, `https://` and `www.` addresses
+    /// outside links become hyperlinks (only to destinations the link policy allows).
+    fn prose(&mut self, t: &str) {
+        if !self.cfg.autolink_bare_urls || self.link.is_some() {
+            self.text(t);
+            return;
+        }
+        for piece in split_bare_urls(t) {
+            match piece {
+                UrlPiece::Text(text) => self.text(text),
+                UrlPiece::Url(raw) => {
+                    let target = if raw.starts_with("www.") { format!("https://{raw}") } else { raw.to_string() };
+                    match safe_link(&target, &self.cfg.allowed_link_schemes) {
+                        Some(url) => {
+                            self.link = Some(LinkCtx {
+                                url: url.clone(),
+                                children: Vec::new(),
+                                bookmark: None,
+                            });
+                            self.text(raw);
+                            if let Some(link) = self.link.take() {
+                                self.finish_link(LinkTarget::External(url), link.children);
+                            }
+                        }
+                        None => self.text(raw),
+                    }
+                }
+            }
+        }
     }
 
     fn start_para(&mut self, kind: ParaKind) {
         self.cur = Some(Vec::new());
         self.kind = kind;
+    }
+
+    fn count_cell_chars(&mut self, n: usize) {
+        if let Some(t) = self.table.as_mut() {
+            t.cell_chars = t.cell_chars.saturating_add(n);
+        }
     }
 
     // ---- block plumbing
@@ -1039,6 +1192,7 @@ impl<'a> Builder<'a> {
         match c {
             Child::Run(r) | Child::Picture { run: r, .. } => p.add_run(r),
             Child::Link(l) => p.add_hyperlink(l),
+            Child::Bookmark(n) => p.add_bookmark_start(n, bookmark_name(n)).add_bookmark_end(n),
             Child::Omml { slot, .. } => p.add_run(Run::new().add_text(marker(&self.nonce, slot))),
         }
     }
@@ -1405,6 +1559,7 @@ impl<'a> Builder<'a> {
         if let Some(t) = self.table.as_mut() {
             t.cell = Some(TableCell::new());
             t.cell_paras = 0;
+            t.cell_chars = 0;
         }
         self.start_para(ParaKind::Normal);
         if self.table.as_ref().is_some_and(|t| t.in_head) {
@@ -1428,6 +1583,10 @@ impl<'a> Builder<'a> {
                 }
                 t.row_cells.push(cell);
             }
+            if t.col_chars.len() <= t.col {
+                t.col_chars.resize(t.col + 1, 0);
+            }
+            t.col_chars[t.col] = t.col_chars[t.col].max(t.cell_chars);
             t.col += 1;
         }
         self.charge(1);
@@ -1503,6 +1662,9 @@ impl<'a> Builder<'a> {
             } else {
                 counter.saturating_add(1)
             };
+        }
+        if !closing {
+            self.html_anchor_target(name, attrs);
         }
         let cfg: &'a Config = self.cfg;
         if let Some((key, style)) = cfg.html_tags.get_key_value(name) {
@@ -1619,12 +1781,38 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// An element with an `id` (or `<a name>`) is where `[x](#id)` and `<a href="#id">` land.
+    fn html_anchor_target(&mut self, name: &str, attrs: &str) {
+        let id = html::attr(attrs, "id").or_else(|| if name == "a" { html::attr(attrs, "name") } else { None });
+        let Some(id) = id else { return };
+        if let Some(&n) = self.anchors.get(&id) {
+            if n >= HTML_ANCHOR_BASE && self.emitted_anchors.insert(n) {
+                self.push(Child::Bookmark(n));
+            }
+        }
+    }
+
     fn html_anchor(&mut self, closing: bool, attrs: &str) {
         if closing {
             if self.html_link {
                 self.close_html_link();
             }
             return;
+        }
+        // `<a href="#target">` is an internal jump: harmless, so allowed even with HTML links off.
+        if self.link.is_none() {
+            if let Some(n) = html::attr(attrs, "href")
+                .and_then(|h| h.strip_prefix('#').map(str::to_string))
+                .and_then(|f| self.heading_for(&f))
+            {
+                self.link = Some(LinkCtx {
+                    url: String::new(),
+                    children: Vec::new(),
+                    bookmark: Some(n),
+                });
+                self.html_link = true;
+                return;
+            }
         }
         if !self.cfg.html_links || self.link.is_some() {
             // links off, or already inside a link: keep the text only
@@ -1657,6 +1845,7 @@ impl<'a> Builder<'a> {
             self.link = Some(LinkCtx {
                 url,
                 children: Vec::new(),
+                bookmark: None,
             });
             self.html_link = true;
         }
@@ -1665,7 +1854,11 @@ impl<'a> Builder<'a> {
     fn close_html_link(&mut self) {
         self.html_link = false;
         if let Some(link) = self.link.take() {
-            self.finish_link(LinkTarget::External(link.url), link.children);
+            let target = match link.bookmark {
+                Some(n) => LinkTarget::Heading(n),
+                None => LinkTarget::External(link.url),
+            };
+            self.finish_link(target, link.children);
         }
     }
 
@@ -1734,7 +1927,7 @@ impl<'a> Builder<'a> {
             let cols = t.aligns.len().max(t.max_cols).max(1);
             self.stats.tables += 1;
             let table = Table::new(t.rows)
-                .set_grid(vec![self.geo.content_w / cols; cols])
+                .set_grid(column_widths(self.geo.content_w, cols, &t.col_chars))
                 .width(self.geo.content_w, WidthType::Dxa);
             match outer.as_mut() {
                 Some(o) if o.cell.is_some() => {
@@ -1931,13 +2124,14 @@ impl<'a> Builder<'a> {
                     img.alt.push_str(&t);
                 } else {
                     self.undefined_footnote_marks(&t);
-                    self.text(&t);
+                    self.prose(&t);
                 }
             }
             Event::Code(t) => {
                 if let Some(img) = self.image.as_mut() {
                     img.alt.push_str(&t);
                 } else {
+                    self.count_cell_chars(t.chars().count());
                     let run = self.format(
                         Run::new()
                             .style("InlineCode")
@@ -2062,6 +2256,8 @@ impl<'a> Builder<'a> {
             }
             Tag::Emphasis => self.italic += 1,
             Tag::Strong => self.bold += 1,
+            Tag::Superscript => self.sup += 1,
+            Tag::Subscript => self.sub += 1,
             Tag::Strikethrough => self.strike += 1,
             Tag::Link {
                 link_type, dest_url, ..
@@ -2075,6 +2271,7 @@ impl<'a> Builder<'a> {
                 self.link = Some(LinkCtx {
                     url,
                     children: Vec::new(),
+                    bookmark: None,
                 });
             }
             // An image inside another image's alt text only contributes its alt text.
@@ -2156,6 +2353,8 @@ impl<'a> Builder<'a> {
             TagEnd::Emphasis => self.italic = self.italic.saturating_sub(1),
             TagEnd::Strong => self.bold = self.bold.saturating_sub(1),
             TagEnd::Strikethrough => self.strike = self.strike.saturating_sub(1),
+            TagEnd::Superscript => self.sup = self.sup.saturating_sub(1),
+            TagEnd::Subscript => self.sub = self.sub.saturating_sub(1),
             TagEnd::Link => {
                 if let Some(link) = self.link.take() {
                     // `[x](#some-heading)` jumps to that heading.
@@ -2229,7 +2428,7 @@ impl<'a> Builder<'a> {
                 Child::Omml { slot, .. } => {
                     h = h.add_run(Run::new().add_text(marker(&self.nonce, slot)));
                 }
-                other @ Child::Link(_) => loose.push(other),
+                other @ (Child::Link(_) | Child::Bookmark(_)) => loose.push(other),
             }
         }
         self.push(Child::Link(h));
@@ -2358,10 +2557,10 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot], footnotes: bool) -> R
 // ------------------------------------------------------------------ driver
 
 /// Footnote bodies by label (the first definition of a label wins).
-fn collect_footnotes(markdown: &str) -> HashMap<String, FootnoteDef<'_>> {
+fn collect_footnotes(markdown: &str, sup_sub: bool) -> HashMap<String, FootnoteDef<'_>> {
     let mut map = HashMap::new();
     let mut open: Option<OpenDefinition<'_>> = None;
-    for (ev, range) in merged_events(markdown) {
+    for (ev, range) in merged_events(markdown, sup_sub) {
         match ev {
             Event::Start(Tag::FootnoteDefinition(label)) => {
                 open = Some(OpenDefinition {
@@ -2419,12 +2618,12 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     let _ids = crate::docx::IdScope::new();
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
-    b.footnotes = collect_footnotes(&pre.markdown);
-    b.anchors = Arc::new(heading_anchors(&pre.markdown));
+    b.footnotes = collect_footnotes(&pre.markdown, cfg.superscript_subscript);
+    b.anchors = Arc::new(heading_anchors(&pre.markdown, cfg.superscript_subscript));
 
     let mut in_definition = false;
     let mut events = 0usize;
-    for (event, range) in merged_events(&pre.markdown) {
+    for (event, range) in merged_events(&pre.markdown, cfg.superscript_subscript) {
         // Footnote bodies are emitted where they are referenced, not in place.
         match &event {
             Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
@@ -2545,6 +2744,41 @@ mod tests {
         png.extend_from_slice(&h.to_be_bytes());
         png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
         png
+    }
+
+    #[test]
+    fn bare_urls_are_split_out_like_github_does() {
+        fn show(t: &str) -> Vec<String> {
+            split_bare_urls(t)
+                .into_iter()
+                .map(|p| match p {
+                    UrlPiece::Text(s) => format!("t:{s}"),
+                    UrlPiece::Url(s) => format!("u:{s}"),
+                })
+                .collect()
+        }
+        assert_eq!(show("see https://example.com/a?b=1."), ["t:see ", "u:https://example.com/a?b=1", "t:."]);
+        assert_eq!(show("(http://x.org/a_(b))"), ["t:(", "u:http://x.org/a_(b)", "t:)"]);
+        assert_eq!(show("go to www.example.com, now"), ["t:go to ", "u:www.example.com", "t:, now"]);
+        assert_eq!(show("fooshttps://x.org no"), ["t:fooshttps://x.org no"], "needs a word boundary");
+        assert_eq!(show("www. alone and http:// alone"), ["t:www. alone and http:// alone"]);
+        assert_eq!(show("日本語 https://例え.jp/ok 終"), ["t:日本語 ", "u:https://例え.jp/ok", "t: 終"]);
+        assert_eq!(show(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn column_widths_follow_content_and_always_fill_the_table() {
+        let w = column_widths(9000, 3, &[2, 40, 10]);
+        assert_eq!(w.iter().sum::<usize>(), 9000);
+        assert!(w[1] > w[2] && w[2] > w[0], "{w:?}");
+        // A verbose column cannot starve the others.
+        let w = column_widths(9000, 2, &[1000, 1]);
+        assert!(w[1] >= 9000 * 6 / 54 - 1, "{w:?}");
+        // No data (an empty table, extra columns): equal-ish shares, never a zero or a panic.
+        let w = column_widths(9000, 4, &[]);
+        assert_eq!(w, vec![2250; 4]);
+        assert_eq!(column_widths(5, 3, &[]).iter().sum::<usize>(), 5);
+        assert!(column_widths(0, 0, &[]).is_empty());
     }
 
     #[test]

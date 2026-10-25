@@ -583,6 +583,14 @@ pub struct Config {
     pub scratch_dir: Option<PathBuf>,
     /// A token the host can use to stop a running conversion; see [`CancelToken`](crate::CancelToken).
     pub cancel: Option<CancelToken>,
+    /// Read `^x^` as superscript and `~x~` as subscript (`~~x~~` stays strikethrough). Off by
+    /// default: without it a single `~x~` is strikethrough, so turning this on changes what such
+    /// existing documents mean, and the markers must stand at word boundaries (`H ~2~ O`). The HTML `<sup>`/`<sub>` tags always work.
+    pub superscript_subscript: bool,
+    /// Turn bare `http://`, `https://` and `www.` addresses in running text into hyperlinks
+    /// (GitHub's "autolink literals"), still limited to [`Config::allowed_link_schemes`]. Off by
+    /// default: nothing becomes a link unless the author wrote link syntax.
+    pub autolink_bare_urls: bool,
     /// What to do with a document that cannot be converted faithfully; see [`LossPolicy`].
     /// Default [`LossPolicy::Allow`]: degrade as documented and report. A host that must not
     /// deliver a degraded document sets [`LossPolicy::Reject`].
@@ -702,6 +710,18 @@ impl Config {
     /// Choose what happens to a document that cannot be converted faithfully.
     pub fn with_loss_policy(mut self, policy: LossPolicy) -> Self {
         self.loss_policy = policy;
+        self
+    }
+
+    /// Read `^x^` as superscript and `~x~` as subscript (see [`Config::superscript_subscript`]).
+    pub fn with_superscript_subscript(mut self, on: bool) -> Self {
+        self.superscript_subscript = on;
+        self
+    }
+
+    /// Turn bare web addresses into hyperlinks (see [`Config::autolink_bare_urls`]).
+    pub fn with_autolink_bare_urls(mut self, on: bool) -> Self {
+        self.autolink_bare_urls = on;
         self
     }
 
@@ -847,6 +867,8 @@ impl Config {
             fence_renderers: FenceRenderers::default(),
             scratch_dir: None,
             cancel: None,
+            superscript_subscript: false,
+            autolink_bare_urls: false,
             loss_policy: LossPolicy::default(),
             image_resolver: None,
         }

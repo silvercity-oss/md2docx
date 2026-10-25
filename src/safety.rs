@@ -138,10 +138,44 @@ pub(crate) fn safe_link(url: &str, allowed: &[String]) -> Option<String> {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
     // A drive letter ("C:\\x") parses as a one-letter scheme and is not allowed.
     if valid && allowed.iter().any(|a| a.eq_ignore_ascii_case(scheme)) {
+        if scheme.eq_ignore_ascii_case("mailto") {
+            return Some(clean_mailto(&url));
+        }
         Some(url)
     } else {
         None
     }
+}
+
+/// A `mailto:` link keeps its address and the header fields a person would expect a link to
+/// prefill (`subject`, `body`, `cc`, `bcc`). Anything else in the query (`attach=`, `from=`,
+/// private extension headers that a few mail clients act on) is dropped.
+fn clean_mailto(url: &str) -> String {
+    let Some((head, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let (query, fragment) = match query.split_once('#') {
+        Some((q, f)) => (q, Some(f)),
+        None => (query, None),
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            let key = pair.split('=').next().unwrap_or("");
+            let key = percent_encoding::percent_decode_str(key).decode_utf8_lossy().to_ascii_lowercase();
+            matches!(key.as_str(), "subject" | "body" | "cc" | "bcc")
+        })
+        .collect();
+    let mut out = head.to_string();
+    if !kept.is_empty() {
+        out.push('?');
+        out.push_str(&kept.join("&"));
+    }
+    if let Some(f) = fragment {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
 }
 
 // -------------------------------------------------------------- images
@@ -326,6 +360,18 @@ impl<W: std::io::Write + std::io::Seek> std::io::Seek for LimitedWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mailto_keeps_only_the_prefill_fields() {
+        let allowed = vec!["mailto".to_string()];
+        let c = |u: &str| safe_link(u, &allowed).unwrap();
+        assert_eq!(c("mailto:a@b.example"), "mailto:a@b.example");
+        assert_eq!(c("mailto:a@b.example?subject=Hi&body=Text"), "mailto:a@b.example?subject=Hi&body=Text");
+        assert_eq!(c("mailto:a@b.example?attach=/etc/passwd&subject=Hi"), "mailto:a@b.example?subject=Hi");
+        assert_eq!(c("mailto:a@b.example?%61ttach=/x&cc=c@d.example"), "mailto:a@b.example?cc=c@d.example");
+        assert_eq!(c("mailto:a@b.example?attach=/etc/passwd"), "mailto:a@b.example");
+        assert_eq!(c("MAILTO:a@b.example?Attachment=x&BODY=y"), "MAILTO:a@b.example?BODY=y");
+    }
 
     #[test]
     fn xml_sanitising_drops_only_illegal_characters() {
