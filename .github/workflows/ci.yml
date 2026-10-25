@@ -33,11 +33,22 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
-      # Integration tests use stand-in renderers, so no mmdc/latex/dvipng is needed.
-      # Tests that rely on POSIX shell scripts as mock tools are Unix-only;
-      # everything else (OMML, CLI, Markdown mapping, errors) runs on all three.
+      # Real TeX on Linux so the tests that exercise the TeX hardening against an
+      # actual `latex` run (and fail, rather than skip, if the install breaks).
+      - name: Install TeX (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended dvipng
+
+      # Most integration tests use stand-in renderers, so no mmdc is needed.
+      # Tests that rely on POSIX shell scripts or a real TeX are Unix-only and
+      # skip elsewhere; everything else (OMML, CLI, Markdown coverage, security
+      # gates, fuzz-style tests) runs on all three platforms.
       - name: Test
         run: cargo test --all-targets --locked
+        env:
+          REQUIRE_TEX: ${{ runner.os == 'Linux' && '1' || '' }}
 
   # Oldest toolchain we promise to support (Cargo.toml `rust-version`; set by our dependencies).
   msrv:

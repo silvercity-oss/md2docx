@@ -12,6 +12,7 @@ use crate::error::{CrateError, Result};
 use crate::omml;
 use crate::parser::markdown_options;
 use crate::renderer::{asset_stem, render_graph, render_math_image, GraphKind, Workspace};
+use crate::safety::sanitize_xml_chars;
 
 /// What an image reference in the rewritten Markdown stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,11 +66,73 @@ enum Found {
     Math { latex: String, display: bool },
 }
 
+/// Blank out YAML (`---`) or TOML (`+++`) front matter at the very start of the
+/// document, keeping line numbers intact.
+///
+/// This is done here rather than by the Markdown parser, which would also
+/// swallow `---`/`+++` blocks in the middle of a document, deleting real
+/// content that sits between two horizontal rules. To avoid eating a document
+/// that merely starts with a rule, the block must look like metadata: empty,
+/// or its first non-blank line is `key: value` (YAML) / `key = value` (TOML).
+fn blank_front_matter(md: &str) -> std::borrow::Cow<'_, str> {
+    let body = md.strip_prefix('\u{feff}').unwrap_or(md);
+    let mut lines = body.split_inclusive('\n');
+    let Some(first) = lines.next() else { return md.into() };
+    let delim = first.trim_end();
+    if delim != "---" && delim != "+++" {
+        return md.into();
+    }
+    let looks_like_metadata = |line: &str| {
+        let sep = if delim == "---" { ':' } else { '=' };
+        line.split_once(sep).is_some_and(|(key, _)| {
+            let key = key.trim();
+            !key.is_empty()
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+        })
+    };
+    let mut consumed = first.len();
+    let mut checked_first_content = false;
+    for line in lines {
+        consumed += line.len();
+        let t = line.trim_end();
+        if t == delim || (delim == "---" && t == "...") {
+            let blanked: String = body[..consumed].chars().filter(|&c| c == '\n').collect();
+            return format!("{blanked}{}", &body[consumed..]).into();
+        }
+        if !checked_first_content && !t.trim().is_empty() {
+            checked_first_content = true;
+            if !looks_like_metadata(t) {
+                return md.into();
+            }
+        }
+    }
+    md.into() // never closed: not front matter
+}
+
 /// Run Stage 1 over `markdown`.
 pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
+    let limits = &cfg.limits;
+    if markdown.len() > limits.max_input_bytes {
+        return Err(CrateError::LimitExceeded(format!(
+            "input is {} bytes (limit {})",
+            markdown.len(),
+            limits.max_input_bytes
+        )));
+    }
     if markdown.contains('\0') {
         return Err(CrateError::InvalidMarkdown("input contains NUL bytes".into()));
     }
+    // Control characters are illegal in XML; left in, Word calls the file corrupt.
+    let markdown = sanitize_xml_chars(markdown);
+    let markdown = &*blank_front_matter(&markdown);
+    let too_many = || {
+        CrateError::LimitExceeded(format!(
+            "more than {} diagrams and formulas in one document",
+            limits.max_rendered_blocks
+        ))
+    };
 
     // Pass 1: locate everything to replace, using real CommonMark parsing so
     // code spans, escapes and nested containers are handled correctly.
@@ -78,7 +141,8 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     for (event, range) in Parser::new_ext(markdown, markdown_options(true)).into_offset_iter() {
         match event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                if let Some(kind) = GraphKind::from_info(&info) {
+                // With diagrams disabled the fence stays an ordinary code block.
+                if let Some(kind) = GraphKind::from_info(&info).filter(|_| cfg.graphs.enabled) {
                     open_graph = Some((range, kind, String::new()));
                 }
             }
@@ -95,8 +159,24 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                             line_of(markdown, range.start)
                         )));
                     }
+                    if buf.len() > limits.max_graph_source_bytes {
+                        return Err(CrateError::LimitExceeded(format!(
+                            "diagram at line {} is {} bytes (limit {})",
+                            line_of(markdown, range.start),
+                            buf.len(),
+                            limits.max_graph_source_bytes
+                        )));
+                    }
                     found.push((range, Found::Graph(kind, buf)));
                 }
+            }
+            Event::InlineMath(m) | Event::DisplayMath(m) if m.len() > limits.max_formula_bytes => {
+                return Err(CrateError::LimitExceeded(format!(
+                    "formula at line {} is {} bytes (limit {})",
+                    line_of(markdown, range.start),
+                    m.len(),
+                    limits.max_formula_bytes
+                )));
             }
             Event::InlineMath(m) => found.push((
                 range,
@@ -113,6 +193,9 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 },
             )),
             _ => {}
+        }
+        if found.len() > limits.max_rendered_blocks {
+            return Err(too_many());
         }
     }
 
@@ -207,6 +290,28 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
 mod tests {
     use super::*;
     use pulldown_cmark::Tag;
+
+    #[test]
+    fn front_matter_only_at_the_start_and_only_if_it_looks_like_metadata() {
+        let blank = |s: &str| blank_front_matter(s).into_owned();
+        assert_eq!(blank("---\ntitle: x\ntags: [a]\n---\nBody\n"), "\n\n\n\nBody\n");
+        assert_eq!(blank("+++\ntitle = \"x\"\n+++\nBody"), "\n\n\nBody");
+        assert_eq!(blank("\u{feff}---\na: b\n---\nBody"), "\n\n\nBody");
+        assert_eq!(blank("---\r\na: b\r\n...\r\nBody"), "\n\n\nBody");
+        assert_eq!(blank("---\n---\nBody"), "\n\nBody", "empty block");
+        // Content, not metadata: left alone.
+        for keep in [
+            "---\nJust a paragraph between rules\n---\nBody",
+            "Intro\n\n---\nkey: value\n---\nAfter",
+            "Intro\n\n+++\nkey = 1\n+++\nAfter",
+            "---\nkey: value\nnever closed",
+            "---",
+            "",
+            "text\n---\nkey: v\n---\n",
+        ] {
+            assert_eq!(blank(keep), keep, "{keep:?}");
+        }
+    }
 
     /// What the parser reports as the image destination for an escaped path.
     fn parsed_dest(escaped: &str) -> String {

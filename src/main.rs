@@ -5,7 +5,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use silvercity_oss::{markdown_file_to_docx, CommandSpec, Config, MathImageEngine, MathMode as LibMathMode};
+use silvercity_oss::{
+    markdown_file_to_docx, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine, MathMode as LibMathMode,
+};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MathMode {
@@ -15,6 +17,16 @@ pub enum MathMode {
     Image,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageAccess {
+    /// Never read local files; images become `[alt text]`.
+    None,
+    /// Only files inside the input file's directory (symlinks resolved).
+    BaseDir,
+    /// Any readable file. Only for Markdown you wrote yourself.
+    Any,
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "md2docx",
@@ -22,8 +34,8 @@ pub enum MathMode {
     about = "High-fidelity Markdown to DOCX compiler with native Math and Graph preprocessing",
     after_help = "Command templates may use {input} and {output} (and {dpi}); both of the first two are required.\n\
                   Example: --dolphin-command 'dolphin -i {input} -o {output}'\n\n\
-                  SECURITY: `--math-mode image` runs a local TeX engine on document content. Use the default \
-                  `native` mode for untrusted input."
+                  SECURITY: `--math-mode image` runs a local TeX engine on document content, and diagram \
+                  rendering runs external tools. Use `--untrusted` for input you do not control."
 )]
 pub struct Args {
     #[arg(help = "Path to the input markdown file")]
@@ -58,6 +70,21 @@ pub struct Args {
     )]
     pub mermaid_command: Option<CommandSpec>,
 
+    #[arg(
+        long,
+        conflicts_with_all = ["math_mode", "dolphin_command", "mermaid_command", "latex", "dvipng", "image_access"],
+        help = "Strictest preset for untrusted Markdown: native math, diagram fences stay code, no local images, tight size limits. Starts no subprocess"
+    )]
+    pub untrusted: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ImageAccess::BaseDir,
+        help = "Which local images may be embedded"
+    )]
+    pub image_access: ImageAccess,
+
     #[arg(long, default_value = "latex", help = "`latex` executable (image math mode only)")]
     pub latex: String,
 
@@ -89,21 +116,31 @@ fn parse_command(template: &str) -> Result<CommandSpec, String> {
 }
 
 fn config(args: &Args) -> Config {
-    let mut cfg = Config::default();
-    cfg.math.mode = match args.math_mode {
-        MathMode::Native => LibMathMode::NativeOmml,
-        MathMode::Image => LibMathMode::ImageFallback,
+    let mut cfg = if args.untrusted {
+        Config::untrusted()
+    } else {
+        let mut cfg = Config::default();
+        cfg.math.mode = match args.math_mode {
+            MathMode::Native => LibMathMode::NativeOmml,
+            MathMode::Image => LibMathMode::ImageFallback,
+        };
+        cfg.math.engine = MathImageEngine::LatexDvipng {
+            latex: args.latex.clone(),
+            dvipng: args.dvipng.clone(),
+        };
+        cfg.image_access = match args.image_access {
+            ImageAccess::None => LibImageAccess::None,
+            ImageAccess::BaseDir => LibImageAccess::BaseDir,
+            ImageAccess::Any => LibImageAccess::Any,
+        };
+        if let Some(spec) = &args.mermaid_command {
+            cfg.graphs.mermaid = spec.clone();
+        }
+        if let Some(spec) = &args.dolphin_command {
+            cfg.graphs.dolphin = spec.clone();
+        }
+        cfg
     };
-    cfg.math.engine = MathImageEngine::LatexDvipng {
-        latex: args.latex.clone(),
-        dvipng: args.dvipng.clone(),
-    };
-    if let Some(spec) = &args.mermaid_command {
-        cfg.graphs.mermaid = spec.clone();
-    }
-    if let Some(spec) = &args.dolphin_command {
-        cfg.graphs.dolphin = spec.clone();
-    }
     cfg.tool_timeout = Duration::from_secs(args.timeout);
     cfg
 }
@@ -155,6 +192,30 @@ mod tests {
     fn clap_definition_is_consistent() {
         use clap::CommandFactory;
         Args::command().debug_assert();
+    }
+
+    #[test]
+    fn untrusted_preset_is_strict_and_exclusive() {
+        let a = Args::try_parse_from(["md2docx", "in.md", "--untrusted"]).unwrap();
+        let c = config(&a);
+        assert_eq!(c.math.mode, LibMathMode::NativeOmml);
+        assert!(!c.graphs.enabled);
+        assert_eq!(c.image_access, LibImageAccess::None);
+        // It cannot be combined with switches that would loosen it.
+        for extra in [
+            ["--math-mode", "image"],
+            ["--image-access", "any"],
+            ["--dolphin-command", "d -i {input} -o {output}"],
+            ["--latex", "xelatex"],
+        ] {
+            assert!(
+                Args::try_parse_from(["md2docx", "in.md", "--untrusted", extra[0], extra[1]]).is_err(),
+                "{extra:?}"
+            );
+        }
+        // Defaults for the normal mode keep images inside the input's directory.
+        let d = Args::try_parse_from(["md2docx", "in.md"]).unwrap();
+        assert_eq!(config(&d).image_access, LibImageAccess::BaseDir);
     }
 
     #[test]

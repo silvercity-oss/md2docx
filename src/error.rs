@@ -5,6 +5,7 @@ use std::path::PathBuf;
 /// Every way a conversion can fail. The crate never panics on bad input; it
 /// returns one of these instead.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CrateError {
     /// A required external program (e.g. `mmdc`, `latex`, `dvipng`) is not on
     /// `PATH` (or the configured path does not exist).
@@ -15,6 +16,15 @@ pub enum CrateError {
     /// block, malformed math, ...).
     #[error("invalid markdown: {0}")]
     InvalidMarkdown(String),
+
+    /// The input exceeds a configured [`Limits`](crate::Limits) value.
+    #[error("limit exceeded: {0}")]
+    LimitExceeded(String),
+
+    /// The input asks for something the active security policy forbids
+    /// (a TeX file-access primitive, an image outside the base directory, ...).
+    #[error("blocked by security policy: {0}")]
+    UnsafeContent(String),
 
     /// The Word document could not be assembled or packed.
     #[error("docx generation failed: {0}")]

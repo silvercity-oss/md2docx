@@ -75,8 +75,59 @@ impl Default for MathOptions {
     }
 }
 
+/// Hard ceilings that keep one document from exhausting memory, disk or time.
+/// Exceeding any of them is a [`CrateError::LimitExceeded`](crate::CrateError).
+#[derive(Debug, Clone)]
+pub struct Limits {
+    /// Size of the Markdown input.
+    pub max_input_bytes: usize,
+    /// Number of diagrams plus formulas.
+    pub max_rendered_blocks: usize,
+    /// Size of one diagram's source text.
+    pub max_graph_source_bytes: usize,
+    /// Size of one formula's LaTeX source.
+    pub max_formula_bytes: usize,
+    /// Size of one embedded image (a file, or a renderer's output).
+    pub max_image_bytes: u64,
+    /// Total bytes of all embedded images.
+    pub max_total_image_bytes: u64,
+    /// Total size of the scratch directory while external tools run.
+    pub max_workspace_bytes: u64,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        const MIB: u64 = 1024 * 1024;
+        Limits {
+            max_input_bytes: 10 * 1024 * 1024,
+            max_rendered_blocks: 500,
+            max_graph_source_bytes: 64 * 1024,
+            max_formula_bytes: 16 * 1024,
+            max_image_bytes: 25 * MIB,
+            max_total_image_bytes: 150 * MIB,
+            max_workspace_bytes: 256 * MIB,
+        }
+    }
+}
+
+/// Which local files a Markdown image reference may pull into the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImageAccess {
+    /// Never read files; images become `[alt text]`.
+    None,
+    /// Only files that resolve (after symlinks) inside [`Config::base_dir`]
+    /// (default: the current directory). Anything else is an error.
+    #[default]
+    BaseDir,
+    /// Any readable file. Only for Markdown you wrote yourself.
+    Any,
+}
+
 #[derive(Debug, Clone)]
 pub struct GraphOptions {
+    /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
+    /// blocks and no diagram tool is ever started.
+    pub enabled: bool,
     /// Renderer for ```` ```mermaid ```` blocks. Default: `mmdc` at 3x scale
     /// with a transparent background.
     pub mermaid: CommandSpec,
@@ -92,6 +143,7 @@ pub struct GraphOptions {
 impl Default for GraphOptions {
     fn default() -> Self {
         GraphOptions {
+            enabled: true,
             mermaid: CommandSpec::new(
                 "mmdc",
                 ["-i", "{input}", "-o", "{output}", "-s", "3", "-b", "transparent"],
@@ -113,6 +165,13 @@ pub struct Config {
     pub base_dir: Option<PathBuf>,
     /// Kill an external renderer that runs longer than this.
     pub tool_timeout: Duration,
+    pub limits: Limits,
+    /// Which local images may be embedded.
+    pub image_access: ImageAccess,
+    /// URL schemes a hyperlink may use (lower case, no colon). Links with any
+    /// other scheme, or none (relative paths, `#anchors`, UNC paths), are
+    /// written as plain text.
+    pub allowed_link_schemes: Vec<String>,
 }
 
 impl Default for Config {
@@ -122,11 +181,33 @@ impl Default for Config {
             graphs: GraphOptions::default(),
             base_dir: None,
             tool_timeout: Duration::from_secs(60),
+            limits: Limits::default(),
+            image_access: ImageAccess::default(),
+            allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
         }
     }
 }
 
 impl Config {
+    /// Strictest preset for Markdown from people you do not trust (uploads,
+    /// web forms, multi-tenant services): native math only, so no TeX process;
+    /// diagram fences are left as code, so no browser process; no local files
+    /// are read; tighter size limits. No subprocess is ever spawned.
+    pub fn untrusted() -> Self {
+        let mut c = Config::native_math();
+        c.graphs.enabled = false;
+        c.image_access = ImageAccess::None;
+        c.limits = Limits {
+            max_input_bytes: 2 * 1024 * 1024,
+            max_rendered_blocks: 200,
+            max_formula_bytes: 4 * 1024,
+            max_image_bytes: 5 * 1024 * 1024,
+            max_total_image_bytes: 25 * 1024 * 1024,
+            ..Limits::default()
+        };
+        c
+    }
+
     /// Default configuration with native, editable OMML equations.
     pub fn native_math() -> Self {
         let mut c = Config::default();

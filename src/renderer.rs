@@ -99,10 +99,55 @@ fn is_text_file_busy(_: &std::io::Error) -> bool {
     false
 }
 
-/// Run `program args...` in `cwd`, killing it after `timeout`. stdout and
-/// stderr are captured into an anonymous temp file (no pipe deadlocks) and
+/// Environment that puts TeX in *paranoid* file-access mode: it may only read
+/// and write inside its working directory (no absolute paths, no `..`, no
+/// dotfiles) and may never run programs. Complements `-no-shell-escape`, which
+/// alone does not stop `\input{/etc/passwd}` from reading host files.
+pub const TEX_ENV: &[(&str, &str)] = &[("openin_any", "p"), ("openout_any", "p"), ("shell_escape", "f")];
+
+/// Console output (stdout + stderr) a tool may produce before it is killed.
+const MAX_TOOL_LOG_BYTES: u64 = 1024 * 1024;
+
+/// Extra constraints for one tool invocation.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolGuard<'a> {
+    /// Environment variables to set (on top of the inherited environment).
+    pub env: &'a [(&'a str, &'a str)],
+    /// Kill the tool if `cwd` grows beyond this many bytes.
+    pub max_dir_bytes: u64,
+}
+
+fn dir_size(dir: &Path, depth: u8) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else { return 0 };
+    entries
+        .flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() && depth > 0 => dir_size(&e.path(), depth - 1),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
+/// Kill the tool and everything it started (Chrome behind `mmdc`, for example).
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+        // The child leads its own process group (see `spawn`), so this reaches its descendants.
+        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Run `program args...` in `cwd`.
+///
+/// No shell is involved: arguments are passed as an argv list. The tool is
+/// killed (with its descendants, on Unix) after `timeout`, if it prints more
+/// than 1 MiB, or if its working directory outgrows `guard.max_dir_bytes`.
+/// stdout and stderr go to an anonymous temp file (no pipe deadlocks) and are
 /// surfaced in the error on failure.
-pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration) -> Result<()> {
+pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, guard: &ToolGuard<'_>) -> Result<()> {
     let tool_err = |detail: String| CrateError::ExternalToolFailed {
         program: program.to_string(),
         detail,
@@ -117,14 +162,18 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration) -
             log.try_clone().map_err(|e| CrateError::io(cwd, e))?,
             log.try_clone().map_err(|e| CrateError::io(cwd, e))?,
         );
-        let spawned = Command::new(program)
-            .args(args)
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .current_dir(cwd)
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))
-            .stderr(Stdio::from(err))
-            .spawn();
-        match spawned {
+            .stderr(Stdio::from(err));
+        for (k, v) in guard.env {
+            cmd.env(k, v);
+        }
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        match cmd.spawn() {
             Ok(child) => break child,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(CrateError::MissingExternalCLI {
@@ -143,18 +192,38 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration) -
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(tool_err(format!("timed out after {}s", timeout.as_secs())));
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    kill_tree(&mut child);
+                    return Err(tool_err(format!("timed out after {}s", timeout.as_secs())));
+                }
+                if log.metadata().map(|m| m.len()).unwrap_or(0) > MAX_TOOL_LOG_BYTES {
+                    kill_tree(&mut child);
+                    return Err(tool_err("killed: more than 1 MiB of console output".into()));
+                }
+                if dir_size(cwd, 2) > guard.max_dir_bytes {
+                    kill_tree(&mut child);
+                    return Err(CrateError::LimitExceeded(format!(
+                        "`{program}` wrote more than {} bytes of files",
+                        guard.max_dir_bytes
+                    )));
+                }
+                sleep(Duration::from_millis(15));
             }
-            Ok(None) => sleep(Duration::from_millis(15)),
-            Err(e) => return Err(tool_err(format!("wait failed: {e}"))),
+            Err(e) => {
+                kill_tree(&mut child);
+                return Err(tool_err(format!("wait failed: {e}")));
+            }
         }
     };
 
     if status.success() {
         return Ok(());
+    }
+    // Failed tools may leave helpers behind.
+    #[cfg(unix)]
+    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
     }
     let mut output = String::new();
     let _ = log.seek(SeekFrom::Start(0));
@@ -162,16 +231,33 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration) -
     Err(tool_err(format!("exited with {status}: {}", output.trim())))
 }
 
-fn check_png(program: &str, path: &Path) -> Result<()> {
+/// The output must be a PNG no larger than `max_bytes`.
+fn check_png(program: &str, path: &Path, max_bytes: u64) -> Result<()> {
+    let bad = |detail: String| CrateError::ExternalToolFailed {
+        program: program.to_string(),
+        detail,
+    };
+    let len = fs::metadata(path)
+        .map_err(|_| bad(format!("did not produce {}", path.display())))?
+        .len();
+    if len > max_bytes {
+        return Err(CrateError::LimitExceeded(format!(
+            "`{program}` produced a {len} byte image (limit {max_bytes})"
+        )));
+    }
     let mut head = [0u8; 8];
     let ok = fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok() && head == PNG_SIGNATURE;
     if ok {
         Ok(())
     } else {
-        Err(CrateError::ExternalToolFailed {
-            program: program.to_string(),
-            detail: format!("did not produce a PNG at {}", path.display()),
-        })
+        Err(bad(format!("did not produce a PNG at {}", path.display())))
+    }
+}
+
+fn guard<'a>(cfg: &Config, env: &'a [(&'a str, &'a str)]) -> ToolGuard<'a> {
+    ToolGuard {
+        env,
+        max_dir_bytes: cfg.limits.max_workspace_bytes,
     }
 }
 
@@ -189,12 +275,15 @@ fn run_spec(
         .iter()
         .map(|a| substitute(a, input, output, dpi, display))
         .collect();
-    run_tool(&spec.program, &args, ws.path(), cfg.tool_timeout)?;
-    check_png(&spec.program, output)
+    run_tool(&spec.program, &args, ws.path(), cfg.tool_timeout, &guard(cfg, &[]))?;
+    check_png(&spec.program, output, cfg.limits.max_image_bytes)
 }
 
 /// Render a Mermaid/Dolphin source to `<workspace>/graph_<hash>.png`.
 pub fn render_graph(ws: &Workspace, kind: GraphKind, source: &str, cfg: &Config) -> Result<PathBuf> {
+    if !cfg.graphs.enabled {
+        return Err(CrateError::UnsafeContent("diagram rendering is disabled".into()));
+    }
     let stem = asset_stem("graph", &[kind.name().as_bytes(), source.as_bytes()]);
     let output = ws.path().join(format!("{stem}.png"));
     if output.exists() {
@@ -239,9 +328,12 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
             latex: latex_bin,
             dvipng,
         } => {
+            crate::safety::check_tex(latex).map_err(CrateError::UnsafeContent)?;
             let tex = ws.path().join(format!("{stem}.tex"));
             fs::write(&tex, latex_document(latex, display)).map_err(|e| CrateError::io(&tex, e))?;
-            let tex_arg = tex.to_string_lossy().into_owned();
+            // Relative to the working directory: paranoid mode refuses absolute paths,
+            // including the main file's.
+            let tex_arg = format!("{stem}.tex");
             run_tool(
                 latex_bin,
                 &[
@@ -252,6 +344,7 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
                 ],
                 ws.path(),
                 cfg.tool_timeout,
+                &guard(cfg, TEX_ENV),
             )?;
             let dvi = ws.path().join(format!("{stem}.dvi"));
             run_tool(
@@ -269,8 +362,9 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
                 ],
                 ws.path(),
                 cfg.tool_timeout,
+                &guard(cfg, &[]),
             )?;
-            check_png(dvipng, &output)?;
+            check_png(dvipng, &output, cfg.limits.max_image_bytes)?;
         }
         MathImageEngine::Command(spec) => {
             let input = ws.path().join(format!("{stem}.tex"));

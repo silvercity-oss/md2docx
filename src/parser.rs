@@ -5,22 +5,24 @@
 //! runs and swapped for real `<m:oMath>` XML in the rendered `document.xml`
 //! before the package is zipped (see [`inject_omml`]).
 
-use std::fs;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use docx_rs::{
-    AbstractNumbering, AlignmentType, BorderType, BreakType, Docx, Hyperlink, HyperlinkType, IndentLevel, Level,
-    LevelJc, LevelOverride, LevelText, LineSpacing, NumberFormat, Numbering, NumberingId, PageMargin, Paragraph,
+    AbstractNumbering, AlignmentType, BorderType, BreakType, Docx, Footnote, Hyperlink, HyperlinkType, IndentLevel,
+    Level, LevelJc, LevelOverride, LevelText, LineSpacing, NumberFormat, Numbering, NumberingId, PageMargin, Paragraph,
     ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Pic, Run, RunFonts, Shading, SpecialIndentType, Start,
-    Style, StyleType, Table, TableCell, TableRow, WidthType,
+    Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
 };
-use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, BlockQuoteKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd};
 
-use crate::config::{Config, MathMode};
+use crate::config::{Config, ImageAccess, MathMode};
 use crate::error::{CrateError, Result};
+use crate::html::{self, Piece};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
+use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
 /// every formula has been rewritten, and any leftover `$` is literal text).
@@ -28,7 +30,10 @@ pub(crate) fn markdown_options(math: bool) -> Options {
     let mut o = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_DEFINITION_LIST
+        | Options::ENABLE_GFM
+        | Options::ENABLE_HEADING_ATTRIBUTES;
     if math {
         o |= Options::ENABLE_MATH;
     }
@@ -198,6 +203,23 @@ struct Builder<'a> {
     cfg: &'a Config,
     base_dir: PathBuf,
     nonce: String,
+    /// Footnote bodies by label, collected before the main pass.
+    footnotes: HashMap<String, Vec<Event<'a>>>,
+    /// True while building the content of a footnote (no pictures/OMML there).
+    in_footnote: bool,
+    /// Bytes of footnote content expanded so far (amplification guard).
+    footnote_bytes: usize,
+    /// Bytes of images embedded so far.
+    image_bytes: u64,
+    html: Option<String>,
+    /// Hidden element (`script`...) opened by inline HTML and not yet closed:
+    /// text events are skipped until it closes or the paragraph ends.
+    hidden: Option<&'static str>,
+    underline: usize,
+    sup: usize,
+    sub: usize,
+    mono: usize,
+    def_depth: usize,
 
     blocks: Vec<Block>,
     cur: Option<Vec<Child>>,
@@ -208,7 +230,6 @@ struct Builder<'a> {
     link: Option<LinkCtx>,
     image: Option<ImageCtx>,
     code: Option<String>,
-    in_meta: bool,
     quote_depth: usize,
     lists: Vec<ListCtx>,
     ordered_numberings: Vec<Numbering>,
@@ -221,17 +242,11 @@ fn marker(nonce: &str, slot: usize) -> String {
     format!("SILVERCITYOMML{nonce}X{slot}X")
 }
 
-/// Decode `%XX` escapes in an image path. `percent-encoding` works on bytes and
-/// `decode_utf8_lossy` replaces invalid sequences, so no input can make this
-/// slice inside a UTF-8 character or panic.
-fn decode_path(raw: &str) -> String {
-    percent_encoding::percent_decode_str(raw)
-        .decode_utf8_lossy()
-        .into_owned()
-}
-
-/// Refuse images whose header claims more pixels than this (about 100 MP).
-const MAX_IMAGE_PIXELS: u64 = 100_000_000;
+/// Refuse images whose header claims more pixels than this (50 MP; a decoded
+/// RGBA frame of that size is 200 MB).
+const MAX_IMAGE_PIXELS: u64 = 50_000_000;
+/// Allocation ceiling handed to the image decoders.
+const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
 /// Tallest picture we place: the A4 text height (1" margins) in EMU.
 const MAX_IMAGE_HEIGHT_EMU: u128 = (16838 - 2 * MARGIN_TWIPS as u128) * 635;
 
@@ -259,34 +274,41 @@ fn display_size_emu(w: u32, h: u32, dpi: u32) -> Option<(u32, u32)> {
 /// Build a `Pic` from image bytes. docx-rs only embeds PNG, so other formats
 /// are decoded and re-encoded; `Pic::new` is avoided because it panics on
 /// undecodable input.
-fn make_picture(bytes: Vec<u8>, dpi: u32, origin: &Path) -> Result<Pic> {
-    let fail = |why: String| CrateError::DocxGenerationError(format!("image {}: {why}", origin.display()));
-    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
-    let (png, w, h) = if is_png {
-        let (w, h) = image::ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .map_err(|e| CrateError::io(origin, e))?
-            .into_dimensions()
-            .map_err(|e| fail(format!("cannot read PNG header: {e}")))?;
-        // Check the claimed size before anything could try to decode it.
-        if u64::from(w) * u64::from(h) > MAX_IMAGE_PIXELS {
-            return Err(fail(format!(
-                "{w}x{h} pixels exceeds the {MAX_IMAGE_PIXELS} pixel limit"
-            )));
-        }
-        (bytes, w, h)
-    } else {
-        let img = image::load_from_memory(&bytes).map_err(|e| fail(format!("cannot decode: {e}")))?;
-        let mut out = Cursor::new(Vec::new());
-        img.write_to(&mut out, image::ImageFormat::Png)
-            .map_err(|e| fail(format!("cannot re-encode as PNG: {e}")))?;
-        (out.into_inner(), img.width(), img.height())
+///
+/// `Ok(None)` means "not an image we can embed" (SVG, WebP, corrupt data); the
+/// caller shows the alt text. An error means the image is dangerous or too big.
+fn make_picture(bytes: Vec<u8>, dpi: u32, origin: &Path) -> Result<Option<Pic>> {
+    let reader = || image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format();
+    let Ok((w, h)) = reader().map_err(|e| CrateError::io(origin, e))?.into_dimensions() else {
+        return Ok(None);
     };
-    if w == 0 || h == 0 {
-        return Err(fail("has no pixels".into()));
+    // Judge the *claimed* size before anything allocates for it.
+    if u64::from(w) * u64::from(h) > MAX_IMAGE_PIXELS {
+        return Err(CrateError::LimitExceeded(format!(
+            "image {} is {w}x{h} pixels (limit {MAX_IMAGE_PIXELS})",
+            origin.display()
+        )));
     }
-    let (we, he) = display_size_emu(w, h, dpi).ok_or_else(|| fail(format!("{w}x{h} px is out of range")))?;
-    Ok(Pic::new_with_dimensions(png, w, h).size(we, he))
+    if w == 0 || h == 0 {
+        return Ok(None);
+    }
+    let png = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        bytes.clone()
+    } else {
+        let mut r = reader().map_err(|e| CrateError::io(origin, e))?;
+        let mut limits = image::Limits::default();
+        limits.max_alloc = Some(MAX_DECODE_ALLOC);
+        r.limits(limits);
+        let Ok(img) = r.decode() else { return Ok(None) };
+        let mut out = Cursor::new(Vec::new());
+        if img.write_to(&mut out, image::ImageFormat::Png).is_err() {
+            return Ok(None);
+        }
+        out.into_inner()
+    };
+    let (we, he) = display_size_emu(w, h, dpi)
+        .ok_or_else(|| CrateError::LimitExceeded(format!("image {} ({w}x{h} px) is out of range", origin.display())))?;
+    Ok(Some(Pic::new_with_dimensions(png, w, h).size(we, he)))
 }
 
 impl<'a> Builder<'a> {
@@ -296,6 +318,17 @@ impl<'a> Builder<'a> {
             cfg,
             base_dir: cfg.base_dir.clone().unwrap_or_else(|| PathBuf::from(".")),
             nonce,
+            footnotes: HashMap::new(),
+            in_footnote: false,
+            footnote_bytes: 0,
+            image_bytes: 0,
+            html: None,
+            hidden: None,
+            underline: 0,
+            sup: 0,
+            sub: 0,
+            mono: 0,
+            def_depth: 0,
             blocks: Vec::new(),
             cur: None,
             kind: ParaKind::Normal,
@@ -305,7 +338,6 @@ impl<'a> Builder<'a> {
             link: None,
             image: None,
             code: None,
-            in_meta: false,
             quote_depth: 0,
             lists: Vec::new(),
             ordered_numberings: Vec::new(),
@@ -327,6 +359,17 @@ impl<'a> Builder<'a> {
         if self.strike > 0 {
             run = run.strike();
         }
+        if self.underline > 0 {
+            run = run.underline("single");
+        }
+        if self.sup > 0 {
+            run.run_property = run.run_property.vert_align(VertAlignType::SuperScript);
+        } else if self.sub > 0 {
+            run.run_property = run.run_property.vert_align(VertAlignType::SubScript);
+        }
+        if self.mono > 0 {
+            run = run.style("InlineCode");
+        }
         run
     }
 
@@ -339,7 +382,7 @@ impl<'a> Builder<'a> {
     }
 
     fn text(&mut self, t: &str) {
-        let run = self.format(Run::new().add_text(t));
+        let run = self.format(Run::new().add_text(sanitize_xml_chars(t)));
         self.push(Child::Run(run));
     }
 
@@ -403,8 +446,8 @@ impl<'a> Builder<'a> {
                     p = p.indent(Some(left), None, None, None);
                 }
                 ctx.first_para = false;
-            } else if self.quote_depth > 0 {
-                p = self.quote(p);
+            } else if self.quote_depth > 0 || self.def_depth > 0 {
+                p = self.indented(p);
             }
         }
 
@@ -443,17 +486,21 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn quote(&self, p: Paragraph) -> Paragraph {
-        let mut p = p.indent(Some(360 * self.quote_depth as i32), None, None, None);
-        p.property = p.property.set_borders(
-            ParagraphBorders::with_empty().set(
-                ParagraphBorder::new(ParagraphBorderPosition::Left)
-                    .val(BorderType::Single)
-                    .size(18)
-                    .space(8)
-                    .color("A6A6A6"),
-            ),
-        );
+    /// Indent for block quotes (with a grey bar) and definition-list bodies.
+    fn indented(&self, p: Paragraph) -> Paragraph {
+        let left = 360 * self.quote_depth + 720 * self.def_depth;
+        let mut p = p.indent(Some(i32::try_from(left).unwrap_or(i32::MAX)), None, None, None);
+        if self.quote_depth > 0 {
+            p.property = p.property.set_borders(
+                ParagraphBorders::with_empty().set(
+                    ParagraphBorder::new(ParagraphBorderPosition::Left)
+                        .val(BorderType::Single)
+                        .size(18)
+                        .space(8)
+                        .color("A6A6A6"),
+                ),
+            );
+        }
         p
     }
 
@@ -484,12 +531,31 @@ impl<'a> Builder<'a> {
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
-            p = p.add_run(Run::new().add_text(line.trim_end_matches('\r')));
+            p = p.add_run(Run::new().add_text(sanitize_xml_chars(line.trim_end_matches('\r'))));
             self.emit(p);
         }
     }
 
     // ---- images and assets
+
+    /// Count `n` more embedded image bytes against the document budget.
+    fn spend_image_bytes(&mut self, n: u64) -> Result<()> {
+        self.image_bytes = self.image_bytes.saturating_add(n);
+        if self.image_bytes > self.cfg.limits.max_total_image_bytes {
+            return Err(CrateError::LimitExceeded(format!(
+                "embedded images exceed {} bytes in total",
+                self.cfg.limits.max_total_image_bytes
+            )));
+        }
+        Ok(())
+    }
+
+    /// `[alt text]` stand-in for an image that is not embedded.
+    fn placeholder(&mut self, alt: &str, fallback: &str) {
+        let label = if alt.trim().is_empty() { fallback } else { alt };
+        let run = self.format(Run::new().add_text(sanitize_xml_chars(&format!("[{label}]"))).italic());
+        self.push(Child::Run(run));
+    }
 
     fn image(&mut self, ctx: ImageCtx) -> Result<()> {
         if let Some(asset) = self.pre.assets.get(&ctx.dest) {
@@ -498,42 +564,61 @@ impl<'a> Builder<'a> {
         }
         let dest = ctx.dest.as_str();
         let lower = dest.to_ascii_lowercase();
-        if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("data:") {
-            // No network access by design: keep the alt text so nothing vanishes silently.
-            let alt = if ctx.alt.is_empty() { dest.to_string() } else { ctx.alt };
-            let run = self.format(Run::new().add_text(format!("[{alt}]")).italic());
-            self.push(Child::Run(run));
+        // Remote and inline images are never fetched or decoded (no network
+        // access by design); keep the alt text so nothing vanishes silently.
+        let remote = lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("data:");
+        if remote || self.in_footnote || self.cfg.image_access == ImageAccess::None {
+            self.placeholder(&ctx.alt, dest);
             return Ok(());
         }
-        let rel = decode_path(dest.strip_prefix("file://").unwrap_or(dest));
-        let path = if Path::new(&rel).is_absolute() {
-            PathBuf::from(&rel)
-        } else {
-            self.base_dir.join(&rel)
-        };
-        let bytes = fs::read(&path).map_err(|e| CrateError::io(&path, e))?;
-        let pic = make_picture(bytes, 96, &path)?;
-        self.push(Child::Picture {
-            run: Run::new().add_image(pic),
-            kind: AssetKind::Graph,
-        });
+        let (path, bytes) = read_local_image(
+            dest,
+            &self.base_dir,
+            self.cfg.image_access,
+            self.cfg.limits.max_image_bytes,
+        )?;
+        self.spend_image_bytes(bytes.len() as u64)?;
+        match make_picture(bytes, 96, &path)? {
+            Some(pic) => self.push(Child::Picture {
+                run: Run::new().add_image(pic),
+                kind: AssetKind::Graph,
+            }),
+            // A format we cannot embed (SVG, WebP, corrupt data): keep the alt text.
+            None => self.placeholder(&ctx.alt, "image"),
+        }
         Ok(())
     }
 
     fn asset(&mut self, asset: &Asset) -> Result<()> {
+        if self.in_footnote {
+            // Footnote parts cannot carry pictures or OMML here; show the source.
+            match asset.kind {
+                AssetKind::Graph => self.placeholder("", "diagram"),
+                _ => self.text(&asset.original),
+            }
+            return Ok(());
+        }
         match &asset.source {
             AssetSource::Png(path) => {
-                let bytes = fs::read(path).map_err(|e| CrateError::io(path, e))?;
+                let bytes = read_regular_file(path, "rendered asset", self.cfg.limits.max_image_bytes)?;
+                self.spend_image_bytes(bytes.len() as u64)?;
                 let dpi = match asset.kind {
                     AssetKind::Graph => self.cfg.graphs.dpi,
                     // Formulas are typeset at 12pt; body text is 11pt.
-                    _ => self.cfg.math.dpi * 12 / 11,
+                    _ => self.cfg.math.dpi.saturating_mul(12) / 11,
                 };
-                let pic = make_picture(bytes, dpi, path)?;
-                self.push(Child::Picture {
-                    run: Run::new().add_image(pic),
-                    kind: asset.kind,
-                });
+                match make_picture(bytes, dpi, path)? {
+                    Some(pic) => self.push(Child::Picture {
+                        run: Run::new().add_image(pic),
+                        kind: asset.kind,
+                    }),
+                    None => {
+                        return Err(CrateError::ExternalToolFailed {
+                            program: "renderer".into(),
+                            detail: format!("{} is not a decodable image", path.display()),
+                        })
+                    }
+                }
             }
             AssetSource::Omml(body) => {
                 let display = asset.kind == AssetKind::DisplayMath;
@@ -613,15 +698,175 @@ impl<'a> Builder<'a> {
         }
     }
 
+    // ---- raw HTML
+
+    /// Render a piece of raw HTML found in the Markdown. Only presentation is
+    /// mapped (bold/italic/underline/strike/sup/sub/code, line and paragraph
+    /// breaks, headings, list bullets, rules, images); scripts, styles,
+    /// comments and unknown elements contribute nothing but their text.
+    fn html_fragment(&mut self, raw: &str, block: bool) -> Result<()> {
+        if self.image.is_some() {
+            return Ok(()); // inside Markdown alt text
+        }
+        if block {
+            self.flush();
+        }
+        for piece in html::tokenize(raw) {
+            match piece {
+                Piece::Text(t) => {
+                    let collapsed = t.split_whitespace().collect::<Vec<_>>().join(" ");
+                    let at_start = self.cur.as_ref().is_none_or(Vec::is_empty);
+                    let mut s = collapsed;
+                    if !at_start && t.starts_with(char::is_whitespace) {
+                        s.insert(0, ' ');
+                    }
+                    if !at_start && t.ends_with(char::is_whitespace) && !s.ends_with(' ') {
+                        s.push(' ');
+                    }
+                    if !s.trim().is_empty() {
+                        self.text(&s);
+                    }
+                }
+                Piece::Tag { name, closing, attrs } => self.html_tag(&name, closing, &attrs)?,
+            }
+        }
+        if block {
+            self.flush();
+        }
+        Ok(())
+    }
+
+    fn html_tag(&mut self, name: &str, closing: bool, attrs: &str) -> Result<()> {
+        fn adjust(counter: &mut usize, closing: bool) {
+            *counter = if closing {
+                counter.saturating_sub(1)
+            } else {
+                counter.saturating_add(1)
+            };
+        }
+        match name {
+            "br" if !closing => self.push(Child::Run(Run::new().add_break(BreakType::TextWrapping))),
+            "b" | "strong" => adjust(&mut self.bold, closing),
+            "i" | "em" | "cite" | "dfn" | "var" => adjust(&mut self.italic, closing),
+            "u" | "ins" => adjust(&mut self.underline, closing),
+            "s" | "del" | "strike" => adjust(&mut self.strike, closing),
+            "sup" => adjust(&mut self.sup, closing),
+            "sub" => adjust(&mut self.sub, closing),
+            "code" | "kbd" | "samp" | "tt" => adjust(&mut self.mono, closing),
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                self.flush();
+                if !closing {
+                    self.start_para(ParaKind::Heading(name.as_bytes()[1] - b'0'));
+                }
+            }
+            "li" => {
+                self.flush();
+                if !closing {
+                    self.text("\u{2022} ");
+                }
+            }
+            "hr" => {
+                self.flush();
+                self.rule();
+            }
+            "td" | "th" if closing => self.text("  "),
+            "p" | "div" | "section" | "article" | "header" | "footer" | "nav" | "aside" | "main" | "ul" | "ol"
+            | "dl" | "dt" | "dd" | "table" | "tr" | "blockquote" | "pre" | "figure" | "figcaption" | "details"
+            | "summary" | "center" | "address" => self.flush(),
+            "img" if !closing => {
+                if let Some(src) = html::attr(attrs, "src").filter(|s| !s.trim().is_empty()) {
+                    let alt = html::attr(attrs, "alt").unwrap_or_default();
+                    self.image(ImageCtx { dest: src, alt })?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // ---- footnotes
+
+    fn footnote_reference(&mut self, label: &str) -> Result<()> {
+        let events = match self.footnotes.get(label) {
+            Some(e) if !self.in_footnote => e.clone(),
+            _ => {
+                // Unknown label, or a reference inside a footnote: keep it as written.
+                self.text(&format!("[^{label}]"));
+                return Ok(());
+            }
+        };
+        // A short definition referenced thousands of times must not balloon the file.
+        let size: usize = events
+            .iter()
+            .map(|e| match e {
+                Event::Text(t) | Event::Code(t) | Event::Html(t) | Event::InlineHtml(t) => t.len(),
+                _ => 8,
+            })
+            .sum();
+        self.footnote_bytes = self.footnote_bytes.saturating_add(size);
+        if self.footnote_bytes > self.cfg.limits.max_input_bytes {
+            return Err(CrateError::LimitExceeded(format!(
+                "footnotes expand to more than {} bytes",
+                self.cfg.limits.max_input_bytes
+            )));
+        }
+        let mut sub = Builder::new(self.pre, self.cfg, self.nonce.clone());
+        sub.in_footnote = true;
+        for ev in events {
+            sub.feed(ev)?;
+        }
+        sub.flush();
+        let mut note = Footnote::new();
+        let mut any = false;
+        for block in sub.blocks {
+            if let Block::Para(p) = block {
+                note.add_content(*p);
+                any = true;
+            }
+        }
+        if !any {
+            note.add_content(Paragraph::new());
+        }
+        self.push(Child::Run(Run::new().add_footnote_reference(note)));
+        Ok(())
+    }
+
     // ---- the event loop
 
+    /// Handle one event, then finish an image if this event closed one.
+    fn feed(&mut self, ev: Event<'_>) -> Result<()> {
+        let image_ended = matches!(ev, Event::End(TagEnd::Image));
+        self.event(ev)?;
+        if image_ended {
+            if let Some(ctx) = self.image.take() {
+                self.image(ctx)?;
+            }
+        }
+        Ok(())
+    }
+
     fn event(&mut self, ev: Event<'_>) -> Result<()> {
+        if let Some(name) = self.hidden {
+            match &ev {
+                Event::InlineHtml(h) if html::closes_hidden(h, name) => {
+                    self.hidden = None;
+                    return Ok(());
+                }
+                Event::Text(_) | Event::Code(_) | Event::SoftBreak | Event::HardBreak | Event::InlineHtml(_) => {
+                    return Ok(());
+                }
+                // A paragraph/cell/item ends the hiding, whether or not the tag closed.
+                Event::End(TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::TableCell | TagEnd::Item) => {
+                    self.hidden = None;
+                }
+                _ => {}
+            }
+        }
         match ev {
             Event::Start(tag) => self.start(tag)?,
-            Event::End(tag) => self.end(tag),
+            Event::End(tag) => self.end(tag)?,
             Event::Text(t) => {
-                if self.in_meta {
-                } else if let Some(code) = self.code.as_mut() {
+                if let Some(code) = self.code.as_mut() {
                     code.push_str(&t);
                 } else if let Some(img) = self.image.as_mut() {
                     img.alt.push_str(&t);
@@ -637,7 +882,7 @@ impl<'a> Builder<'a> {
                         Run::new()
                             .style("InlineCode")
                             .shading(Shading::new().fill("F2F2F2"))
-                            .add_text(t.to_string()),
+                            .add_text(sanitize_xml_chars(&t)),
                     );
                     self.push(Child::Run(run));
                 }
@@ -653,11 +898,14 @@ impl<'a> Builder<'a> {
                 }
             }
             Event::InlineHtml(h) => {
-                let tag = h.trim().to_ascii_lowercase();
-                if matches!(tag.as_str(), "<br>" | "<br/>" | "<br />") {
-                    self.push(Child::Run(Run::new().add_break(BreakType::TextWrapping)));
-                }
+                self.hidden = html::unclosed_hidden(&h);
+                self.html_fragment(&h, false)?;
             }
+            Event::Html(h) => match self.html.as_mut() {
+                Some(buf) => buf.push_str(&h),
+                None => self.html_fragment(&h, true)?,
+            },
+            Event::FootnoteReference(label) => self.footnote_reference(&label)?,
             Event::TaskListMarker(checked) => {
                 if let Some(ctx) = self.lists.last_mut() {
                     ctx.task = Some(checked);
@@ -667,7 +915,7 @@ impl<'a> Builder<'a> {
                 self.flush();
                 self.rule();
             }
-            // Raw HTML blocks, footnotes and math (already rewritten) carry nothing to map.
+            // Math has been rewritten to images by Stage 1; nothing else carries content.
             _ => {}
         }
         Ok(())
@@ -691,9 +939,38 @@ impl<'a> Builder<'a> {
                 };
                 self.start_para(ParaKind::Heading(n));
             }
-            Tag::BlockQuote(_) => {
+            Tag::BlockQuote(kind) => {
                 self.flush();
                 self.quote_depth += 1;
+                // GitHub-style alert (`> [!NOTE]`): a bold label line first.
+                if let Some(kind) = kind {
+                    let label = match kind {
+                        BlockQuoteKind::Note => "Note",
+                        BlockQuoteKind::Tip => "Tip",
+                        BlockQuoteKind::Important => "Important",
+                        BlockQuoteKind::Warning => "Warning",
+                        BlockQuoteKind::Caution => "Caution",
+                    };
+                    self.start_para(ParaKind::Normal);
+                    self.bold += 1;
+                    self.text(label);
+                    self.bold -= 1;
+                    self.flush();
+                }
+            }
+            Tag::HtmlBlock => {
+                self.flush();
+                self.html = Some(String::new());
+            }
+            Tag::DefinitionList => self.flush(),
+            Tag::DefinitionListTitle => {
+                self.flush();
+                self.start_para(ParaKind::Normal);
+                self.bold += 1;
+            }
+            Tag::DefinitionListDefinition => {
+                self.flush();
+                self.def_depth += 1;
             }
             Tag::CodeBlock(_) => {
                 self.flush();
@@ -714,9 +991,17 @@ impl<'a> Builder<'a> {
             Tag::Emphasis => self.italic += 1,
             Tag::Strong => self.bold += 1,
             Tag::Strikethrough => self.strike += 1,
-            Tag::Link { dest_url, .. } => {
+            Tag::Link {
+                link_type, dest_url, ..
+            } => {
+                // `<me@example.com>` arrives as a bare address; it is a mailto link.
+                let url = if link_type == LinkType::Email && !dest_url.starts_with("mailto:") {
+                    format!("mailto:{dest_url}")
+                } else {
+                    dest_url.to_string()
+                };
                 self.link = Some(LinkCtx {
-                    url: dest_url.to_string(),
+                    url,
                     children: Vec::new(),
                 });
             }
@@ -740,18 +1025,31 @@ impl<'a> Builder<'a> {
             }
             Tag::TableRow => {}
             Tag::TableCell => self.cell_start(),
-            Tag::MetadataBlock(_) => self.in_meta = true,
             _ => {}
         }
         Ok(())
     }
 
-    fn end(&mut self, tag: TagEnd) {
+    fn end(&mut self, tag: TagEnd) -> Result<()> {
         match tag {
             TagEnd::Paragraph | TagEnd::Heading(_) => self.flush(),
             TagEnd::BlockQuote(_) => {
                 self.flush();
                 self.quote_depth = self.quote_depth.saturating_sub(1);
+            }
+            TagEnd::HtmlBlock => {
+                if let Some(raw) = self.html.take() {
+                    self.html_fragment(&raw, true)?;
+                }
+            }
+            TagEnd::DefinitionList => self.flush(),
+            TagEnd::DefinitionListTitle => {
+                self.flush();
+                self.bold = self.bold.saturating_sub(1);
+            }
+            TagEnd::DefinitionListDefinition => {
+                self.flush();
+                self.def_depth = self.def_depth.saturating_sub(1);
             }
             TagEnd::CodeBlock => {
                 if let Some(code) = self.code.take() {
@@ -773,27 +1071,19 @@ impl<'a> Builder<'a> {
             TagEnd::Strikethrough => self.strike = self.strike.saturating_sub(1),
             TagEnd::Link => {
                 if let Some(link) = self.link.take() {
-                    let mut h = Hyperlink::new(link.url, HyperlinkType::External);
-                    let mut loose = Vec::new();
-                    for c in link.children {
-                        match c {
-                            Child::Run(r) | Child::Picture { run: r, .. } => {
-                                h = h.add_run(r.style("Hyperlink"));
+                    match safe_link(&link.url, &self.cfg.allowed_link_schemes) {
+                        Some(url) => self.finish_link(url, link.children),
+                        // Not an allowed destination: keep the visible text, drop the target.
+                        None => {
+                            for c in link.children {
+                                self.push(c);
                             }
-                            Child::Omml { slot, .. } => {
-                                h = h.add_run(Run::new().add_text(marker(&self.nonce, slot)));
-                            }
-                            other @ Child::Link(_) => loose.push(other),
                         }
-                    }
-                    self.push(Child::Link(h));
-                    for c in loose {
-                        self.push(c);
                     }
                 }
             }
             TagEnd::Image => {
-                // Handled in `finish_image`, which can fail; see `convert`.
+                // Finished by `feed`, which can fail.
             }
             TagEnd::Table => {
                 if let Some(t) = self.table.take() {
@@ -812,8 +1102,28 @@ impl<'a> Builder<'a> {
             }
             TagEnd::TableRow => self.row_end(),
             TagEnd::TableCell => self.cell_end(),
-            TagEnd::MetadataBlock(_) => self.in_meta = false,
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn finish_link(&mut self, url: String, children: Vec<Child>) {
+        let mut h = Hyperlink::new(url, HyperlinkType::External);
+        let mut loose = Vec::new();
+        for c in children {
+            match c {
+                Child::Run(r) | Child::Picture { run: r, .. } => {
+                    h = h.add_run(r.style("Hyperlink"));
+                }
+                Child::Omml { slot, .. } => {
+                    h = h.add_run(Run::new().add_text(marker(&self.nonce, slot)));
+                }
+                other @ Child::Link(_) => loose.push(other),
+            }
+        }
+        self.push(Child::Link(h));
+        for c in loose {
+            self.push(c);
         }
     }
 }
@@ -835,12 +1145,20 @@ fn rfind_open(doc: &str, tag: &str, before: usize) -> Option<usize> {
 }
 
 /// Replace marker runs/paragraphs in `document.xml` with native OMML.
+///
+/// Each marker is located with a forward-moving cursor (markers occur in slot
+/// order) and the output is assembled in one pass, so the cost is linear in
+/// the document size however many equations it holds.
 fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
-    let mut doc = doc.to_string();
+    let mut edits: Vec<(usize, usize, String)> = Vec::with_capacity(slots.len());
+    let mut cursor = 0;
     for (idx, slot) in slots.iter().enumerate() {
         let m = marker(nonce, idx);
         let lost = || CrateError::DocxGenerationError(format!("equation placeholder {idx} missing from document.xml"));
-        let at = doc.find(&m).ok_or_else(lost)?;
+        let at = match doc[cursor..].find(&m) {
+            Some(rel) => cursor + rel,
+            None => doc.find(&m).ok_or_else(lost)?, // out of order: fall back to a full search
+        };
         let (open_tag, close_tag, replacement) = if slot.block {
             (
                 "w:p",
@@ -850,28 +1168,72 @@ fn inject_omml(doc: &str, nonce: &str, slots: &[OmmlSlot]) -> Result<String> {
         } else {
             ("w:r", "</w:r>", format!("<m:oMath>{}</m:oMath>", slot.xml))
         };
-        let start = rfind_open(&doc, open_tag, at).ok_or_else(lost)?;
+        let start = rfind_open(doc, open_tag, at).ok_or_else(lost)?;
         let end = doc[at..].find(close_tag).ok_or_else(lost)? + at + close_tag.len();
-        doc.replace_range(start..end, &replacement);
+        cursor = end;
+        edits.push((start, end, replacement));
     }
+    edits.sort_by_key(|e| e.0);
+    let mut out = String::with_capacity(doc.len());
+    let mut last = 0;
+    for (start, end, replacement) in &edits {
+        if *start < last {
+            return Err(CrateError::DocxGenerationError(
+                "overlapping equation placeholders".into(),
+            ));
+        }
+        out.push_str(&doc[last..*start]);
+        out.push_str(replacement);
+        last = *end;
+    }
+    out.push_str(&doc[last..]);
     // Declare the math namespace on the root, as Word does.
-    ensure_math_namespace(&doc).map_err(|e| CrateError::DocxGenerationError(e.to_string()))
+    ensure_math_namespace(&out).map_err(|e| CrateError::DocxGenerationError(e.to_string()))
 }
 
 // ------------------------------------------------------------------ driver
 
 /// Stage 2 + 3: parse the rewritten Markdown and emit the `.docx` bytes.
+/// Footnote bodies by label (the first definition of a label wins).
+fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
+    let mut map = HashMap::new();
+    let mut open: Option<(String, Vec<Event<'_>>)> = None;
+    for ev in Parser::new_ext(markdown, markdown_options(false)) {
+        match ev {
+            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_string(), Vec::new())),
+            Event::End(TagEnd::FootnoteDefinition) => {
+                if let Some((label, events)) = open.take() {
+                    map.entry(label).or_insert(events);
+                }
+            }
+            other => {
+                if let Some((_, events)) = open.as_mut() {
+                    events.push(other);
+                }
+            }
+        }
+    }
+    map
+}
+
 pub fn build_docx(pre: &Preprocessed, cfg: &Config) -> Result<Vec<u8>> {
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
+    b.footnotes = collect_footnotes(&pre.markdown);
 
+    let mut in_definition = false;
     for event in Parser::new_ext(&pre.markdown, markdown_options(false)) {
-        let is_image_end = matches!(event, Event::End(TagEnd::Image));
-        b.event(event)?;
-        if is_image_end {
-            if let Some(ctx) = b.image.take() {
-                b.image(ctx)?;
+        // Footnote bodies are emitted where they are referenced, not in place.
+        match &event {
+            Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
+            Event::End(TagEnd::FootnoteDefinition) => {
+                in_definition = false;
+                continue;
             }
+            _ => {}
+        }
+        if !in_definition {
+            b.feed(event)?;
         }
     }
     b.flush();
@@ -910,17 +1272,6 @@ pub fn build_docx(pre: &Preprocessed, cfg: &Config) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn path_decoding_never_slices_inside_a_char() {
-        assert_eq!(decode_path("a%20b"), "a b");
-        assert_eq!(decode_path("100%"), "100%");
-        assert_eq!(decode_path("%é%zz%4"), "%é%zz%4");
-        assert_eq!(decode_path("caf%C3%A9.png"), "café.png");
-        // Malformed UTF-8 is replaced, not rejected or sliced.
-        assert_eq!(decode_path("x%FFy"), "x\u{FFFD}y");
-        assert_eq!(decode_path("日本%E6語%"), "日本\u{FFFD}語%");
-    }
-
     fn png_header(w: u32, h: u32) -> Vec<u8> {
         let mut png = vec![
             0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, b'I', b'H', b'D', b'R',
@@ -932,7 +1283,7 @@ mod tests {
     }
 
     #[test]
-    fn hostile_dimensions_are_rejected_without_panicking() {
+    fn hostile_dimensions_never_produce_a_picture() {
         for (w, h) in [
             (4_000_000_000, 4_000_000_000),
             (u32::MAX, 1),
@@ -940,11 +1291,19 @@ mod tests {
             (0, 0),
             (20_000, 20_000),
         ] {
-            assert!(
-                make_picture(png_header(w, h), 1, Path::new("hostile.png")).is_err(),
-                "{w}x{h}"
-            );
+            let r = make_picture(png_header(w, h), 1, Path::new("hostile.png"));
+            assert!(!matches!(r, Ok(Some(_))), "{w}x{h} must not be embedded");
         }
+        // Garbage and unsupported formats are "not an image", not a crash.
+        assert!(matches!(
+            make_picture(b"<svg xmlns='x'/>".to_vec(), 96, Path::new("a.svg")),
+            Ok(None)
+        ));
+        assert!(matches!(make_picture(Vec::new(), 96, Path::new("empty")), Ok(None)));
+        assert!(matches!(
+            make_picture(vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0], 96, Path::new("bad.jpg")),
+            Ok(None)
+        ));
     }
 
     #[test]

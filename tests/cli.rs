@@ -179,3 +179,79 @@ fn dolphin_command_flag_drives_a_custom_renderer() {
     );
     assert_eq!(media_count(&std::fs::read(fx.path("g.docx")).unwrap()), 1);
 }
+
+#[test]
+fn untrusted_flag_converts_hostile_input_without_side_effects() {
+    let fx = Fixture::new();
+    let input = fx.path("hostile.md");
+    std::fs::write(
+        &input,
+        "# Upload\n\n```mermaid\ngraph TD; A-->B\n```\n\n$$\\frac{a}{b}$$\n\n![pic](fixture.png)\n\n\
+         [click](javascript:alert(1)) <script>alert(2)</script>\n",
+    )
+    .unwrap();
+    let out = md2docx(&[path_str(&input), "--untrusted"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let docx = std::fs::read(fx.path("hostile.docx")).unwrap();
+    assert_eq!(media_count(&docx), 0);
+    let body = zip_text(&docx, "word/document.xml");
+    assert_well_formed(&body);
+    assert!(body.contains("<m:oMathPara>"));
+    let text = visible_text(&body);
+    assert!(text.contains("graph TD; A-->B") && text.contains("[pic]") && text.contains("click"));
+    assert!(!text.contains("alert"));
+    let rels = zip_text(&docx, "word/_rels/document.xml.rels");
+    assert!(!rels.contains("javascript"));
+
+    // Loosening switches cannot be combined with it.
+    for extra in [
+        ["--math-mode", "image"],
+        ["--image-access", "any"],
+        ["--latex", "xelatex"],
+    ] {
+        let o = md2docx(&[path_str(&input), "--untrusted", extra[0], extra[1]]);
+        assert_eq!(o.status.code(), Some(2), "{extra:?}");
+    }
+}
+
+#[test]
+fn images_are_confined_to_the_input_directory_by_default() {
+    let fx = Fixture::new();
+    std::fs::create_dir_all(fx.path("docs")).unwrap();
+    std::fs::copy(fx.path("fixture.png"), fx.path("docs/inside.png")).unwrap();
+    let input = fx.path("docs/page.md");
+    std::fs::write(&input, "![in](inside.png)\n\n![out](../fixture.png)\n").unwrap();
+    let out = md2docx(&[path_str(&input)]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("outside the base directory"), "{}", stderr(&out));
+
+    let ok = md2docx(&[path_str(&input), "--image-access", "any"]);
+    assert!(ok.status.success(), "{}", stderr(&ok));
+    assert_eq!(
+        media_count(&std::fs::read(fx.path("docs/page.docx")).unwrap()),
+        1,
+        "same bytes, stored once"
+    );
+
+    let none = md2docx(&[
+        path_str(&input),
+        "--image-access",
+        "none",
+        "-o",
+        path_str(&fx.path("none.docx")),
+    ]);
+    assert!(none.status.success(), "{}", stderr(&none));
+    assert_eq!(media_count(&std::fs::read(fx.path("none.docx")).unwrap()), 0);
+}
+
+#[test]
+fn oversized_input_is_refused_with_a_clear_message() {
+    let fx = Fixture::new();
+    let input = fx.path("big.md");
+    // Just over the --untrusted 2 MiB ceiling.
+    std::fs::write(&input, "word ".repeat(2 * 1024 * 1024 / 5 + 10)).unwrap();
+    let out = md2docx(&[path_str(&input), "--untrusted"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("limit exceeded"), "{}", stderr(&out));
+    assert!(!fx.path("big.docx").exists());
+}

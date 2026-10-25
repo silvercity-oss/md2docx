@@ -70,12 +70,26 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 
 ## Markdown coverage
 
-Headings, paragraphs, emphasis/strong/strikethrough, inline code, links
-(external hyperlinks), block quotes, nested bullet/ordered lists (ordered lists
-restart correctly), task lists, tables with alignment, fenced code, rules,
-local images (PNG/JPEG/GIF, scaled to the text width), YAML front matter
-(skipped). Remote images become `[alt]` text (no network access); raw HTML is
-dropped except `<br>`; a missing local image is an `Io` error.
+| Input | Result in Word |
+| --- | --- |
+| Headings (ATX, setext, `{#id .class}` attributes) | Heading 1-6 styles; attributes dropped |
+| Emphasis, strong, strikethrough, inline code, hard/soft breaks, escapes, entities | Character formatting |
+| Links (inline, reference, autolink `<url>`, `<email>`) | Hyperlinks, **only for `http`, `https`, `mailto`** (see Security); other targets keep their text |
+| Block quotes (nested), GitHub alerts `> [!NOTE]` | Indented with a bar; alerts get a bold label line |
+| Bullet / ordered / nested / task lists, start numbers | Native Word numbering (each ordered list restarts); `☐`/`☑` for tasks |
+| Tables (alignment, inline formatting) | Word tables |
+| Fenced, tilde and indented code | Monospace shaded lines |
+| Thematic breaks | A rule |
+| Footnotes `[^1]` | Native Word footnotes (unknown labels stay literal) |
+| Definition lists | Bold term, indented definitions |
+| YAML / TOML front matter | Dropped, but only at the very start of the file and only if it looks like metadata. `---` blocks elsewhere are normal content |
+| Raw HTML | `<b> <i> <u> <s> <sup> <sub> <code> <kbd> <br> <hr> <h1-6> <li> <img>` and block elements are rendered; scripts, styles, comments, iframes and unknown tags contribute only their text |
+| Images | Local PNG/JPEG/GIF scaled to the text width, subject to the image policy; SVG, WebP and corrupt images, and all remote or `data:` images become `[alt text]` (nothing is fetched) |
+| `$..$` / `$$..$$` math, `mermaid` / `dolphin` fences | See above |
+
+Not supported: HTML `<a href>` links (their text is kept), bare-URL autolinking, wiki links,
+super/subscript via `^x^`/`~x~` (use `<sup>`/`<sub>`), `<table>` layout (cell text
+is kept), math inside footnotes (shown as source text).
 
 ## CLI
 
@@ -91,6 +105,8 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `<input>` | Markdown file (relative image paths resolve against its directory) |
 | `-o, --output` | Output path (default: `<input>.docx`; refuses to overwrite the input) |
 | `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
+| `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it |
+| `--image-access none\|base-dir\|any` | Default `base-dir`: only images inside the input file's directory |
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
 | `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
 | `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
@@ -104,49 +120,84 @@ npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly.
 > **Security Advisory Notice: Image Mode runs a local TeX engine on document content.**
 >
 > `MathMode::ImageFallback` (CLI: `--math-mode image`) invokes `latex` on a
-> document generated from the formulas in the Markdown. The crate passes
-> `-no-shell-escape`, which blocks `\write18` command execution, but that flag
-> does **not** make TeX safe to feed untrusted text: active TeX macros such as
-> `\input{...}`, `\include`, or `\openin`/`\read` can read files on the host
-> (for example `\input{/etc/passwd}`), and their contents are typeset into the
-> rendered formula image, which then ends up in the generated `.docx`. Mermaid
-> rendering (`mmdc`) likewise drives a headless browser with the diagram text.
+> document generated from the formulas in the Markdown. `-no-shell-escape`
+> blocks `\write18` command execution, **but it does not stop `\input` from
+> reading host files**. We measured this: with only `-no-shell-escape`,
+> `$\input{/path/to/secret.txt}$` typeset the file's contents into the formula
+> image, which then ended up in the `.docx`. TeX macros such as `\input`,
+> `\include`, `\openin`/`\read` are the risk.
 >
 > **Native OMML Mode must be mandated whenever the Markdown comes from an
 > untrusted source** (user uploads, web forms, third-party feeds, multi-tenant
 > servers). It converts LaTeX to OMML in-process, never spawns `latex`, and
-> cannot read host files. With `md2docx` it is already the default; in library
-> code use `Config::native_math()`. If diagrams must also be handled for
-> untrusted input, run `mmdc`/`dolphin` inside a sandbox (container, no
-> network, no access to sensitive paths) and keep `tool_timeout` low.
+> cannot read host files. In library code use `Config::untrusted()` (or at least
+> `Config::native_math()`); with the CLI use `md2docx --untrusted`.
+> Image mode is for Markdown you wrote yourself.
 
-Other hardening in the crate: external tools run with no shell (arguments are
-passed as an argv list, never interpolated into a command line), are killed on
-timeout, and all scratch files are removed when a conversion ends; image
-dimensions are bounds-checked (header size limit, checked arithmetic) so a
-hostile PNG header cannot cause a panic or overflow; percent-encoded image paths
-are decoded with `percent-encoding` and invalid UTF-8 is replaced rather than
-sliced. Local image references in Markdown (`![x](/etc/shadow.png)`) are read
-from disk and embedded if they decode as images, so treat that as file access
-too when converting untrusted Markdown.
+Image mode is nevertheless hardened, in layers, so a mistake in one does not
+expose the host: (1) a denylist refuses formulas containing file, shell, package
+or catcode primitives (`\input`, `\write`, `\openin`, `\csname`, `\catcode`,
+`\special`, `\pdf*`, `^^` notation, ...) before `latex` starts; (2) TeX runs in
+paranoid file-access mode (`openin_any=p`, `openout_any=p`, `shell_escape=f`), so
+even a bypass can only touch its scratch directory; we test this against a real
+TeX install; (3) the scratch directory is private, size-capped and deleted.
+
+### What is defended, and how
+
+| Threat in the Markdown | Gate |
+| --- | --- |
+| LaTeX that reads/writes host files or runs programs | Native mode never starts TeX; image mode has the layers above |
+| Deeply nested formulas (stack overflow aborts the whole process) | Nesting limit of 128 levels in the OMML parser, plus a no-progress guard. Found by fuzzing: an infinite loop in `\sqrt[...]` |
+| `[x](javascript:...)`, `file:`, UNC `\\host\share`, `ms-excel:` and other handler links | Only `http`, `https`, `mailto` become hyperlinks (configurable via `allowed_link_schemes`); the link text is kept. Whitespace/control tricks like `java<TAB>script:` are normalised first |
+| `![x](../../secret.png)`, absolute paths, symlinks out of the tree | `ImageAccess::BaseDir` (default) resolves symlinks and refuses anything outside the base directory; `None` reads nothing; `Any` is opt-in |
+| `![x](/dev/zero)`, FIFOs, devices | Files are inspected before opening and must be regular, size-limited files |
+| Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
+| Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
+| Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
+| A renderer that hangs, floods output, fills the disk or leaves helpers behind | Timeout, 1 MiB console cap, scratch-directory cap, output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
+| Script/style/iframe content in raw HTML | Dropped, including when split across inline events |
+| `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |
+
+`Config::untrusted()` turns the strict settings on together: native math, diagram
+fences left as code (no browser), no local files, smaller limits.
+
+### What is not covered
+
+* **Diagram tools are not sandboxed.** `mmdc` drives a headless browser with the
+  diagram text, and a custom `--dolphin-command` is whatever you configure. If
+  untrusted users may trigger diagram rendering, run the converter itself inside
+  a container with no network and no sensitive files, or leave diagrams disabled
+  (`--untrusted`).
+* On **Windows** a timed-out tool is killed but its descendants are not (Unix
+  uses process groups; a Job Object is not implemented).
+* Local-image checks resolve the path and then open it; a hostile process that
+  swaps the file between the two steps is outside this threat model.
+* Command templates (`--dolphin-command`, ...) and `Config` values are trusted
+  configuration, not document content.
+* The library default (`Config::default()`) keeps the spec'd image mode for
+  math; the CLI defaults to native.
+
+Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## Tests
 
-`cargo test` (CI also runs `cargo fmt --check` and `cargo clippy -- -D warnings`
-on Linux, macOS and Windows).
+`cargo test`. CI also runs `cargo fmt --check` and `cargo clippy -- -D warnings`
+on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
 
-* `src/**` unit tests: LaTeX to OMML, namespace injection, image sizing, path
-  decoding, command parsing.
-* `tests/pipeline.rs`: tool-free end-to-end tests (native OMML, Markdown
-  structure, errors, local images). Run on every OS.
-* `tests/pipeline_mock_tools.rs` (Unix only): installs tiny stand-in
-  `mmdc`/`latex`/`dvipng` shell scripts and verifies what was passed to them,
-  that the PNGs end up in the package, error variants, timeouts, caching, and that
-  temp files are gone afterwards.
-* `tests/cli.rs`: runs the real `md2docx` binary (flags, exit codes, messages).
+* Unit tests: LaTeX to OMML (including hostile nesting), namespace injection,
+  the security gates, HTML tokenizer, image sizing, command parsing.
+* `tests/markdown_coverage.rs`: one case per Markdown construct (above).
+* `tests/security.rs`: every gate in the table, plus seeded random Markdown and
+  LaTeX runs (with a watchdog) asserting no panic, no hang, well-formed output.
+* `tests/tool_hardening.rs` (Unix): runaway output, disk filling, oversized
+  results, and descendants of a timed-out tool.
+* `tests/tex_real.rs` (Unix): the pipeline and the TeX hardening against a real
+  `latex` (skipped when absent; CI installs it and requires it).
+* `tests/pipeline.rs`, `tests/pipeline_mock_tools.rs`, `tests/cli.rs`: end-to-end
+  conversion, stand-in `mmdc`/`latex`/`dvipng` scripts, and the `md2docx` binary.
 
-The produced documents were also opened and rendered with LibreOffice during
-development; Word itself was not available.
+Output was also opened and rendered with LibreOffice during development; Word
+itself was not available.
 
 ## License
 

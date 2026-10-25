@@ -641,6 +641,7 @@ dependencies = [
  "percent-encoding",
  "pulldown-cmark",
  "quick-xml",
+ "rustix",
  "sha2",
  "shlex",
  "tempfile",

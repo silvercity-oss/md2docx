@@ -153,6 +153,7 @@ pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
     let mut p = Parser {
         s: latex.chars().collect(),
         i: 0,
+        depth: 0,
     };
     let nodes = p.seq(&Style::default(), false)?;
     if p.i < p.s.len() {
@@ -174,9 +175,15 @@ pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
 
 // ---------------------------------------------------------------- parsing
 
+/// Deepest nesting of groups, scripts, fractions, environments... Real
+/// formulas stay in the single digits; the limit exists so hostile input like
+/// `{{{{...` cannot overflow the stack (an abort, not a catchable panic).
+const MAX_DEPTH: usize = 128;
+
 struct Parser {
     s: Vec<char>,
     i: usize,
+    depth: usize,
 }
 
 fn is_nary_body_stop(c: char) -> bool {
@@ -270,13 +277,30 @@ impl Parser {
     /// `\end`) or the end of input, without consuming it. With `body` set, also
     /// stop before a top-level relation/operator (used for n-ary operands).
     fn seq(&mut self, style: &Style, body: bool) -> Res<Vec<Node>> {
+        self.seq_until(style, body, false)
+    }
+
+    /// Like [`Parser::seq`]; with `bracket` set it also stops before a `]`
+    /// (the optional argument of `\sqrt[n]{x}`).
+    fn seq_until(&mut self, style: &Style, body: bool, bracket: bool) -> Res<Vec<Node>> {
+        if self.depth >= MAX_DEPTH {
+            return err(format!("formula is nested more than {MAX_DEPTH} levels deep"));
+        }
+        self.depth += 1;
+        let out = self.seq_inner(style, body, bracket);
+        self.depth -= 1;
+        out
+    }
+
+    fn seq_inner(&mut self, style: &Style, body: bool, bracket: bool) -> Res<Vec<Node>> {
         let mut out = Vec::new();
         loop {
             self.skip_ws();
             let Some(c) = self.peek() else { break };
-            if c == '}' || c == '&' {
+            if c == '}' || c == '&' || (bracket && c == ']') {
                 break;
             }
+            let before = self.i;
             if c == '\\' {
                 match self.peek_command().as_deref() {
                     Some("\\" | "right" | "middle" | "end") => break,
@@ -326,6 +350,11 @@ impl Parser {
                 base = vec![Node::Script { base, sub, sup }];
             }
             out.extend(base);
+            // Every iteration must consume input; a parser bug must be an
+            // error, never a hang.
+            if self.i == before {
+                return err("internal error: formula parser made no progress");
+            }
         }
         Ok(out)
     }
@@ -387,6 +416,18 @@ impl Parser {
     }
 
     fn atom(&mut self, style: &Style) -> Res<Vec<Node>> {
+        // Chains such as `\mathbf\mathbf\mathbf...` recurse through here without
+        // ever entering `seq`, so atoms are depth-counted too.
+        if self.depth >= MAX_DEPTH {
+            return err(format!("formula is nested more than {MAX_DEPTH} levels deep"));
+        }
+        self.depth += 1;
+        let out = self.atom_inner(style);
+        self.depth -= 1;
+        out
+    }
+
+    fn atom_inner(&mut self, style: &Style) -> Res<Vec<Node>> {
         let Some(c) = self.peek() else {
             return err("unexpected end of formula");
         };
@@ -491,6 +532,7 @@ impl Parser {
                     let mut p = Parser {
                         s: raw.chars().collect(),
                         i: 0,
+                        depth: self.depth,
                     };
                     return p.seq(&st, false);
                 }
@@ -614,19 +656,15 @@ impl Parser {
         )])
     }
 
+    /// The `[n]` of `\sqrt[n]{x}`; the opening `[` has been consumed.
     fn seq_until_bracket(&mut self, style: &Style) -> Res<Vec<Node>> {
-        let mut out = Vec::new();
-        loop {
-            self.skip_ws();
-            match self.peek() {
-                None => return err("unclosed `[` in \\sqrt"),
-                Some(']') => {
-                    self.i += 1;
-                    return Ok(out);
-                }
-                Some(_) => out.extend(self.atom(style)?),
-            }
+        let out = self.seq_until(style, false, true)?;
+        self.skip_ws();
+        if self.peek() != Some(']') {
+            return err("unclosed `[` in \\sqrt");
         }
+        self.i += 1;
+        Ok(out)
     }
 
     fn nary_body(&mut self, style: &Style) -> Res<Vec<Node>> {
@@ -1184,6 +1222,48 @@ mod tests {
     #[test]
     fn unknown_command_is_kept_visible() {
         assert!(conv(r"\foobar").contains(r"\foobar"));
+    }
+
+    #[test]
+    fn hostile_nesting_is_an_error_not_a_stack_overflow() {
+        let n = 200_000;
+        let cases = [
+            format!("{}x{}", "{".repeat(n), "}".repeat(n)),
+            format!("x{}1{}", "^{".repeat(n), "}".repeat(n)),
+            format!("{}x{}", "\\frac{".repeat(n), "}{1}".repeat(n)),
+            format!("{}x", "\\mathbf".repeat(n)),
+            format!("{}x", "\\frac".repeat(n)),
+            format!("{}x{}", "\\left(".repeat(n), "\\right)".repeat(n)),
+            format!("{}a{}", "\\begin{matrix}".repeat(n), "\\end{matrix}".repeat(n)),
+            "\\sqrt[".repeat(n),
+            "\\text{".repeat(n),
+        ];
+        for (k, c) in cases.iter().enumerate() {
+            assert!(latex_to_omml(c).is_err(), "case {k} should be rejected");
+        }
+        // Realistic nesting is fine.
+        assert!(latex_to_omml(r"\frac{\sqrt{\frac{a}{b}}}{\left(\sum_{i}^{n} x_{i}^{2}\right)}").is_ok());
+        assert!(latex_to_omml(&format!("{}x{}", "{".repeat(40), "}".repeat(40))).is_ok());
+    }
+
+    #[test]
+    fn scripts_inside_sqrt_index_terminate() {
+        // Found by the randomised test: `^`/`_` with an empty base inside `[..]` looped forever.
+        for hang in [
+            r"\sqrt[^]{x}",
+            r"\sqrt[_]{x}",
+            r"\sqrt[^\left |\alpha _=\frac\end{pmatrix}]\sqrt|%}1\\mathbf",
+            r"\sqrt[^^^^",
+        ] {
+            let _ = latex_to_omml(hang); // any result, but it must return
+        }
+        assert!(latex_to_omml(r"\sqrt[3]{x}").is_ok());
+        assert!(latex_to_omml(r"\sqrt[n^2]{x}").is_ok());
+        assert!(
+            latex_to_omml(r"\sqrt[{a]}b]{x}").is_ok(),
+            "a `]` inside braces belongs to the group"
+        );
+        assert!(latex_to_omml(r"\sqrt[3").is_err());
     }
 
     #[test]

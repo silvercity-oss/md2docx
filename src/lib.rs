@@ -17,15 +17,17 @@
 
 mod config;
 mod error;
+mod html;
 pub mod omml;
 mod parser;
 mod preprocess;
 pub mod renderer;
+mod safety;
 
 use std::fs;
 use std::path::Path;
 
-pub use config::{CommandSpec, Config, GraphOptions, MathImageEngine, MathMode, MathOptions};
+pub use config::{CommandSpec, Config, GraphOptions, ImageAccess, Limits, MathImageEngine, MathMode, MathOptions};
 pub use error::{CrateError, Result};
 pub use preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
 
