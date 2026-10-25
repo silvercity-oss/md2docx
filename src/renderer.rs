@@ -208,7 +208,7 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
                         guard.max_dir_bytes
                     )));
                 }
-                sleep(Duration::from_millis(15));
+                sleep(Duration::from_millis(10));
             }
             Err(e) => {
                 kill_tree(&mut child);
@@ -217,6 +217,15 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         }
     };
 
+    // Polling can miss a tool that writes faster than the poll interval (a fast
+    // disk writes hundreds of MB in a few milliseconds), so enforce the cap once more
+    // now that it has exited. The kill above only limits how far it can overshoot.
+    if dir_size(cwd, 2) > guard.max_dir_bytes {
+        return Err(CrateError::LimitExceeded(format!(
+            "`{program}` wrote more than {} bytes of files",
+            guard.max_dir_bytes
+        )));
+    }
     if status.success() {
         return Ok(());
     }

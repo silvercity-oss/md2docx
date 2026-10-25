@@ -779,3 +779,86 @@ fn hidden_html_elements_split_across_inline_events_stay_hidden() {
         ),
     ]);
 }
+
+/// Raw HTML is an allowlist: only the presentation tags listed in the README have an effect,
+/// everything else contributes at most its text, and attributes are never interpreted
+/// (`onclick`, `style`, `href`, `srcdoc` ...), so nothing active can reach the document.
+#[test]
+fn unsafe_html_is_stripped_but_its_text_is_kept() {
+    let md = "\
+<a href=\"javascript:alert(1)\" onclick=\"steal()\">click me</a> and <a href=\"https://ok.example\">plain anchor</a>\n\n\
+<img src=x onerror=\"pwn()\"> <img src=\"javascript:evil()\" alt=\"bad image\">\n\n\
+<svg onload=\"pwn()\"><script>bad()</script><text>vector text</text></svg>\n\n\
+<form action=\"http://evil.example/post\"><input value=\"typed\"><button onclick=\"x()\">Go</button></form>\n\n\
+<object data=\"http://evil.example/o\"></object><embed src=\"http://evil.example/e\">\n\n\
+<link rel=\"stylesheet\" href=\"http://evil.example/c.css\"><base href=\"http://evil.example/\">\n\n\
+<meta http-equiv=\"refresh\" content=\"0;url=http://evil.example\">\n\n\
+<div style=\"background:url(javascript:1)\" onmouseover=\"x()\" class=\"c\">styled text</div>\n\n\
+<iframe srcdoc=\"<script>top.location='http://evil.example'</script>\">frame body</iframe>\n\n\
+<p><b onclick=\"x()\">still bold</b> and <i>italic</i></p>\n\n\
+<math><mi>x</mi></math> <details open ontoggle=\"x()\"><summary>sum</summary>body</details>\n";
+    for (name, cfg) in [
+        (
+            "default, images off",
+            silvercity_oss::Config {
+                image_access: silvercity_oss::ImageAccess::None,
+                ..silvercity_oss::Config::native_math()
+            },
+        ),
+        ("untrusted", silvercity_oss::Config::untrusted()),
+    ] {
+        let docx = markdown_to_docx(md, &cfg).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let b = zip_text(&docx, "word/document.xml");
+        assert_well_formed(&b);
+        let rels = zip_text(&docx, "word/_rels/document.xml.rels");
+        let text = visible_text(&b);
+
+        for dangerous in [
+            "javascript",
+            "onclick",
+            "onerror",
+            "onload",
+            "onmouseover",
+            "ontoggle",
+            "srcdoc",
+            "evil",
+            "steal",
+            "pwn",
+            "alert",
+            "bad()",
+            "stylesheet",
+            "refresh",
+        ] {
+            assert!(!b.contains(dangerous), "[{name}] document.xml contains `{dangerous}`");
+            assert!(
+                !rels.contains(dangerous),
+                "[{name}] relationships contain `{dangerous}`"
+            );
+        }
+        assert!(
+            !rels.contains("ok.example"),
+            "[{name}] <a> is stripped: no link relationship at all"
+        );
+        assert_eq!(b.matches("<w:hyperlink").count(), 0, "[{name}]");
+        assert_eq!(media_count(&docx), 0, "[{name}]");
+        for kept in [
+            "click me",
+            "plain anchor",
+            "bad image",
+            "vector text",
+            "Go",
+            "styled text",
+            "still bold",
+            "italic",
+            "sum",
+            "body",
+        ] {
+            assert!(text.contains(kept), "[{name}] text `{kept}` was lost: {text}");
+        }
+        assert!(!text.contains("frame body"), "[{name}] iframe content is dropped");
+        assert!(
+            b.contains("<w:b/>") && b.contains("<w:i/>"),
+            "[{name}] harmless formatting tags still work"
+        );
+    }
+}

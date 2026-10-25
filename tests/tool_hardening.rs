@@ -33,21 +33,40 @@ fn console_flooding_tool_is_killed_quickly() {
 }
 
 #[test]
-fn tool_filling_the_disk_is_killed_at_the_workspace_limit() {
+fn slow_disk_filler_is_killed_mid_write() {
     let fx = Fixture::new();
-    // Would write 200 MB; the workspace cap is 4 MB.
-    let mut cfg = config_with(script(
-        fx.dir.path(),
-        "fill",
-        "dd if=/dev/zero of=\"$2\" bs=1M count=200 2>/dev/null",
-    ));
+    // Would append 400 MB over ~8 s; the workspace cap is 4 MB, so it must be stopped early.
+    let body = "i=0\nwhile [ $i -lt 400 ]; do\n  dd if=/dev/zero bs=1048576 count=1 2>/dev/null >> \"$2\"\n  i=$((i+1))\n  sleep 0.02\ndone";
+    let mut cfg = config_with(script(fx.dir.path(), "slow-fill", body));
     cfg.limits.max_workspace_bytes = 4 * 1024 * 1024;
     let t = Instant::now();
     match markdown_to_docx(GRAPH, &cfg) {
         Err(CrateError::LimitExceeded(m)) => assert!(m.contains("bytes of files"), "{m}"),
         other => panic!("expected LimitExceeded, got {:?}", other.map(|d| d.len())),
     }
-    assert!(t.elapsed() < Duration::from_secs(20), "took {:?}", t.elapsed());
+    assert!(
+        t.elapsed() < Duration::from_secs(6),
+        "the filler ran for {:?}; it should have been killed early",
+        t.elapsed()
+    );
+}
+
+/// A fast disk can take hundreds of MB inside one polling interval (this failed on a macOS
+/// runner): the tool is gone before it can be killed, so the cap must also be checked after
+/// it exits. Which check fires depends on timing; the cap must hold either way.
+#[test]
+fn fast_disk_filler_is_still_refused() {
+    let fx = Fixture::new();
+    let mut cfg = config_with(script(
+        fx.dir.path(),
+        "fast-fill",
+        "dd if=/dev/zero of=\"$2\" bs=1M count=200 2>/dev/null",
+    ));
+    cfg.limits.max_workspace_bytes = 4 * 1024 * 1024;
+    assert!(matches!(
+        markdown_to_docx(GRAPH, &cfg),
+        Err(CrateError::LimitExceeded(_))
+    ));
 }
 
 #[test]
