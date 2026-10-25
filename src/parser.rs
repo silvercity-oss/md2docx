@@ -1958,15 +1958,9 @@ impl<'a> Builder<'a> {
                     self.push(Child::Run(run));
                 }
             }
-            Event::SoftBreak => {
-                if self.image.is_none() {
-                    self.text(" ");
-                }
-            }
-            Event::HardBreak => {
-                if self.image.is_none() {
-                    self.push(Child::Run(Run::new().add_break(BreakType::TextWrapping)));
-                }
+            Event::SoftBreak if self.image.is_none() => self.text(" "),
+            Event::HardBreak if self.image.is_none() => {
+                self.push(Child::Run(Run::new().add_break(BreakType::TextWrapping)));
             }
             Event::InlineHtml(h) => {
                 self.hidden = html::unclosed_hidden(&h);
