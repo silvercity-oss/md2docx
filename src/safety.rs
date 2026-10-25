@@ -244,6 +244,11 @@ impl<W: std::io::Write + std::io::Seek> LimitedWriter<W> {
 
 impl<W: std::io::Write + std::io::Seek> std::io::Write for LimitedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.exceeded {
+            // The failure was already reported. Swallow what the archive writer's
+            // clean-up still tries to write, so it does not print a second error.
+            return Ok(buf.len());
+        }
         let end = self.pos.saturating_add(buf.len() as u64);
         if end - self.start > self.max {
             self.exceeded = true;

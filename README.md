@@ -83,6 +83,9 @@ let cfg = Config::untrusted()
   styles *you* defined on and off. Names and colours are validated up front.
 * `DocumentOptions` also sets `code_background`, `link_color` and
   `quote_bar_color`.
+* `Config::with_compression_level(0..=9)` sets how the finished `.docx` is
+  compressed (default 6; docx-rs itself stores everything uncompressed, which made
+  files about 10x larger). Pictures stay stored; they are compressed already.
 
 Not offered, on purpose: handing out the Markdown parser's options or raw
 `docx-rs` paragraphs. Every event has to pass the converter's safety checks, and
@@ -102,7 +105,7 @@ exposing `docx-rs` types would tie this crate's version to theirs.
   Sync`): `MissingExternalCLI`, `ExternalToolFailed`, `InvalidMarkdown`,
   `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGenerationError`,
   `Io`. The crate never panics on bad input and is `#![forbid(unsafe_code)]`.
-* **Dependencies.** Library-only builds compile 79 crates (93 with the CLI).
+* **Dependencies.** Library-only builds compile 80 crates (94 with the CLI).
   External tools (TeX, merman-cli, mmdc) are programs you install, never linked.
 
 ### Supported Rust versions
@@ -299,6 +302,7 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
 | `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
 | `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
+| `--compression-level <0-9>` | Deflate level of the `.docx`: 0 stores it, 9 is smallest (default 6) |
 
 Note the CLI defaults to `native` math while the library's `Config::default()`
 uses `ImageFallback`; use `Config::native_math()` for the safe mode. On Windows,
@@ -344,7 +348,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
 | Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
-| Small input that expands into a huge `.docx` (the archive is stored uncompressed: 1 MB of code lines gave 39 MB) | `Limits::max_output_bytes`, checked before and while writing: 256 MiB by default, **50 MiB in `Config::untrusted()`** |
+| Small input that expands into a huge `.docx` (about 40x as XML: 1 MB of code lines is 39 MB before compression) | `Limits::max_uncompressed_bytes` (memory, checked before packaging: 1 GiB default, 256 MiB untrusted) and `Limits::max_output_bytes` (the finished compressed file, enforced exactly while it is written: 256 MiB default, **50 MiB in `Config::untrusted()`**) |
 | A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
 | Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist** (see "Raw HTML"): only the listed tags have an effect, attributes are not interpreted beyond the listed ones, scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. `<a href>` becomes a link only for `http`/`https`/`mailto`, and not at all with `--untrusted` |
 | `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |

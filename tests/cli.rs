@@ -282,3 +282,32 @@ fn mermaid_engine_flag_names_the_missing_tool_and_how_to_get_it() {
     );
     assert!(!fx.path("d.docx").exists());
 }
+
+#[test]
+fn compression_level_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("c.md");
+    std::fs::write(
+        &input,
+        "```\n".to_string() + &"repeat repeat repeat\n".repeat(2000) + "```\n",
+    )
+    .unwrap();
+    let run = |extra: &[&str]| {
+        let out = dir.path().join(format!("o{}.docx", extra.join("")));
+        let status = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .arg("-o")
+            .arg(&out)
+            .args(extra)
+            .output()
+            .unwrap();
+        (status, out)
+    };
+    let (ok, default) = run(&[]);
+    assert!(ok.status.success());
+    let (ok, stored) = run(&["--compression-level", "0"]);
+    assert!(ok.status.success());
+    assert!(std::fs::metadata(&default).unwrap().len() * 4 < std::fs::metadata(&stored).unwrap().len());
+    let (bad, _) = run(&["--compression-level", "10"]);
+    assert_eq!(bad.status.code(), Some(2));
+}

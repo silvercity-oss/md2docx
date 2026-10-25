@@ -85,6 +85,7 @@ mod error;
 mod extend;
 mod html;
 pub mod omml;
+mod pack;
 mod parser;
 mod preprocess;
 /// External-tool plumbing. Not part of the stable API; exposed for the crate's
@@ -116,9 +117,8 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 
 /// Convert Markdown text and write the `.docx` archive to `writer`
 /// (a `File`, a `Cursor<Vec<u8>>`, ...). Nothing is written if conversion fails
-/// before packaging, or if the result would exceed `Limits::max_output_bytes`
-/// (checked first). If packaging itself fails, the writer may hold a partial
-/// archive: discard it.
+/// before packaging. If packaging itself fails (including the result exceeding
+/// `Limits::max_output_bytes`), the writer may hold a partial archive: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
     config.validate()?;
     let pre = preprocess(markdown, config)?;

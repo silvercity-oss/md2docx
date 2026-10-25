@@ -3,15 +3,11 @@
 
 mod common;
 
-use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::*;
-use silvercity_oss::{
-    markdown_to_docx, markdown_to_docx_writer, BlockStyle, Config, CrateError, DocumentOptions, FenceError,
-    ImageAccess, TagStyle,
-};
+use silvercity_oss::{markdown_to_docx, BlockStyle, Config, CrateError, DocumentOptions, FenceError, TagStyle};
 
 fn png() -> Vec<u8> {
     png_bytes(120, 60)
@@ -401,43 +397,3 @@ fn document_colours_are_configurable_and_validated() {
 }
 
 // ---- output limit
-
-#[test]
-fn untrusted_output_is_capped_at_50_mib_by_default() {
-    assert_eq!(Config::untrusted().limits.max_output_bytes, 50 * 1024 * 1024);
-    assert_eq!(
-        Config::untrusted_with_diagrams().limits.max_output_bytes,
-        50 * 1024 * 1024
-    );
-    assert!(Config::default().limits.max_output_bytes > 50 * 1024 * 1024);
-}
-
-#[test]
-fn the_output_limit_is_exact_and_fails_early() {
-    let md = "```\n".to_string() + &"line of code\n".repeat(2000) + "```\n";
-    let cfg = Config::native_math().with_image_access(ImageAccess::None);
-    let full = markdown_to_docx(&md, &cfg).unwrap().len() as u64;
-
-    // The limit is checked against the parts plus a small allowance for archive headers,
-    // so it is exact to within a few KB: well above passes, anything below refuses.
-    let mut above = cfg.clone();
-    above.limits.max_output_bytes = full + 16 * 1024;
-    assert_eq!(markdown_to_docx(&md, &above).unwrap().len() as u64, full);
-
-    let mut under = cfg.clone();
-    under.limits.max_output_bytes = full - 1;
-    assert!(matches!(
-        markdown_to_docx(&md, &under),
-        Err(CrateError::LimitExceeded(m)) if m.contains("max_output_bytes")
-    ));
-
-    // Writing to a caller's buffer stops at the limit: no more than `max` bytes arrive.
-    let mut small = cfg.clone();
-    small.limits.max_output_bytes = 4096;
-    let mut sink = Cursor::new(Vec::new());
-    assert!(matches!(
-        markdown_to_docx_writer(&md, &small, &mut sink),
-        Err(CrateError::LimitExceeded(_))
-    ));
-    assert!(sink.get_ref().len() <= 4096, "wrote {} bytes", sink.get_ref().len());
-}

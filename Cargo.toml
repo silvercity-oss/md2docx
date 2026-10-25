@@ -36,10 +36,16 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 clap = { version = "4", features = ["derive"], optional = true }
 percent-encoding = "2.3.2"
 shlex = { version = "2", optional = true }
+# The same zip docx-rs uses; `deflate` lets us compress the finished archive.
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 quick-xml = "0.41"
-zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [target."cfg(unix)".dependencies]
 rustix = { version = "1", features = ["process"] }
+
+# The test suite compresses tens of megabytes of XML; deflate is painfully slow unoptimised.
+# (Profiles only affect this repository's own builds, never a crate that depends on this one.)
+[profile.dev.package.miniz_oxide]
+opt-level = 3

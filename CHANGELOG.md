@@ -45,8 +45,13 @@ First release.
   (inline formatting, colour, highlight, or a block with fill, bar, indent, label).
   Attributes in the document are ignored. Tag names may contain `-`.
 - `DocumentOptions::{code_background, link_color, quote_bar_color}`.
-- `Limits::max_output_bytes` (256 MiB; **50 MiB** in `Config::untrusted()`): the
-  `.docx` is stored uncompressed, so a small input could expand about 40x.
+- `Config::compression_level` / `with_compression_level` / `md2docx --compression-level`
+  (0 to 9, default **6**): docx-rs stores archives uncompressed, so the finished
+  file is now rewritten with deflate (about 10x smaller; pictures stay stored).
+- `Limits::max_output_bytes` (the finished file, enforced exactly while writing:
+  256 MiB; **50 MiB** in `Config::untrusted()`) and `Limits::max_uncompressed_bytes`
+  (the parts held in memory, checked before packaging: 1 GiB; 256 MiB untrusted).
+  A small input can expand about 40x into XML.
 
 ### Diagrams for untrusted input
 - `Config::untrusted_with_diagrams()` / `md2docx --untrusted --diagrams`: Mermaid

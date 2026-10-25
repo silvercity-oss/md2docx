@@ -25,7 +25,7 @@ use crate::extend::TagStyle;
 use crate::html::{self, Piece};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
-use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars, LimitedWriter};
+use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
 
 /// Parser options shared by Stage 1 (with `math`) and Stage 2 (without: by then
 /// every formula has been rewritten, and any leftover `$` is literal text).
@@ -1675,42 +1675,14 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
         parts.document = inject_omml(&xml, &b.nonce, &b.omml)?.into_bytes();
     }
 
-    let max = cfg.limits.max_output_bytes;
-    // The archive is stored uncompressed, so the parts are (nearly) its size. Checking them
-    // first refuses an over-large result before anything is written; the writer below
-    // enforces the exact figure, including the archive's own headers.
-    let media: usize = parts.media.iter().map(|(_, bytes)| bytes.len()).sum();
-    let parts_total = [
-        parts.document.len(),
-        parts.styles.len(),
-        parts.numberings.len(),
-        parts.document_rels.len(),
-        parts.footnotes.len(),
-        parts.settings.len(),
-        parts.content_type.len(),
-        parts.rels.len(),
-        parts.font_table.len(),
-        parts.comments.len(),
-        media,
-    ]
-    .iter()
-    .fold(0u64, |t, n| t.saturating_add(*n as u64));
-    // Generous allowance for the archive's own headers (about 150 bytes per entry), so that
-    // a document that passes here never trips the writer and leaves a half-written archive.
-    let overhead = 512 * (24 + parts.media.len() as u64);
-    if parts_total.saturating_add(overhead) > max {
+    let in_memory = crate::pack::uncompressed_size(&parts);
+    if in_memory > cfg.limits.max_uncompressed_bytes {
         return Err(CrateError::LimitExceeded(format!(
-            "the .docx would be larger than {max} bytes (Limits::max_output_bytes)"
+            "the document parts total {in_memory} bytes (Limits::max_uncompressed_bytes {})",
+            cfg.limits.max_uncompressed_bytes
         )));
     }
-    let mut limited = LimitedWriter::new(writer, max).map_err(|e| CrateError::DocxGenerationError(e.to_string()))?;
-    let packed = parts.pack(&mut limited);
-    if limited.exceeded {
-        return Err(CrateError::LimitExceeded(format!(
-            "the .docx would be larger than {max} bytes (Limits::max_output_bytes)"
-        )));
-    }
-    packed.map_err(|e| CrateError::DocxGenerationError(e.to_string()))
+    crate::pack::pack(parts, cfg.compression_level, cfg.limits.max_output_bytes, writer)
 }
 
 #[cfg(test)]

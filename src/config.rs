@@ -112,11 +112,14 @@ pub struct Limits {
     pub max_total_image_bytes: u64,
     /// Total size of the scratch directory while external tools run.
     pub max_workspace_bytes: u64,
-    /// Size of the finished `.docx`. The archive is stored uncompressed, so this
-    /// is also roughly the size of the XML inside. Enforced before and while
-    /// writing, to within a few KB of archive headers, so an over-large result
-    /// fails early; [`Config::untrusted`] sets 50 MiB.
+    /// Size of the finished (compressed) `.docx`, enforced exactly while it is
+    /// written; [`Config::untrusted`] sets 50 MiB.
     pub max_output_bytes: u64,
+    /// Size of the document's XML parts and pictures before compression. They
+    /// are held in memory (twice, briefly, while the archive is rewritten), so
+    /// this bounds peak memory; [`Config::untrusted`] sets 256 MiB. Text
+    /// expands about 40x into XML, so a 2 MiB input stays far below that.
+    pub max_uncompressed_bytes: u64,
     /// Total wall-clock time one conversion may spend in external tools, on top
     /// of the per-tool [`Config::tool_timeout`].
     pub max_total_tool_time: Duration,
@@ -135,6 +138,7 @@ impl Default for Limits {
             max_total_image_bytes: 150 * MIB,
             max_workspace_bytes: 256 * MIB,
             max_output_bytes: 256 * MIB,
+            max_uncompressed_bytes: 1024 * MIB,
             max_total_tool_time: Duration::from_secs(300),
         }
     }
@@ -407,6 +411,10 @@ pub struct Config {
     /// [`Config::allowed_link_schemes`]). When `false` the tag is dropped and
     /// only its text stays. Default `true`; [`Config::untrusted`] sets `false`.
     pub html_links: bool,
+    /// Deflate level of the finished `.docx`: 0 stores it uncompressed, 1 is
+    /// fastest, 9 smallest. Default 6. Pictures are always stored (they are
+    /// compressed already).
+    pub compression_level: u32,
     /// Styles for HTML tags outside the built-in set (or overriding it), by
     /// lower-case tag name. See [`TagStyle`]. Empty by default.
     pub html_tags: BTreeMap<String, TagStyle>,
@@ -427,6 +435,7 @@ impl Default for Config {
             image_access: ImageAccess::default(),
             allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
             html_links: true,
+            compression_level: 6,
             html_tags: BTreeMap::new(),
             fence_renderers: FenceRenderers::default(),
         }
@@ -457,6 +466,12 @@ impl Config {
             return Err(bad(
                 "allowed_link_schemes entries must be bare scheme names like `https`".into(),
             ));
+        }
+        if self.compression_level > 9 {
+            return Err(bad(format!(
+                "compression_level {} must be between 0 (stored) and 9 (smallest)",
+                self.compression_level
+            )));
         }
         if self.html_tags.len() > 64 {
             return Err(bad("at most 64 custom html tags may be registered".into()));
@@ -515,6 +530,12 @@ impl Config {
         self
     }
 
+    /// Set the deflate level of the finished `.docx` (0 to 9, default 6).
+    pub fn with_compression_level(mut self, level: u32) -> Self {
+        self.compression_level = level;
+        self
+    }
+
     /// Turn raw HTML `<a href>` links on or off.
     pub fn with_html_links(mut self, on: bool) -> Self {
         self.html_links = on;
@@ -558,6 +579,7 @@ impl Config {
             max_image_bytes: 5 * 1024 * 1024,
             max_total_image_bytes: 25 * 1024 * 1024,
             max_output_bytes: 50 * 1024 * 1024,
+            max_uncompressed_bytes: 256 * 1024 * 1024,
             ..Limits::default()
         };
         c

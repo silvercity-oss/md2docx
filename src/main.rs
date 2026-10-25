@@ -122,6 +122,15 @@ pub struct Args {
         help = "Kill an external renderer after this long [default: 60; 20 with --untrusted --diagrams]"
     )]
     pub timeout: Option<u64>,
+
+    #[arg(
+        long,
+        value_name = "0-9",
+        default_value_t = 6,
+        value_parser = clap::value_parser!(u32).range(0..=9),
+        help = "Compression of the .docx: 0 stores it uncompressed, 1 is fastest, 9 smallest"
+    )]
+    pub compression_level: u32,
 }
 
 /// Split a command template with POSIX shell rules (via `shlex`) and check it
@@ -173,6 +182,7 @@ fn config(args: &Args) -> Config {
         }
         cfg
     };
+    cfg.compression_level = args.compression_level;
     if let Some(seconds) = args.timeout {
         cfg.tool_timeout = Duration::from_secs(seconds);
     }
