@@ -54,3 +54,15 @@ run the conversion in a worker with an address-space/RSS limit, a CPU and wall-c
 no network, a private scratch filesystem, and a supervisor that kills the worker from
 outside; the library's checks reduce what that supervisor has to absorb, they do not replace it.
 
+
+## Dependencies and advisories
+
+`cargo audit` is part of CI and the lock file is clean of vulnerabilities. The optional `mermaid`
+feature pulls in `merman`, whose font code depends on `rustybuzz` and `ttf-parser`; the RustSec
+database marks both **unmaintained** (RUSTSEC-2026-0206, RUSTSEC-2026-0192; informational, not a
+vulnerability, and `cargo audit` reports them as warnings). They are compiled only with the
+`mermaid` feature. Re-evaluate on each merman release. The `.docx` writer is first-party code in
+`src/docx/` and `zip` is version 9, so there are no advisory exceptions.
+
+See `docs/embedding.md` for what a worker that converts hostile documents must still enforce
+from the outside, and `docs/integration-test-plan.md` for what is and is not verified.

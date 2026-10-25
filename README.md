@@ -22,8 +22,10 @@ silvercity-oss = { version = "0.1", default-features = false }
 ```rust
 use silvercity_oss::{markdown_to_docx, Config, CrateError};
 
-// For Markdown you do not control: no subprocess, no local files, tight limits.
-let docx = markdown_to_docx(&user_markdown, &Config::untrusted())?;
+// `Config::default()` is the untrusted-input policy: native math, no TeX or diagram process,
+// no local files, no raw-HTML links, tight limits. TeX, external renderers and local files
+// are opt-in through `Config::trusted()` or explicit settings.
+let docx = markdown_to_docx(&user_markdown, &Config::default())?;
 ```
 
 | Function | Use |
@@ -31,7 +33,15 @@ let docx = markdown_to_docx(&user_markdown, &Config::untrusted())?;
 | `markdown_to_docx(&str, &Config) -> Result<Vec<u8>>` | The common case |
 | `markdown_to_docx_writer(&str, &Config, impl Write + Seek)` | Write to a `File` or `Cursor`. The archive is built in memory first and written in one piece, so a refused or failed conversion writes nothing |
 | `markdown_file_to_docx(&Path, &Config)` | Reads the file with the input-size limit applied *before* it is read (devices and directories are refused); relative images resolve against its directory |
+| `convert(&str, &Config) -> Result<Conversion>` | The document **and** what could not be carried over: `diagnostics` (stable code, severity, span in your text) and `stats` |
+| `convert_to_writer`, `convert_file` | The same for a writer or a file |
+| `analyze(&str, &Config) -> Result<Report>` | The findings and statistics without building the archive: validate or preview before converting |
+| `sweep_scratch(&Path, Duration)` | Remove scratch directories left by a worker that was killed from outside |
 | `omml::latex_to_omml(&str)` | The LaTeX to OMML converter on its own |
+
+Guides: [embedding it in a service](docs/embedding.md) (trust model, recipe, what needs host
+isolation), [diagnostics reference](docs/diagnostics.md), [integration test plan](docs/integration-test-plan.md),
+and the runnable `examples/embed.rs`.
 
 **Configuration.** `Config` is `#[non_exhaustive]`, so new options never break your
 code: start from a preset, then chain `with_*` methods or assign fields.
@@ -51,6 +61,48 @@ asset resolver) is chosen by the embedding program, never by the document.
 landscape or any size), margins, body and code fonts, body size and heading
 colour. All options are validated up front: out-of-range values are a
 `CrateError::InvalidConfig` naming the option, before any work is done.
+
+### Findings and strict conversion
+
+Not everything in Markdown has a faithful Word equivalent, and an embedder that stores or
+delivers the result usually wants to know. Every conversion records what it dropped or degraded
+as `Diagnostic`s: `image.remote`, `link.dropped`, `footnote.unreferenced`, `list.depth-clamped`,
+`diagram.not-rendered`, `math.unknown-command`, ... (all codes in [docs/diagnostics.md](docs/diagnostics.md)).
+Each has a severity and a span that indexes the string you passed in.
+
+```rust
+use silvercity_oss::{convert, Config, CrateError, LossPolicy};
+
+let strict = Config::default().with_loss_policy(LossPolicy::Reject);
+match convert(&markdown, &strict) {
+    Ok(done) => store(done.docx),
+    Err(CrateError::LossyContent { diagnostics }) => show_author(&diagnostics), // line:column, code, message
+    Err(other) => return Err(other.into()),
+}
+```
+
+`LossPolicy::Allow` (the default, and the behaviour of every earlier version) returns the
+degraded document and still reports the findings through `convert`; the byte-returning
+functions then return success without them, so choose the policy explicitly. `md2docx --strict`
+does the same on the command line, printing `file:line:column: warning[code]: message`.
+
+### Images from your own storage
+
+`Config::with_image_resolver(AssetMap)` (or any `ImageResolver`) gives the converter the exact
+bytes for keys the document names, without enabling file paths or the network. Every image,
+whatever its source, is decoded in full, re-encoded as a clean PNG and charged to configurable
+limits (source bytes, distinct images, pixels, aggregate decode work, aggregate normalised
+bytes). Alt text and titles are written to the picture's accessibility properties. See
+[docs/embedding.md](docs/embedding.md#images).
+
+### Scratch storage, cancellation and deadlines
+
+`Config::scratch_dir` makes every temporary artifact live under a directory you own (no
+environment variable is touched); `CancelToken` and `Limits::max_conversion_time` stop a
+conversion cooperatively, killing a running tool's process tree first. Results from a
+`FenceRenderer` or `ImageResolver` stay in memory. These are library-level checks: a worker
+that must survive hostile input still needs a memory limit and an outside supervisor
+(see the table in [docs/embedding.md](docs/embedding.md#what-the-library-checks-and-what-needs-the-process-around-it)).
 
 ### Extending it
 
@@ -135,7 +187,9 @@ rises when a dependency forces it, in a minor release, noted in the changelog.
 Building from source needs only a current rustup toolchain; Debian 13's
 packaged Rust (1.85) and Ubuntu 24.04's (1.75) are too old, as they are for
 most of the ecosystem. Note this is about *building* this crate; `merman-cli`,
-a separate program, needs 1.95 to build (`cargo install merman-cli`).
+a separate program, needs 1.95 to build (`cargo install merman-cli`). The optional
+`mermaid` feature (in-process diagrams through the `merman` crate, see "Diagrams") has the
+same 1.95 requirement; it is tested separately in CI and does not raise the MSRV of the rest.
 
 ## Pipeline
 
@@ -147,12 +201,17 @@ Markdown ──► 1. preprocess ──► 2. pulldown-cmark events ──► 3.
 | Module | Role |
 | --- | --- |
 | `preprocess.rs` | Finds `mermaid`/`dolphin` fences and `$`/`$$` math with `pulldown-cmark` (`ENABLE_MATH`, so code spans, escapes and nested quotes/lists are handled by the real parser), renders them, and rewrites each into `![alt](dest)`. |
-| `renderer.rs` | Runs external CLIs (`std::process::Command`, timeout, stderr capture), names assets by SHA-256, owns the RAII `Workspace` (`tempfile::TempDir`). |
+| `renderer.rs` | Runs external CLIs under an owned process-tree guard (timeout, console and disk caps, cancellation), names assets by SHA-256, owns the RAII `Workspace` (`tempfile::TempDir` under `Config::scratch_dir`), `sweep_scratch`. |
+| `images.rs` | The one place images are measured, decoded, re-encoded and charged to the image budgets. |
+| `diagnostics.rs`, `control.rs` | Findings, spans mapped back to the original text, `LossPolicy`; cancellation and the conversion deadline. |
+| `mermaid.rs` | (feature `mermaid`) the in-process Mermaid `FenceRenderer`. |
+| `docx/` | The `.docx` writer: a first-party, trimmed fork of the writing half of [docx-rs](https://github.com/bokuweb/docx-rs) (MIT; see LICENSE), maintained here. |
 | `omml.rs` | Dependency-free LaTeX → OMML converter. |
 | `parser.rs` | The event loop mapping CommonMark events onto the internal `docx` writer, and the OMML injection step. |
 
-Everything rendered lives in one `TempDir` that is deleted when the conversion
-returns, on success and on every error path.
+Everything rendered to a file lives in one `TempDir` (under `Config::scratch_dir`) that is
+deleted when the conversion returns, on success and on every error path; renderer callbacks
+keep their PNG in memory instead.
 
 ## Diagrams
 
@@ -185,6 +244,16 @@ Dolphin CLI; the default `dolphin -i {input} -o {output}` is a guess, so set
 plus arguments with `{input}`, `{output}` and `{dpi}` placeholders. Identical
 diagrams are rendered once. On a headless/root host `mmdc` usually needs a
 Puppeteer config (`-p puppeteer.json` with `--no-sandbox`); add it to `args`.
+
+### Diagrams without a child process
+
+With the `mermaid` cargo feature (Rust 1.95), `Config::with_in_process_mermaid()` renders Mermaid
+inside the process through the pure-Rust [`merman`](https://crates.io/crates/merman) crate
+(pinned to the tested version, PNG export and eleven common diagram families only). It is a
+`FenceRenderer`, so it spawns nothing, writes nothing to disk, and shares the conversion's
+deadline and `CancelToken`; it suits workers that are allowed exactly one process. It measures
+text with merman's deterministic metrics, so labels can differ slightly from the `merman-cli`
+engine above. See [docs/embedding.md](docs/embedding.md#diagrams-and-a-one-process-worker).
 
 ### Diagrams from untrusted input
 
@@ -350,8 +419,9 @@ through `--mermaid-command`.
 > **Native OMML Mode must be mandated whenever the Markdown comes from an
 > untrusted source** (user uploads, web forms, third-party feeds, multi-tenant
 > servers). It converts LaTeX to OMML in-process, never spawns `latex`, and
-> cannot read host files. In library code use `Config::untrusted()` (or at least
-> `Config::native_math()`); with the CLI use `md2docx --untrusted`.
+> cannot read host files. In library code use `Config::default()` (the same as
+> `Config::untrusted()`); `Config::native_math()` alone does **not** make input safe, it only
+> removes TeX (see "What is not covered"). With the CLI use `md2docx --untrusted`.
 > Image mode is for Markdown you wrote yourself.
 
 Image mode is nevertheless hardened, in layers, so a mistake in one does not
@@ -384,10 +454,18 @@ fences left as code (no browser), no local files, smaller limits.
 
 ### What is not covered
 
-* **Known content gaps.** Tables inside footnotes are dropped; a display equation
-  that is the whole content of a list item loses its bullet or checkbox; a lone
+* **Known content gaps** (each one is reported as a finding, see
+  [docs/diagnostics.md](docs/diagnostics.md)). Tables inside footnotes are dropped; a lone
   `\r` inside a code line is removed; `mailto:` links keep their query string
   (`?subject=...`, and in principle `?attach=`, which a few old mail clients honour).
+* **`Config::native_math()` is a trusted preset.** It removes the TeX process and nothing else:
+  it still reads images from `base_dir`, runs diagram tools and accepts raw HTML links. The
+  untrusted policy is `Config::default()` / `Config::untrusted()`.
+* **Library checks are not process isolation.** The library bounds work, size, time and files and
+  cleans up what it starts, but it cannot cap its own memory, interrupt a callback or a decoder
+  that does not return, reap processes after the worker is SIGKILLed, or stop a vulnerability in
+  a library it links. Run hostile input in a worker with a memory limit, no network and an
+  external supervisor ([docs/embedding.md](docs/embedding.md)).
 * **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB
   input to a few hundred MB while building; set `Limits::max_elements` lower, and
   run conversions in a memory-limited worker, if that matters for your service.
@@ -441,7 +519,14 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
 * `tests/security.rs`: every gate in the table, plus seeded random Markdown and
   LaTeX runs (with a watchdog) asserting no panic, no hang, well-formed output.
 * `tests/tool_hardening.rs` (Unix): runaway output, disk filling, oversized
-  results, and descendants of a timed-out tool.
+  results, descendants of a timed-out, failed or over-budget tool, cancellation, the
+  conversion deadline and the scratch root.
+* `tests/safe_defaults.rs`, `tests/images_assets.rs`, `tests/diagnostics.rs`,
+  `tests/determinism.rs`, `tests/display_math_blocks.rs`: the safe default, host byte assets and
+  image budgets, alt text, findings and the strict policy, per-conversion identifiers.
+* `tests/office_roundtrip.rs` (Unix, needs LibreOffice, skipped without): every fixture in
+  `tests/fixtures/` opens and re-saves in LibreOffice and survives. `tests/mermaid_inprocess.rs`
+  (`--features mermaid`): the in-process renderer.
 * `tests/tex_real.rs` (Unix): the pipeline and the TeX hardening against a real
   `latex` (skipped when absent; CI installs it and requires it).
 * `tests/hardened_diagrams.rs`, `tests/cli_diagrams.rs`: the hardened diagram mode

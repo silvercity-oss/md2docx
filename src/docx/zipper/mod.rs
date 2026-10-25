@@ -5,7 +5,9 @@ use std::io::prelude::*;
 use std::io::Seek;
 use zip::write::SimpleFileOptions;
 
-pub fn zip<W>(w: W, xml: XMLDocx) -> zip::result::ZipResult<()>
+/// Write the package. `level` is the deflate level for the XML parts (0 stores them); pictures are
+/// PNG already and are always stored.
+pub fn zip<W>(w: W, xml: XMLDocx, level: u32) -> zip::result::ZipResult<()>
 where
     W: Write + Seek,
 {
@@ -18,9 +20,17 @@ where
     zip.add_directory("_rels/", directory_options)?;
     zip.add_directory("docProps/", directory_options)?;
 
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
-        .unix_permissions(0o755);
+    let stored = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .unix_permissions(0o644);
+    let options = if level == 0 {
+        stored
+    } else {
+        SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(i64::from(level)))
+            .unix_permissions(0o644)
+    };
 
     zip.start_file("[Content_Types].xml", options)?;
     zip.write_all(&xml.content_type)?;
@@ -75,7 +85,7 @@ where
         zip.add_directory("word/media/", directory_options)?;
         for m in xml.media {
             // For now only png supported
-            zip.start_file(format!("word/media/{}.png", m.0), options)?;
+            zip.start_file(format!("word/media/{}.png", m.0), stored)?;
             zip.write_all(&m.1)?;
         }
     }

@@ -19,21 +19,39 @@
 //!
 //! # Untrusted input
 //!
-//! Use [`Config::untrusted`] for Markdown you do not control. It starts no
-//! subprocess, reads no local file and enforces tight size limits; raw HTML is
-//! reduced to a safe subset. Every failure is a [`CrateError`]; the crate does
-//! not panic on bad input.
+//! [`Config::default`] is the untrusted-input policy ([`Config::untrusted`]): native math, no TeX
+//! or diagram process, no local files, no raw-HTML links, tight limits, no subprocess ever. Every
+//! failure is a [`CrateError`]; the crate does not panic on bad input. (`Config::native_math` is a
+//! *trusted* preset: it only removes TeX. See `docs/embedding.md` for what the library checks and
+//! what needs process isolation around it.)
 //!
 //! ```
 //! use silvercity_oss::{markdown_to_docx, Config, CrateError};
 //!
 //! let hostile = "[x](javascript:alert(1)) <script>bad()</script> ![secret](/etc/passwd)";
-//! let docx = markdown_to_docx(hostile, &Config::untrusted()).expect("safe by construction");
+//! let docx = markdown_to_docx(hostile, &Config::default()).expect("safe by construction");
 //! # let _ = docx;
 //!
 //! // Limits turn abuse into errors, not hangs or crashes.
 //! let huge = "x".repeat(3 * 1024 * 1024);
-//! assert!(matches!(markdown_to_docx(&huge, &Config::untrusted()), Err(CrateError::LimitExceeded(_))));
+//! assert!(matches!(markdown_to_docx(&huge, &Config::default()), Err(CrateError::LimitExceeded(_))));
+//! ```
+//!
+//! # Knowing what was lost
+//!
+//! [`convert`] returns the document with [`Diagnostic`]s (stable [`Code`], [`Severity`], and a span in
+//! the text you passed); [`analyze`] returns them without building the archive; and
+//! [`LossPolicy::Reject`] turns any warning into [`CrateError::LossyContent`].
+//!
+//! ```
+//! use silvercity_oss::{convert, Code, Config, CrateError, LossPolicy};
+//!
+//! let md = "See [the spec](docs/spec.md).";
+//! let done = convert(md, &Config::default()).unwrap();
+//! assert_eq!(done.diagnostics[0].code, Code::LinkDropped);
+//!
+//! let strict = Config::default().with_loss_policy(LossPolicy::Reject);
+//! assert!(matches!(convert(md, &strict), Err(CrateError::LossyContent { .. })));
 //! ```
 //!
 //! # Page, fonts and writers
@@ -59,15 +77,14 @@
 //!   (diagrams, image-mode math). From async code, call it inside
 //!   `spawn_blocking`.
 //! * **Thread-safe.** [`Config`] is `Send + Sync`; share one across threads.
-//!   Each call uses its own scratch directory, removed when the call returns.
-//! * **Not byte-reproducible.** The same input gives the same *content* every
-//!   time, but `docx-rs` numbers relationship, footnote and picture ids from
-//!   process-wide counters, so two calls can differ in those ids (and in the
-//!   order of relationship entries). Compare or cache by content, not by
-//!   hashing the bytes.
+//!   Each call uses its own scratch directory (under [`Config::scratch_dir`]), removed when the
+//!   call returns.
+//! * **Deterministic identifiers.** Relationship, footnote, picture and bookmark ids restart for
+//!   every conversion, so equal input gives equal parts (the package's created/modified timestamps
+//!   still differ).
 //! * **Features.** `cli` (default) builds the `md2docx` binary. Library users
 //!   should depend on the crate with `default-features = false` to avoid
-//!   compiling `clap` and `shlex`.
+//!   compiling `clap` and `shlex`. `mermaid` renders Mermaid in-process (Rust 1.95).
 //! * **Syntax highlighting** for code blocks: [`Highlighting`], [`Theme`], [`Highlighter`].
 //! * **Extensible by the embedder, not the document author.**
 //!   [`Config::with_fence_renderer`] renders fenced blocks with your own code and

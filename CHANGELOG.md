@@ -31,7 +31,7 @@ First release.
 - `DocumentOptions`: page size (A4, Letter, Legal, custom), margins, body and
   code fonts, body size, heading colour; validated up front (`InvalidConfig`).
 - `cli` feature (default): library users can use `default-features = false`
-  to skip `clap`/`shlex`. docx-rs's unused `image` feature is off (no TIFF/BMP).
+  to skip `clap`/`shlex`.
 - `markdown_file_to_docx` applies the input limit before reading and refuses
   devices and directories.
 - `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
@@ -39,7 +39,7 @@ First release.
 ### Navigation and document features
 - Internal links: `[text](#heading)` becomes a hyperlink to a bookmark on the heading
   (GitHub-style slugs, `{#id}`, repeated headings `-1`, `-2`).
-- Footnotes show their number in front of the note (docx-rs wrote none) and the reference
+- Footnotes show their number in front of the note (the upstream writer wrote none) and the reference
   mark is a real superscript character style.
 - `DocumentOptions::{title, author, page_numbers}`; title and author fall back to the
   front matter; the file's created/modified times are the real time (they were 1970).
@@ -67,8 +67,8 @@ First release.
   `DocumentOptions::code_blocks` (`CodeBlockLayout::SingleParagraph`: a code block as
   one paragraph with line breaks, easy to select and copy; `md2docx --code-blocks single`).
 - `Config::compression_level` / `with_compression_level` / `md2docx --compression-level`
-  (0 to 9, default **6**): docx-rs stores archives uncompressed, so the finished
-  file is now rewritten with deflate (about 10x smaller; pictures stay stored).
+  (0 to 9, default **6**): the XML parts are deflated while the archive is written, in one
+  pass (about 10x smaller than uncompressed; pictures stay stored).
 - `Limits::max_output_bytes` (the finished file, enforced exactly while writing:
   256 MiB; **50 MiB** in `Config::untrusted()`) and `Limits::max_uncompressed_bytes`
   (the size readers must parse, checked before packaging: 1 GiB; 64 MiB untrusted).
@@ -85,6 +85,44 @@ First release.
   raw SVG as the diagram) neither read local files nor use the network, with
   positive controls; the tests run on every push and weekly against the latest
   merman-cli.
+
+### Own writer, safer defaults, and what an embedding service needs
+- **The `.docx` writer is first-party.** The `docx-rs` dependency (last release months old,
+  pinned to `zip` 8 with open advisories) is replaced by `src/docx/`, a trimmed fork of its
+  writing half (reader, serde, JSON, wasm and about a quarter of the remaining code removed;
+  MIT attribution in LICENSE and THIRD_PARTY.md). `zip` is now 9, which clears the three
+  `cargo audit` exceptions that were needed. Output changes: identifiers are per conversion
+  (equal input gives equal parts), every drawing has its own `wp:docPr` id and accessible
+  description, relationship order is deterministic, archive entries are never executable, and
+  archives are written in one pass at the configured level.
+- **`Config::default()` is now the untrusted-input policy** (it was the trusted one). The
+  previous behaviour is `Config::trusted()`; `Limits::default()` is the tight set and
+  `Limits::trusted()` the old one; `MathMode` defaults to `NativeOmml` and
+  `GraphOptions::enabled` to `false`. `Config::native_math()` is documented as a trusted preset.
+  The `md2docx` binary is unchanged (it starts from `Config::trusted()`).
+- **Findings and strict mode.** `convert`, `convert_to_writer`, `convert_file` and `analyze` return
+  `Diagnostic`s (23 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
+  `Config::loss_policy` (`LossPolicy::Allow` default, `Reject` = `CrateError::LossyContent`);
+  `md2docx --strict`, with `file:line:column` output. See docs/diagnostics.md.
+- **Host-supplied images.** `ImageResolver` / `AssetMap` / `Config::with_image_resolver`: exact
+  bytes by key, never a path or URL. Every image is decoded in full and re-encoded as a clean
+  PNG under new limits (`max_distinct_images`, `max_image_pixels`, `max_image_dimension`,
+  `max_total_decode_pixels`, `max_total_normalized_bytes`, `max_decode_alloc_bytes`); exact
+  repeats are cached by SHA-256, different encodings of the same pixels each pay for the decode.
+  Alt text, titles, and diagram/formula descriptions go to `wp:docPr`; fence `alt="…"`/`title="…"`.
+- **Host control of temporary files and time.** `Config::scratch_dir`, `sweep_scratch`,
+  `CancelToken`, `Limits::max_conversion_time`, `RenderContext` for `FenceRenderer::render_with`,
+  `CrateError::{Cancelled, TimedOut}`; renderer results stay in memory; `md2docx --scratch-dir`,
+  `--deadline`.
+- **In-process Mermaid** (`mermaid` feature, Rust 1.95): `Config::with_in_process_mermaid()`,
+  merman pinned to 0.9.2.
+- **Cleanup.** A tool's whole process group is now ended on *every* exit after it starts
+  (including a post-exit workspace-limit or console-limit error, which used to return first),
+  by an owned guard; the console cap is rechecked after exit.
+- A display equation that is alone in a list item, quote or task item keeps the paragraph's
+  numbering, indent and checkbox (it was replaced by a bare paragraph).
+- Docs: docs/embedding.md, docs/diagnostics.md, docs/integration-test-plan.md,
+  `examples/embed.rs`, `examples/fixtures.rs`; LibreOffice open/save/reopen test.
 
 ### Raw HTML
 - `<a href>` hyperlinks (safe schemes only; off in `--untrusted`), alignment via

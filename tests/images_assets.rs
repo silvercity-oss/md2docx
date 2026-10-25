@@ -305,3 +305,19 @@ fn normalised_png_bytes_are_an_aggregate_budget() {
         Err(CrateError::LimitExceeded(m)) if m.contains("normalised")
     ));
 }
+
+// ---- attribute values that come from the document stay inside their attribute
+
+#[test]
+fn hostile_attribute_text_cannot_break_out_of_the_xml() {
+    let mut assets = AssetMap::new();
+    assets.insert("k", solid(8, 8, 3));
+    let cfg = Config::native_math().with_image_resolver(assets);
+    let md = "![a\"b'c<d>&e\u{1}f](k \"t\\\" onload=\\\"x<y>\")\n\n[l](https://example.com/a\"b&c<d>e'f)\n\n# H \"quoted\" <x>\n\n[j](#h-quoted-x)\n";
+    let docx = doc(md, &cfg);
+    for part in ["word/document.xml", "word/_rels/document.xml.rels"] {
+        assert_well_formed(&zip_text(&docx, part));
+    }
+    let body = zip_text(&docx, "word/document.xml");
+    assert!(!body.contains("onload=\"x"), "{body}");
+}

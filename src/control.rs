@@ -13,7 +13,7 @@ use crate::error::{CrateError, Result};
 /// [`Config::with_cancel_token`](crate::Config::with_cancel_token) and call [`CancelToken::cancel`]
 /// from any thread; the conversion returns [`CrateError::Cancelled`](crate::CrateError) at its next
 /// checkpoint (between Markdown events, between renders, every few milliseconds while an external
-/// tool runs, and between archive entries), killing a running external tool's process tree first.
+/// tool runs, and before the archive is built), killing a running external tool's process tree first.
 ///
 /// Cancellation is **cooperative**. A synchronous callback (a [`FenceRenderer`](crate::FenceRenderer),
 /// a highlighter) is not interrupted; it can poll [`RenderContext::is_cancelled`](crate::RenderContext).

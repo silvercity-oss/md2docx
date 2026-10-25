@@ -253,3 +253,11 @@ fn every_code_has_a_stable_documented_identifier() {
         assert!(!code.summary().is_empty());
     }
 }
+
+#[test]
+fn the_diagnostics_reference_documents_every_code() {
+    let doc = include_str!("../docs/diagnostics.md");
+    for code in Code::ALL {
+        assert!(doc.contains(&format!("| `{}` |", code.as_str())), "docs/diagnostics.md is missing {code}");
+    }
+}

@@ -33,11 +33,12 @@ pub struct XMLDocx {
 }
 
 impl XMLDocx {
-    /// Writes these package parts as a DOCX ZIP archive to a seekable destination.
-    pub fn pack<W>(self, w: W) -> zip::result::ZipResult<()>
+    /// Writes these package parts as a DOCX ZIP archive to a seekable destination, deflating the XML
+    /// parts at `level` (0 stores everything).
+    pub fn pack<W>(self, w: W, level: u32) -> zip::result::ZipResult<()>
     where
         W: Write + Seek,
     {
-        zipper::zip(w, self)
+        zipper::zip(w, self, level)
     }
 }
