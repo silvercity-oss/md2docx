@@ -1,5 +1,10 @@
 # Third-party material
 
+* **docx-rs.** The `.docx` writer in `src/docx/` is a first-party, trimmed and modified fork of
+  the writing half of docx-rs by bokuweb and contributors
+  (<https://github.com/bokuweb/docx-rs>, MIT). The full licence text is in `LICENSE`. It is
+  maintained in this repository and no longer a dependency.
+
 * **Theme colours.** `Theme::vscode_light()` and `Theme::vscode_dark()` use the token colours
   of Visual Studio Code's default *Light+* and *Dark+* themes
   (<https://github.com/microsoft/vscode>), distributed under the MIT licence:

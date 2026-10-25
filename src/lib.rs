@@ -82,6 +82,7 @@
 #![warn(missing_docs)]
 
 mod config;
+mod docx;
 mod error;
 mod extend;
 mod highlight;

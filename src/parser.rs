@@ -10,7 +10,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use docx_rs::{
+use crate::docx::{
     AbstractNumbering, AlignmentType, BorderType, BreakType, Docx, Footer, Footnote, Hyperlink, HyperlinkType,
     IndentLevel, Level, LevelJc, LevelOverride, LevelText, LineSpacing, NumberFormat, Numbering, NumberingId,
     PageMargin, PageNum, Paragraph, ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Pic, Run, RunFonts,
@@ -1079,7 +1079,7 @@ impl<'a> Builder<'a> {
         if self.budget_error.is_none() {
             let spacer = Paragraph::new()
                 .line_spacing(LineSpacing::new().before(0).after(0))
-                .run_property(docx_rs::RunProperty::new().size(8));
+                .run_property(crate::docx::RunProperty::new().size(8));
             self.emit(spacer);
         }
     }

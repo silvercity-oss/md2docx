@@ -1,0 +1,55 @@
+use std::io::Write;
+
+use crate::docx::documents::BuildXML;
+use crate::docx::types::*;
+use crate::docx::xml_builder::*;
+
+// INFO: Theme is not supported now.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shading {
+    pub shd_type: ShdType,
+    pub color: String,
+    pub fill: String,
+}
+
+impl Default for Shading {
+    fn default() -> Self {
+        Shading {
+            shd_type: ShdType::Clear,
+            color: "auto".to_owned(),
+            fill: "FFFFFF".to_owned(),
+        }
+    }
+}
+
+impl Shading {
+    pub fn new() -> Shading {
+        Shading::default()
+    }
+
+    pub fn color(mut self, color: impl Into<String>) -> Shading {
+        self.color = color.into();
+        self
+    }
+
+    pub fn fill(mut self, fill: impl Into<String>) -> Shading {
+        self.fill = fill.into();
+        self
+    }
+
+    pub fn shd_type(mut self, shd_type: ShdType) -> Shading {
+        self.shd_type = shd_type;
+        self
+    }
+}
+
+impl BuildXML for Shading {
+    fn build_to<W: Write>(
+        &self,
+        stream: crate::docx::xml::writer::EventWriter<W>,
+    ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
+        XMLBuilder::from(stream)
+            .shd(&self.shd_type.to_string(), &self.color, &self.fill)?
+            .into_inner()
+    }
+}

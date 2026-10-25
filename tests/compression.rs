@@ -83,7 +83,7 @@ fn the_archive_layout_is_unchanged_and_pictures_stay_stored() {
     let mut z = zip::ZipArchive::new(Cursor::new(&packed)).unwrap();
     for i in 0..z.len() {
         let f = z.by_index(i).unwrap();
-        let name = f.name().to_string();
+        let name = f.name().unwrap().into_owned();
         let expect_stored = f.is_dir() || name.starts_with("word/media/");
         assert_eq!(
             f.compression() == zip::CompressionMethod::Stored,

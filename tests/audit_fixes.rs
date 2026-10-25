@@ -204,7 +204,7 @@ fn archive_entries_are_not_marked_executable() {
     for i in 0..z.len() {
         let f = z.by_index(i).unwrap();
         if !f.is_dir() {
-            assert_eq!(f.unix_mode().map(|m| m & 0o111), Some(0), "{}", f.name());
+            assert_eq!(f.unix_mode().map(|m| m & 0o111), Some(0), "{:?}", f.name());
         }
     }
 }

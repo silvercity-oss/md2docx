@@ -1,0 +1,28 @@
+use std::io::Write;
+
+use crate::docx::documents::BuildXML;
+use crate::docx::types::*;
+use crate::docx::xml_builder::*;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VMerge {
+    val: VMergeType,
+}
+
+impl VMerge {
+    pub fn new(v: VMergeType) -> VMerge {
+        VMerge { val: v }
+    }
+}
+
+impl BuildXML for VMerge {
+    fn build_to<W: Write>(
+        &self,
+        stream: crate::docx::xml::writer::EventWriter<W>,
+    ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
+        XMLBuilder::from(stream)
+            .vertical_merge(&self.val.to_string())?
+            .into_inner()
+    }
+}
+

@@ -3,7 +3,7 @@
 
 use std::io::{Cursor, Seek, Write};
 
-use docx_rs::XMLDocx;
+use crate::docx::XMLDocx;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -67,7 +67,7 @@ fn recompress<W: Write + Seek>(stored: &[u8], level: u32, out: W) -> Result<()> 
     let raw = base.compression_method(CompressionMethod::Stored);
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(fail)?;
-        let name = entry.name().to_string();
+        let name = entry.name().map_err(fail)?.into_owned();
         if entry.is_dir() {
             zip.add_directory(name, SimpleFileOptions::default()).map_err(fail)?;
             continue;

@@ -2,7 +2,7 @@
 
 A pure-Rust library (plus the `md2docx` CLI) that converts Markdown into
 high-fidelity Word `.docx` files, including **LaTeX math** and **Mermaid /
-Dolphin diagrams** that `docx-rs` cannot express natively.
+Dolphin diagrams** that plain Word writers cannot express natively.
 
 ```rust
 use silvercity_oss::{markdown_to_docx, Config};
@@ -96,12 +96,12 @@ let cfg = Config::untrusted()
 * `DocumentOptions` also sets `code_background`, `link_color` and
   `quote_bar_color`.
 * `Config::with_compression_level(0..=9)` sets how the finished `.docx` is
-  compressed (default 6; docx-rs itself stores everything uncompressed, which made
+  compressed (default 6; the underlying writer stores everything uncompressed, which made
   files about 10x larger). Pictures stay stored; they are compressed already.
 
 Not offered, on purpose: handing out the Markdown parser's options or raw
-`docx-rs` paragraphs. Every event has to pass the converter's safety checks, and
-exposing `docx-rs` types would tie this crate's version to theirs.
+internal document-model paragraphs. Every event has to pass the converter's safety checks, and
+exposing the internal model would freeze it as public API.
 
 **Good to know.**
 
@@ -110,7 +110,7 @@ exposing `docx-rs` types would tie this crate's version to theirs.
 * **Thread-safe.** `Config` is `Send + Sync`. Each call has its own scratch
   directory, removed when it returns (also on error); concurrent calls are
   independent (tested with 16 threads).
-* **Not byte-reproducible.** Same input gives the same *content*, but docx-rs
+* **Not byte-reproducible.** Same input gives the same *content*, but the writer
   numbers relationship, footnote and picture ids from process-wide counters, so
   two outputs can differ in those ids. Compare or cache by content.
 * **Errors** are `CrateError` (`#[non_exhaustive]`, `std::error::Error + Send +
@@ -123,10 +123,9 @@ exposing `docx-rs` types would tie this crate's version to theirs.
 ### Supported Rust versions
 
 `rust-version = "1.88"`, checked in CI. That is the **floor our dependencies
-set, not a choice**: `docx-rs` depends on `zip` 8, which requires 1.88, and cargo's
-MSRV-aware resolver cannot find an older combination (tried down to 1.75). So
-supporting older compilers is not possible without replacing `docx-rs`, and
-raising the minimum would buy nothing but fewer users. Policy: the MSRV only
+set, not a choice**: `zip` 9 requires 1.88 (older `zip` releases carry published
+advisories), so supporting older compilers would mean shipping a vulnerable archive library.
+Raising the minimum would buy nothing but fewer users. Policy: the MSRV only
 rises when a dependency forces it, in a minor release, noted in the changelog.
 Building from source needs only a current rustup toolchain; Debian 13's
 packaged Rust (1.85) and Ubuntu 24.04's (1.75) are too old, as they are for
@@ -136,7 +135,7 @@ a separate program, needs 1.95 to build (`cargo install merman-cli`).
 ## Pipeline
 
 ```
-Markdown ──► 1. preprocess ──► 2. pulldown-cmark events ──► 3. docx-rs writer ──► .docx bytes
+Markdown ──► 1. preprocess ──► 2. pulldown-cmark events ──► 3. docx writer ──► .docx bytes
              (render, rewrite)                              (+ OMML injection)
 ```
 
@@ -145,7 +144,7 @@ Markdown ──► 1. preprocess ──► 2. pulldown-cmark events ──► 3.
 | `preprocess.rs` | Finds `mermaid`/`dolphin` fences and `$`/`$$` math with `pulldown-cmark` (`ENABLE_MATH`, so code spans, escapes and nested quotes/lists are handled by the real parser), renders them, and rewrites each into `![alt](dest)`. |
 | `renderer.rs` | Runs external CLIs (`std::process::Command`, timeout, stderr capture), names assets by SHA-256, owns the RAII `Workspace` (`tempfile::TempDir`). |
 | `omml.rs` | Dependency-free LaTeX → OMML converter. |
-| `parser.rs` | The event loop mapping CommonMark events onto `docx-rs`, and the OMML injection step. |
+| `parser.rs` | The event loop mapping CommonMark events onto the internal `docx` writer, and the OMML injection step. |
 
 Everything rendered lives in one `TempDir` that is deleted when the conversion
 returns, on success and on every error path.
@@ -230,7 +229,7 @@ converter in a container with no network and no sensitive files.
   writes a PNG to `{output}`; `{display}` is `1`/`0`.
 * **`MathMode::NativeOmml`**: no external tools. `omml.rs` converts LaTeX to
   OMML, and `parser.rs` swaps placeholder runs in the rendered
-  `document.xml` for `<m:oMath>` / `<m:oMathPara>` before zipping (docx-rs
+  `document.xml` for `<m:oMath>` / `<m:oMathPara>` before zipping (the writer
   exposes the rendered parts between `build()` and `pack()`). Equations stay
   editable in Word. A paragraph containing only `$$..$$` becomes a centred
   display equation; display math mixed into text is inline.

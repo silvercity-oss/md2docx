@@ -31,7 +31,7 @@ pub fn png_bytes(w: u32, h: u32) -> Vec<u8> {
 
 pub fn zip_entries(docx: &[u8]) -> Vec<String> {
     let z = zip::ZipArchive::new(Cursor::new(docx)).expect("output must be a zip archive");
-    z.file_names().map(str::to_string).collect()
+    z.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect()
 }
 
 pub fn zip_text(docx: &[u8], name: &str) -> String {
