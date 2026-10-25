@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use crate::config::{CommandSpec, Config, MathImageEngine};
+use crate::control::{CancelToken, Ctl};
 use crate::error::{CrateError, Result};
 
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
@@ -42,30 +43,42 @@ impl GraphKind {
     }
 }
 
+/// Name prefix of every scratch directory this crate creates.
+pub(crate) const SCRATCH_PREFIX: &str = "silvercity-";
+/// File created inside each scratch directory so [`sweep_scratch`] only ever removes directories
+/// this crate made.
+pub(crate) const SCRATCH_MARKER: &str = ".silvercity-scratch";
+
 /// RAII scratch directory. Dropping it deletes every rendered asset.
 #[derive(Debug)]
 pub struct Workspace {
     dir: TempDir,
     /// When the conversion's total external-tool time is used up.
     deadline: Option<Instant>,
+    ctl: Ctl,
 }
 
 impl Workspace {
     #[cfg(test)]
     pub fn new() -> Result<Self> {
-        Self::with_budget(None)
+        Self::create(&Config::trusted(), &Ctl::none())
     }
 
-    /// A workspace whose tools may run for `budget` in total (`None`: only the
-    /// per-tool timeout applies).
-    pub fn with_budget(budget: Option<Duration>) -> Result<Self> {
-        let dir = tempfile::Builder::new()
-            .prefix("silvercity-")
-            .tempdir()
-            .map_err(|e| CrateError::io(std::env::temp_dir(), e))?;
+    /// A private directory under [`Config::scratch_dir`] (or the system temporary directory)
+    /// whose tools may run for `limits.max_total_tool_time` in total.
+    pub(crate) fn create(cfg: &Config, ctl: &Ctl) -> Result<Self> {
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(SCRATCH_PREFIX);
+        let dir = match &cfg.scratch_dir {
+            Some(root) => builder.tempdir_in(root).map_err(|e| CrateError::io(root, e))?,
+            None => builder.tempdir().map_err(|e| CrateError::io(std::env::temp_dir(), e))?,
+        };
+        let marker = dir.path().join(SCRATCH_MARKER);
+        fs::write(&marker, b"").map_err(|e| CrateError::io(&marker, e))?;
         Ok(Workspace {
             dir,
-            deadline: budget.map(|b| Instant::now() + b),
+            deadline: Instant::now().checked_add(cfg.limits.max_total_tool_time),
+            ctl: ctl.clone(),
         })
     }
 
@@ -73,8 +86,10 @@ impl Workspace {
         self.dir.path()
     }
 
-    /// Fail when the conversion's total time for external work is used up.
+    /// Fail when the host cancelled the conversion, its deadline passed, or the total time for
+    /// external work is used up.
     pub fn check_budget(&self, what: &str) -> Result<()> {
+        self.ctl.check()?;
         match self.deadline {
             Some(d) if Instant::now() >= d => Err(CrateError::LimitExceeded(format!(
                 "the time budget for external work ran out before {what} finished"
@@ -82,6 +97,39 @@ impl Workspace {
             _ => Ok(()),
         }
     }
+}
+
+/// Remove scratch directories that earlier conversions left under `root` (the directory you gave
+/// [`Config::scratch_dir`]): the leftovers of a worker that was killed from outside, whose
+/// destructors never ran. Returns how many were removed.
+///
+/// Only directories this crate created are touched: the name starts with `silvercity-`, it holds
+/// the crate's marker file, it is a real directory (never a symbolic link), and it was last
+/// modified more than `older_than` ago. Pick `older_than` comfortably longer than
+/// [`Limits::max_conversion_time`](crate::Limits) so a conversion still running is not disturbed,
+/// or call it only when no worker is using `root`.
+pub fn sweep_scratch(root: &Path, older_than: Duration) -> Result<usize> {
+    let entries = fs::read_dir(root).map_err(|e| CrateError::io(root, e))?;
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_string_lossy().starts_with(SCRATCH_PREFIX) {
+            continue;
+        }
+        let path = entry.path();
+        // `symlink_metadata`: a link that points at a directory is not ours to follow.
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.is_dir() || fs::symlink_metadata(path.join(SCRATCH_MARKER)).is_err() {
+            continue;
+        }
+        let age = meta.modified().ok().and_then(|m| m.elapsed().ok());
+        if age.is_some_and(|a| a >= older_than) && fs::remove_dir_all(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 /// Deterministic, collision-resistant file stem: `<prefix>_<16 hex of sha256>`.
@@ -140,6 +188,11 @@ pub struct ToolGuard<'a> {
     /// Kill the tool (and refuse to start new ones) after this instant: the
     /// conversion's total time budget for external tools.
     pub overall_deadline: Option<Instant>,
+    /// Kill the tool and fail with [`CrateError::Cancelled`] once this token is set.
+    pub cancel: Option<&'a CancelToken>,
+    /// Kill the tool and fail with [`CrateError::TimedOut`] after this instant: the conversion's
+    /// own deadline.
+    pub conversion_deadline: Option<Instant>,
     /// Run with a scrubbed environment: only `PATH` (and the few variables a
     /// process needs on Windows) are inherited, and `HOME`/`TMPDIR` point at this
     /// directory, so nothing from the host's environment reaches the tool.
@@ -173,15 +226,43 @@ fn dir_size(dir: &Path) -> u64 {
     total
 }
 
-/// Kill the tool and everything it started (Chrome behind `mmdc`, for example).
-fn kill_tree(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
-        // The child leads its own process group (see `spawn`), so this reaches its descendants.
-        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+/// Owns a started tool. Dropping it kills the tool's whole process group (Chrome behind `mmdc`,
+/// for example) and reaps it, so **every** exit from `run_tool` after the spawn (an early
+/// `return`, a `?`, a panic) ends the process tree. The explicit [`ProcessGuard::kill_tree`] calls
+/// only make the order of events deterministic; they are not what the safety rests on.
+struct ProcessGuard {
+    child: Option<std::process::Child>,
+}
+
+impl ProcessGuard {
+    fn new(child: std::process::Child) -> Self {
+        ProcessGuard { child: Some(child) }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+
+    fn child(&mut self) -> &mut std::process::Child {
+        self.child.as_mut().expect("the child is only taken on drop")
+    }
+
+    /// Kill the tool and everything in its process group, then reap it. Safe to call twice.
+    fn kill_tree(&mut self) {
+        let Some(child) = self.child.as_mut() else { return };
+        #[cfg(unix)]
+        if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
+            // The child leads its own process group (see `spawn`), so this reaches its
+            // descendants, including ones that outlive it. The group id stays reserved while
+            // any member is alive; if none is, the signal finds no target.
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        self.kill_tree();
+        self.child = None;
+    }
 }
 
 fn budget_exhausted() -> CrateError {
@@ -201,13 +282,16 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         detail,
     };
 
+    if guard.cancel.is_some_and(CancelToken::is_cancelled) {
+        return Err(CrateError::Cancelled("the conversion was cancelled".into()));
+    }
     if guard.overall_deadline.is_some_and(|d| Instant::now() >= d) {
         return Err(budget_exhausted());
     }
     let mut log = tempfile::tempfile_in(cwd).map_err(|e| CrateError::io(cwd, e))?;
 
     let mut attempt = 0u32;
-    let mut child = loop {
+    let child = loop {
         // Stdio handles are consumed by `spawn`, so clone them per attempt.
         let (out, err) = (
             log.try_clone().map_err(|e| CrateError::io(cwd, e))?,
@@ -258,26 +342,31 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
         }
     };
 
+    // From here on the guard ends the whole process tree on every path out of this function.
+    let mut proc = ProcessGuard::new(child);
     let own_deadline = Instant::now() + timeout;
+    let log_too_big = |log: &fs::File| log.metadata().map(|m| m.len()).unwrap_or(0) > MAX_TOOL_LOG_BYTES;
     let status = loop {
-        match child.try_wait() {
+        match proc.child().try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
                 let now = Instant::now();
+                if guard.cancel.is_some_and(|c| c.is_cancelled()) {
+                    return Err(CrateError::Cancelled("the conversion was cancelled".into()));
+                }
+                if guard.conversion_deadline.is_some_and(|d| now >= d) {
+                    return Err(crate::control::timed_out());
+                }
                 if guard.overall_deadline.is_some_and(|d| now >= d) {
-                    kill_tree(&mut child);
                     return Err(budget_exhausted());
                 }
                 if now >= own_deadline {
-                    kill_tree(&mut child);
                     return Err(tool_err(format!("timed out after {}s", timeout.as_secs())));
                 }
-                if log.metadata().map(|m| m.len()).unwrap_or(0) > MAX_TOOL_LOG_BYTES {
-                    kill_tree(&mut child);
+                if log_too_big(&log) {
                     return Err(tool_err("killed: more than 1 MiB of console output".into()));
                 }
                 if dir_size(cwd) > guard.max_dir_bytes {
-                    kill_tree(&mut child);
                     return Err(CrateError::LimitExceeded(format!(
                         "`{program}` wrote more than {} bytes of files",
                         guard.max_dir_bytes
@@ -285,26 +374,25 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
                 }
                 sleep(Duration::from_millis(10));
             }
-            Err(e) => {
-                kill_tree(&mut child);
-                return Err(tool_err(format!("wait failed: {e}")));
-            }
+            Err(e) => return Err(tool_err(format!("wait failed: {e}"))),
         }
     };
 
-    // Polling can miss a tool that writes faster than the poll interval (a fast
-    // disk writes hundreds of MB in a few milliseconds), so enforce the cap once more
-    // now that it has exited. The kill above only limits how far it can overshoot.
+    // The tool is gone, but helpers it started may not be: end them first, whatever the tool's own
+    // outcome and before any check below can return.
+    proc.kill_tree();
+
+    // Polling can miss a tool that writes faster than the poll interval (a fast disk writes
+    // hundreds of MB in a few milliseconds), so enforce both caps once more now that it has
+    // exited. The kill above only limits how far it can overshoot.
+    if log_too_big(&log) {
+        return Err(tool_err("more than 1 MiB of console output".into()));
+    }
     if dir_size(cwd) > guard.max_dir_bytes {
         return Err(CrateError::LimitExceeded(format!(
             "`{program}` wrote more than {} bytes of files",
             guard.max_dir_bytes
         )));
-    }
-    // Whatever the tool's own outcome, helpers it started must not outlive it.
-    #[cfg(unix)]
-    if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
-        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
     }
     if status.success() {
         return Ok(());
@@ -341,11 +429,13 @@ fn check_png(program: &str, path: &Path, max_bytes: u64) -> Result<()> {
     }
 }
 
-fn guard<'a>(ws: &Workspace, cfg: &Config, env: &'a [(&'a str, &'a str)]) -> ToolGuard<'a> {
+fn guard<'a>(ws: &'a Workspace, cfg: &Config, env: &'a [(&'a str, &'a str)]) -> ToolGuard<'a> {
     ToolGuard {
         env,
         max_dir_bytes: cfg.limits.max_workspace_bytes,
         overall_deadline: ws.deadline,
+        cancel: ws.ctl.cancel_token(),
+        conversion_deadline: ws.ctl.deadline(),
         scrub_env_to: None,
     }
 }
@@ -387,6 +477,7 @@ pub fn render_graph(ws: &Workspace, kind: GraphKind, source: &str, cfg: &Config)
     if output.exists() {
         return Ok(output);
     }
+    ws.check_budget("the diagram")?;
     let input = ws.path().join(format!(
         "{stem}.{}",
         if kind == GraphKind::Mermaid { "mmd" } else { "dolphin" }
@@ -408,23 +499,23 @@ pub fn render_graph(ws: &Workspace, kind: GraphKind, source: &str, cfg: &Config)
     Ok(output)
 }
 
-/// Render a fenced block with the embedder's [`FenceRenderer`](crate::FenceRenderer)
-/// to `<workspace>/fence_<hash>.png`.
-pub fn render_custom(ws: &Workspace, lang: &str, source: &str, cfg: &Config) -> Result<PathBuf> {
+/// Render a fenced block with the embedder's [`FenceRenderer`](crate::FenceRenderer).
+///
+/// The PNG stays in memory: nothing is written to the scratch directory, so there is no file to
+/// leave behind, no disk quota to spend and no path for a later stage to be tricked into reading.
+pub fn render_custom(ctl: &Ctl, lang: &str, source: &str, cfg: &Config) -> Result<Vec<u8>> {
     let who = format!("fence renderer `{lang}`");
     let renderer = cfg
         .fence_renderers
         .get(lang)
         .ok_or_else(|| CrateError::InvalidConfig(format!("no fence renderer registered for `{lang}`")))?;
-    let stem = asset_stem("fence", &[lang.as_bytes(), source.as_bytes()]);
-    let output = ws.path().join(format!("{stem}.png"));
-    if output.exists() {
-        return Ok(output);
-    }
-    ws.check_budget(&who)?;
+    ctl.check()?;
+    let ctx = crate::extend::RenderContext::new(ctl, cfg);
     // A renderer is arbitrary code: a panic becomes an error instead of unwinding
     // through the converter.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| renderer.render(source)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| renderer.render_with(source, &ctx)));
+    // A renderer that ignored the deadline or the cancellation still does not get its result used.
+    ctl.check()?;
     let failed = |detail: String| CrateError::ExternalToolFailed {
         program: who.clone(),
         detail,
@@ -434,8 +525,6 @@ pub fn render_custom(ws: &Workspace, lang: &str, source: &str, cfg: &Config) -> 
         Ok(Err(e)) => return Err(failed(e.to_string())),
         Err(_) => return Err(failed("the renderer panicked".into())),
     };
-    ws.check_budget(&who)?;
-    // Check the size before the bytes reach the disk.
     if bytes.len() as u64 > cfg.limits.max_image_bytes {
         return Err(CrateError::LimitExceeded(format!(
             "{who} returned {} bytes (limit {})",
@@ -443,15 +532,10 @@ pub fn render_custom(ws: &Workspace, lang: &str, source: &str, cfg: &Config) -> 
             cfg.limits.max_image_bytes
         )));
     }
-    fs::write(&output, &bytes).map_err(|e| CrateError::io(&output, e))?;
-    if dir_size(ws.path()) > cfg.limits.max_workspace_bytes {
-        return Err(CrateError::LimitExceeded(format!(
-            "rendered images exceed {} bytes in total",
-            cfg.limits.max_workspace_bytes
-        )));
+    if !bytes.starts_with(&PNG_SIGNATURE) {
+        return Err(failed("did not return a PNG".into()));
     }
-    check_png(&who, &output, cfg.limits.max_image_bytes)?;
-    Ok(output)
+    Ok(bytes)
 }
 
 /// LaTeX document wrapping a single formula, for the `latex` + `dvipng` engine.
@@ -475,6 +559,7 @@ pub fn render_math_image(ws: &Workspace, latex: &str, display: bool, cfg: &Confi
     if output.exists() {
         return Ok(output);
     }
+    ws.check_budget("the formula")?;
     match &cfg.math.engine {
         MathImageEngine::LatexDvipng {
             latex: latex_bin,

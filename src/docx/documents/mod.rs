@@ -99,7 +99,7 @@ pub struct Image(pub Vec<u8>);
 pub struct Png(pub Vec<u8>);
 
 pub type ImageIdAndPath = (String, String);
-pub type ImageIdAndBuf = (String, Vec<u8>);
+pub type ImageIdAndBuf = (String, std::sync::Arc<[u8]>);
 
 #[derive(Debug, Clone)]
 pub struct Docx {
@@ -113,7 +113,7 @@ pub struct Docx {
     pub numberings: Numberings,
     pub settings: Settings,
     pub font_table: FontTable,
-    pub media: Vec<(String, Vec<u8>)>,
+    pub media: Vec<ImageIdAndBuf>,
     pub comments_extended: CommentsExtended,
     pub web_settings: WebSettings,
     pub taskpanes: Option<Taskpanes>,

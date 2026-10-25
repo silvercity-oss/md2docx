@@ -92,9 +92,11 @@ fn mermaid_block_is_rendered_and_embedded() {
     assert_well_formed(&body);
     assert!(body.contains("<w:drawing>"));
     assert!(
-        !body.contains("A--&gt;B"),
+        !visible_text(&body).contains("A-->B"),
         "the diagram source must not leak into the text"
     );
+    // ... but it is the picture's alternative text, so a screen reader announces something.
+    assert!(body.contains(r#"descr="Diagram: graph TD; A--&gt;B;""#), "{body}");
     for t in ["Flow", "Before.", "After."] {
         assert!(body.contains(t));
     }
@@ -182,7 +184,14 @@ fn math_image_fallback_renders_inline_and_display_formulas() {
     assert_well_formed(&body);
     assert_eq!(body.matches("<w:drawing>").count(), 2, "one picture per formula");
     assert!(!body.contains("<m:oMath"), "image mode must not emit OMML");
-    assert!(!body.contains("frac13"), "LaTeX source must not leak into the text");
+    assert!(
+        !visible_text(&body).contains("frac13"),
+        "LaTeX source must not leak into the text"
+    );
+    assert!(
+        body.contains(r#"descr="Equation: "#),
+        "formula pictures carry their LaTeX as alt text"
+    );
     assert!(body.contains("Euler:") && body.contains("inline."));
     assert!(body.contains(r#"<w:jc w:val="center"/>"#), "display formula is centred");
 }

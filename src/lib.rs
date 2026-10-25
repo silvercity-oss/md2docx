@@ -82,11 +82,13 @@
 #![warn(missing_docs)]
 
 mod config;
+mod control;
 mod docx;
 mod error;
 mod extend;
 mod highlight;
 mod html;
+mod images;
 mod lexers;
 pub mod omml;
 mod pack;
@@ -111,9 +113,11 @@ pub use config::{
     CodeBlockLayout, CommandSpec, Config, DiagramFailure, DocumentOptions, GraphOptions, ImageAccess, Limits,
     MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize,
 };
+pub use control::CancelToken;
 pub use error::{CrateError, Result};
-pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, TagStyle};
+pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, RenderContext, TagStyle};
 pub use highlight::{BuiltinHighlighter, Highlighter, Highlighting, Span, Theme, TokenClass, TokenStyle};
+pub use renderer::sweep_scratch;
 
 /// Convert Markdown text to the bytes of a `.docx` file.
 ///
@@ -131,7 +135,8 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 /// `Limits::max_output_bytes`), the writer may hold a partial archive: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
     config.validate()?;
-    let pre = preprocess::preprocess(markdown, config)?;
+    let ctl = control::Ctl::new(config);
+    let pre = preprocess::preprocess_with(markdown, config, &ctl)?;
     parser::build_docx(&pre, config, writer)
 }
 

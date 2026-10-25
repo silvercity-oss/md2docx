@@ -47,6 +47,14 @@ pub enum CrateError {
         detail: String,
     },
 
+    /// The host cancelled the conversion with a [`CancelToken`](crate::CancelToken).
+    #[error("conversion cancelled: {0}")]
+    Cancelled(String),
+
+    /// The conversion ran past [`Limits::max_conversion_time`](crate::Limits).
+    #[error("conversion timed out: {0}")]
+    TimedOut(String),
+
     /// Reading an input file or an image referenced by the document failed.
     #[error("i/o error on {}: {source}", path.display())]
     Io {

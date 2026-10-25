@@ -17,7 +17,7 @@ pub struct XMLDocx {
     pub settings: Vec<u8>,
     pub font_table: Vec<u8>,
     pub numberings: Vec<u8>,
-    pub media: Vec<(String, Vec<u8>)>,
+    pub media: Vec<crate::docx::ImageIdAndBuf>,
     pub headers: Vec<Vec<u8>>,
     pub header_rels: Vec<Vec<u8>>,
     pub footers: Vec<Vec<u8>>,

@@ -39,6 +39,8 @@ fn latex(dir: &Path, file: &str, env: &[(&str, &str)]) -> Result<(), CrateError>
             env,
             max_dir_bytes: 64 << 20,
             overall_deadline: None,
+            cancel: None,
+            conversion_deadline: None,
             scrub_env_to: None,
         },
     )

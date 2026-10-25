@@ -35,17 +35,100 @@ pub type FenceError = Box<dyn std::error::Error + Send + Sync>;
 ///
 /// * Return the bytes of a PNG. The result is held to the same limits as any
 ///   other image (`Limits::max_image_bytes`, pixel budget, format check).
-/// * The call is synchronous and **cannot be interrupted**: the converter checks
-///   the clock only after it returns. A renderer that may run for a long time
-///   on hostile input must bound itself.
+/// * The call is synchronous and **cannot be interrupted** by the converter: it checks the
+///   clock and the [`CancelToken`](crate::CancelToken) only after the call returns, and discards
+///   a result that arrives late. A renderer that can run for a long time on hostile input must
+///   bound itself, and should read the [`RenderContext`] it is given (override
+///   [`FenceRenderer::render_with`]) to stop early when the conversion is cancelled or past its
+///   deadline. A host that needs a *hard* deadline must run the whole conversion in a worker it
+///   can terminate from outside.
 /// * A panic is caught and reported as an error; an `Err` aborts the conversion
 ///   with [`CrateError::ExternalToolFailed`](crate::CrateError).
+/// * The PNG is kept in memory; nothing is written to the scratch directory.
 /// * It is called at most once per distinct block per conversion, on the
 ///   calling thread, and must be `Send + Sync` because a [`Config`](crate::Config)
 ///   may be shared between threads.
 pub trait FenceRenderer: Send + Sync {
     /// Render `source` (the text between the fences) to PNG bytes.
     fn render(&self, source: &str) -> Result<Vec<u8>, FenceError>;
+
+    /// Like [`FenceRenderer::render`], with the conversion's budgets and cancellation. The
+    /// converter calls this method; the default ignores `ctx` and calls `render`.
+    fn render_with(&self, source: &str, ctx: &RenderContext) -> Result<Vec<u8>, FenceError> {
+        let _ = ctx;
+        self.render(source)
+    }
+}
+
+/// What a [`FenceRenderer`] may consult while it runs: the conversion's cancellation flag, its
+/// deadline and the size ceilings its result will be held to. All of it is advisory (see the
+/// contract on [`FenceRenderer`]).
+#[derive(Debug, Clone)]
+pub struct RenderContext {
+    cancel: Option<crate::CancelToken>,
+    deadline: Option<std::time::Instant>,
+    max_image_bytes: u64,
+    max_image_pixels: u64,
+}
+
+impl RenderContext {
+    pub(crate) fn new(ctl: &crate::control::Ctl, cfg: &crate::Config) -> Self {
+        RenderContext {
+            cancel: ctl.cancel_token().cloned(),
+            deadline: ctl.deadline(),
+            max_image_bytes: cfg.limits.max_image_bytes,
+            max_image_pixels: cfg.limits.max_image_pixels,
+        }
+    }
+
+    /// A context with no cancellation, no deadline and no ceilings: for calling a renderer
+    /// outside a conversion, such as in a unit test.
+    pub fn unbounded() -> Self {
+        RenderContext {
+            cancel: None,
+            deadline: None,
+            max_image_bytes: u64::MAX,
+            max_image_pixels: u64::MAX,
+        }
+    }
+
+    /// True once the host cancelled the conversion.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel.as_ref().is_some_and(crate::CancelToken::is_cancelled)
+    }
+
+    /// When the conversion's time limit ends, if it has one.
+    pub fn deadline(&self) -> Option<std::time::Instant> {
+        self.deadline
+    }
+
+    /// Time left before the deadline (zero when it has passed); `None` without a deadline.
+    pub fn remaining(&self) -> Option<std::time::Duration> {
+        self.deadline
+            .map(|d| d.saturating_duration_since(std::time::Instant::now()))
+    }
+
+    /// `Err` when the conversion was cancelled or is past its deadline. Call it in loops and
+    /// `?` it to give up promptly.
+    pub fn check(&self) -> Result<(), FenceError> {
+        if self.is_cancelled() {
+            return Err("the conversion was cancelled".into());
+        }
+        if self.remaining().is_some_and(|r| r.is_zero()) {
+            return Err("the conversion's time limit has passed".into());
+        }
+        Ok(())
+    }
+
+    /// The most bytes the returned PNG may have ([`Limits::max_image_bytes`](crate::Limits)).
+    pub fn max_image_bytes(&self) -> u64 {
+        self.max_image_bytes
+    }
+
+    /// The most pixels the returned image may have ([`Limits::max_image_pixels`](crate::Limits)).
+    pub fn max_image_pixels(&self) -> u64 {
+        self.max_image_pixels
+    }
 }
 
 impl<F> FenceRenderer for F

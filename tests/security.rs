@@ -89,18 +89,23 @@ fn every_limit_is_enforced() {
 #[test]
 fn image_size_limits_apply_per_file_and_in_total() {
     let fx = Fixture::new();
-    let size = std::fs::metadata(fx.path("fixture.png")).unwrap().len();
+    std::fs::write(fx.path("two.png"), png_bytes(120, 60)).unwrap();
+    std::fs::write(fx.path("three.png"), png_bytes(90, 90)).unwrap();
+    let len = |n: &str| std::fs::metadata(fx.path(n)).unwrap().len();
+    let (one, two, three) = (len("fixture.png"), len("two.png"), len("three.png"));
     let mut cfg = Config::native_math();
     cfg.base_dir = Some(fx.dir.path().to_path_buf());
 
-    cfg.limits.max_image_bytes = size - 1;
+    cfg.limits.max_image_bytes = one - 1;
     assert!(matches!(err("![x](fixture.png)", &cfg), CrateError::LimitExceeded(_)));
 
-    cfg.limits.max_image_bytes = size;
-    cfg.limits.max_total_image_bytes = size * 2;
-    assert!(markdown_to_docx("![a](fixture.png) ![b](fixture.png)", &cfg).is_ok());
+    // The total counts distinct source encodings: the same file twice is read once.
+    cfg.limits.max_image_bytes = one.max(two).max(three);
+    cfg.limits.max_total_image_bytes = one + two;
+    assert!(markdown_to_docx("![a](fixture.png) ![b](fixture.png) ![c](fixture.png)", &cfg).is_ok());
+    assert!(markdown_to_docx("![a](fixture.png) ![b](two.png)", &cfg).is_ok());
     assert!(matches!(
-        err("![a](fixture.png) ![b](fixture.png) ![c](fixture.png)", &cfg),
+        err("![a](fixture.png) ![b](two.png) ![c](three.png)", &cfg),
         CrateError::LimitExceeded(m) if m.contains("in total")
     ));
 }

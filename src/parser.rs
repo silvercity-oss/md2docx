@@ -6,8 +6,7 @@
 //! before the package is zipped (see [`inject_omml`]).
 
 use std::collections::HashMap;
-use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::docx::{
@@ -26,6 +25,7 @@ use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
 use crate::highlight::{self, Span, Theme, TokenClass};
 use crate::html::{self, Piece};
+use crate::images::{ImagePipeline, Outcome, Picture};
 use crate::omml::ensure_math_namespace;
 use crate::preprocess::{Asset, AssetKind, AssetSource, Preprocessed};
 use crate::safety::{read_local_image, read_regular_file, safe_link, sanitize_xml_chars};
@@ -228,6 +228,7 @@ enum ImgWidth {
 struct ImageCtx {
     dest: String,
     alt: String,
+    title: String,
     width: Option<ImgWidth>,
 }
 
@@ -270,7 +271,7 @@ struct Builder<'a> {
     /// Bytes of footnote content expanded so far (amplification guard).
     footnote_bytes: usize,
     /// Bytes of images embedded so far.
-    image_bytes: u64,
+    images: ImagePipeline,
     html: Option<String>,
     /// The open code buffer came from an HTML `<pre>`.
     html_pre: bool,
@@ -537,12 +538,6 @@ fn marker(nonce: &str, slot: usize) -> String {
     format!("SILVERCITYOMML{nonce}X{slot}X")
 }
 
-/// Refuse images whose header claims more pixels than this (50 MP; a decoded
-/// RGBA frame of that size is 200 MB).
-const MAX_IMAGE_PIXELS: u64 = 50_000_000;
-/// Allocation ceiling handed to the image decoders.
-const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
-
 /// Display size in EMU for a `w` x `h` pixel image at `dpi`, shrunk
 /// (aspect ratio preserved) to fit the text area. Every step is checked;
 /// `None` means the numbers do not fit, never a wrapped or panicking result.
@@ -578,49 +573,36 @@ fn fit_to_page(g: &Geometry, mut we: u128, mut he: u128) -> Option<(u32, u32)> {
     Some((u32::try_from(we.max(1)).ok()?, u32::try_from(he.max(1)).ok()?))
 }
 
-/// Build a `Pic` from image bytes. docx-rs only embeds PNG, so other formats
-/// are decoded and re-encoded; `Pic::new` is avoided because it panics on
-/// undecodable input.
+/// Accessible description of a rendered asset: the diagram's or formula's own source, flattened
+/// and shortened, so a screen reader user is not left with an unlabelled picture.
+fn asset_description(asset: &Asset) -> String {
+    const MAX_CHARS: usize = 250;
+    let flat: String = asset.original.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut text: String = flat.chars().take(MAX_CHARS).collect();
+    if flat.chars().count() > MAX_CHARS {
+        text.push('\u{2026}');
+    }
+    match asset.kind {
+        AssetKind::Graph => format!("Diagram: {text}"),
+        AssetKind::InlineMath | AssetKind::DisplayMath => format!("Equation: {text}"),
+    }
+}
+
+/// Size a normalised picture for the page and wrap it as a `Pic`.
 ///
-/// `Ok(None)` means "not an image we can embed" (SVG, WebP, corrupt data); the
-/// caller shows the alt text. An error means the image is dangerous or too big.
-/// The picture and the size of the PNG that will be embedded (JPEG and GIF are re-encoded, and
-/// may grow a lot).
-fn make_picture(
+/// `width` is the width the document asked for, if any; otherwise the picture is drawn at
+/// `dpi` and shrunk to fit the text area. `alt` and `title` become the drawing's accessible
+/// description.
+fn place_picture(
     g: &Geometry,
-    bytes: Vec<u8>,
+    pic: &Picture,
     dpi: u32,
-    origin: &Path,
+    origin: &str,
     width: Option<ImgWidth>,
-) -> Result<Option<(Pic, usize)>> {
-    let reader = || image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format();
-    let Ok((w, h)) = reader().map_err(|e| CrateError::io(origin, e))?.into_dimensions() else {
-        return Ok(None);
-    };
-    // Judge the *claimed* size before anything allocates for it.
-    if u64::from(w) * u64::from(h) > MAX_IMAGE_PIXELS {
-        return Err(CrateError::LimitExceeded(format!(
-            "image {} is {w}x{h} pixels (limit {MAX_IMAGE_PIXELS})",
-            origin.display()
-        )));
-    }
-    if w == 0 || h == 0 {
-        return Ok(None);
-    }
-    let png = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        bytes.clone()
-    } else {
-        let mut r = reader().map_err(|e| CrateError::io(origin, e))?;
-        let mut limits = image::Limits::default();
-        limits.max_alloc = Some(MAX_DECODE_ALLOC);
-        r.limits(limits);
-        let Ok(img) = r.decode() else { return Ok(None) };
-        let mut out = Cursor::new(Vec::new());
-        if img.write_to(&mut out, image::ImageFormat::Png).is_err() {
-            return Ok(None);
-        }
-        out.into_inner()
-    };
+    alt: &str,
+    title: &str,
+) -> Result<Pic> {
+    let (w, h) = (pic.width, pic.height);
     let requested = width.map(|wd| match wd {
         ImgWidth::Px(px) => u128::from(px) * 9525, // 1 CSS px = 9525 EMU
         ImgWidth::Percent(pct) => g.max_img_w * u128::from(pct.min(100)) / 100,
@@ -629,10 +611,12 @@ fn make_picture(
         Some(width_emu) if width_emu > 0 => display_size_for_width(g, w, h, width_emu),
         _ => display_size_emu(g, w, h, dpi),
     };
-    let (we, he) = sized
-        .ok_or_else(|| CrateError::LimitExceeded(format!("image {} ({w}x{h} px) is out of range", origin.display())))?;
-    let png_len = png.len();
-    Ok(Some((Pic::new_with_dimensions(png, w, h).size(we, he), png_len)))
+    let (we, he) =
+        sized.ok_or_else(|| CrateError::LimitExceeded(format!("image {origin} ({w}x{h} px) is out of range")))?;
+    Ok(Pic::new_with_dimensions(Arc::clone(&pic.png), w, h)
+        .size(we, he)
+        .alt(sanitize_xml_chars(alt))
+        .title(sanitize_xml_chars(title)))
 }
 
 impl<'a> Builder<'a> {
@@ -646,7 +630,7 @@ impl<'a> Builder<'a> {
             footnotes: HashMap::new(),
             in_footnote: false,
             footnote_bytes: 0,
-            image_bytes: 0,
+            images: ImagePipeline::new(),
             html: None,
             html_pre: false,
             hidden: None,
@@ -1086,23 +1070,36 @@ impl<'a> Builder<'a> {
 
     // ---- images and assets
 
-    /// Count `n` more embedded image bytes against the document budget.
-    fn spend_image_bytes(&mut self, n: u64) -> Result<()> {
-        self.image_bytes = self.image_bytes.saturating_add(n);
-        if self.image_bytes > self.cfg.limits.max_total_image_bytes {
-            return Err(CrateError::LimitExceeded(format!(
-                "embedded images exceed {} bytes in total",
-                self.cfg.limits.max_total_image_bytes
-            )));
-        }
-        Ok(())
-    }
-
     /// `[alt text]` stand-in for an image that is not embedded.
     fn placeholder(&mut self, alt: &str, fallback: &str) {
         let label = if alt.trim().is_empty() { fallback } else { alt };
         let run = self.format(Run::new().add_text(sanitize_xml_chars(&format!("[{label}]"))).italic());
         self.push(Child::Run(run));
+    }
+
+    /// Decode and normalise `bytes` and embed them, or show `alt` when they are not an image
+    /// this crate embeds. Every image limit is enforced in [`ImagePipeline::normalize`].
+    fn embed(
+        &mut self,
+        bytes: &[u8],
+        origin: &str,
+        dpi: u32,
+        width: Option<ImgWidth>,
+        alt: &str,
+        title: &str,
+        kind: AssetKind,
+    ) -> Result<bool> {
+        match self.images.normalize(&self.cfg.limits, &self.pre.ctl, bytes, origin)? {
+            Outcome::Picture(pic) => {
+                let pic = place_picture(&self.geo, &pic, dpi, origin, width, alt, title)?;
+                self.push(Child::Picture {
+                    run: Run::new().add_image(pic),
+                    kind,
+                });
+                Ok(true)
+            }
+            Outcome::Unsupported(_) => Ok(false),
+        }
     }
 
     fn image(&mut self, ctx: ImageCtx) -> Result<()> {
@@ -1125,19 +1122,10 @@ impl<'a> Builder<'a> {
             self.cfg.image_access,
             self.cfg.limits.max_image_bytes,
         )?;
-        let input_len = bytes.len() as u64;
-        self.spend_image_bytes(input_len)?;
-        match make_picture(&self.geo, bytes, 96, &path, ctx.width)? {
-            Some((pic, png_len)) => {
-                // A JPEG or GIF is embedded as a (much larger) PNG: count what is embedded.
-                self.spend_image_bytes((png_len as u64).saturating_sub(input_len))?;
-                self.push(Child::Picture {
-                    run: Run::new().add_image(pic),
-                    kind: AssetKind::Graph,
-                });
-            }
+        let origin = path.display().to_string();
+        if !self.embed(&bytes, &origin, 96, ctx.width, &ctx.alt, &ctx.title, AssetKind::Graph)? {
             // A format we cannot embed (SVG, WebP, corrupt data): keep the alt text.
-            None => self.placeholder(&ctx.alt, "image"),
+            self.placeholder(&ctx.alt, "image");
         }
         Ok(())
     }
@@ -1151,32 +1139,18 @@ impl<'a> Builder<'a> {
             }
             return Ok(());
         }
-        match &asset.source {
-            AssetSource::Png(path) => {
-                let bytes = read_regular_file(path, "rendered asset", self.cfg.limits.max_image_bytes)?;
-                let input_len = bytes.len() as u64;
-                self.spend_image_bytes(input_len)?;
-                let dpi = match asset.kind {
-                    AssetKind::Graph => self.cfg.graphs.dpi,
-                    // Formulas are typeset at 12pt; body text is 11pt.
-                    _ => self.cfg.math.dpi.saturating_mul(12) / 11,
-                };
-                match make_picture(&self.geo, bytes, dpi, path, None)? {
-                    Some((pic, png_len)) => {
-                        self.spend_image_bytes((png_len as u64).saturating_sub(input_len))?;
-                        self.push(Child::Picture {
-                            run: Run::new().add_image(pic),
-                            kind: asset.kind,
-                        });
-                    }
-                    None => {
-                        return Err(CrateError::ExternalToolFailed {
-                            program: "renderer".into(),
-                            detail: format!("{} is not a decodable image", path.display()),
-                        })
-                    }
-                }
-            }
+        let dpi = match asset.kind {
+            AssetKind::Graph => self.cfg.graphs.dpi,
+            // Formulas are typeset at 12pt; body text is 11pt.
+            _ => self.cfg.math.dpi.saturating_mul(12) / 11,
+        };
+        let alt = asset_description(asset);
+        let (bytes, origin): (Arc<[u8]>, String) = match &asset.source {
+            AssetSource::Png(path) => (
+                read_regular_file(path, "rendered asset", self.cfg.limits.max_image_bytes)?.into(),
+                path.display().to_string(),
+            ),
+            AssetSource::Bytes(bytes) => (Arc::clone(bytes), "renderer output".to_string()),
             AssetSource::Omml(body) => {
                 let display = asset.kind == AssetKind::DisplayMath;
                 self.omml.push(OmmlSlot {
@@ -1187,9 +1161,17 @@ impl<'a> Builder<'a> {
                     slot: self.omml.len() - 1,
                     display,
                 });
+                return Ok(());
             }
+        };
+        if self.embed(&bytes, &origin, dpi, None, &alt, "", asset.kind)? {
+            Ok(())
+        } else {
+            Err(CrateError::ExternalToolFailed {
+                program: "renderer".into(),
+                detail: format!("{origin} is not a decodable image"),
+            })
         }
-        Ok(())
     }
 
     // ---- lists and tables
@@ -1400,7 +1382,13 @@ impl<'a> Builder<'a> {
                 if let Some(src) = html::attr(attrs, "src").filter(|s| !s.trim().is_empty()) {
                     let alt = html::attr(attrs, "alt").unwrap_or_default();
                     let width = html::attr(attrs, "width").and_then(|w| parse_img_width(&w));
-                    self.image(ImageCtx { dest: src, alt, width })?;
+                    let title = html::attr(attrs, "title").unwrap_or_default();
+                    self.image(ImageCtx {
+                        dest: src,
+                        alt,
+                        title,
+                        width,
+                    })?;
                 }
             }
             _ => {}
@@ -1789,10 +1777,11 @@ impl<'a> Builder<'a> {
             }
             // An image inside another image's alt text only contributes its alt text.
             Tag::Image { .. } if self.image.is_some() => self.image_nesting += 1,
-            Tag::Image { dest_url, .. } => {
+            Tag::Image { dest_url, title, .. } => {
                 self.image = Some(ImageCtx {
                     dest: dest_url.to_string(),
                     alt: String::new(),
+                    title: title.to_string(),
                     width: None,
                 });
             }
@@ -2196,6 +2185,7 @@ mod tests {
 
     #[test]
     fn hostile_dimensions_never_produce_a_picture() {
+        let limits = crate::Limits::trusted();
         for (w, h) in [
             (4_000_000_000, 4_000_000_000),
             (u32::MAX, 1),
@@ -2203,40 +2193,15 @@ mod tests {
             (0, 0),
             (20_000, 20_000),
         ] {
-            let r = make_picture(
-                &Geometry::default(),
-                png_header(w, h),
-                1,
-                Path::new("hostile.png"),
-                None,
-            );
-            assert!(!matches!(r, Ok(Some(_))), "{w}x{h} must not be embedded");
+            let r =
+                ImagePipeline::new().normalize(&limits, &crate::control::Ctl::none(), &png_header(w, h), "hostile.png");
+            assert!(!matches!(r, Ok(Outcome::Picture(_))), "{w}x{h} must not be embedded");
         }
         // Garbage and unsupported formats are "not an image", not a crash.
-        assert!(matches!(
-            make_picture(
-                &Geometry::default(),
-                b"<svg xmlns='x'/>".to_vec(),
-                96,
-                Path::new("a.svg"),
-                None
-            ),
-            Ok(None)
-        ));
-        assert!(matches!(
-            make_picture(&Geometry::default(), Vec::new(), 96, Path::new("empty"), None),
-            Ok(None)
-        ));
-        assert!(matches!(
-            make_picture(
-                &Geometry::default(),
-                vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0],
-                96,
-                Path::new("bad.jpg"),
-                None
-            ),
-            Ok(None)
-        ));
+        for junk in [&b"<svg xmlns='x'/>"[..], &[][..], &[0xFF, 0xD8, 0xFF, 0xE0, 0, 0][..]] {
+            let r = ImagePipeline::new().normalize(&limits, &crate::control::Ctl::none(), junk, "junk");
+            assert!(matches!(r, Ok(Outcome::Unsupported(_))), "{junk:?}");
+        }
     }
 
     #[test]

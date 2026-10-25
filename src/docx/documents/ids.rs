@@ -11,6 +11,7 @@ use std::cell::Cell;
 #[derive(Clone, Copy)]
 struct Counters {
     pic: usize,
+    docpr: usize,
     hyperlink: usize,
     footnote: usize,
     bookmark: usize,
@@ -21,6 +22,7 @@ struct Counters {
 
 const FRESH: Counters = Counters {
     pic: 1,
+    docpr: 1,
     hyperlink: 1,
     footnote: 1,
     bookmark: 1,
@@ -58,6 +60,9 @@ fn next(pick: impl FnOnce(&mut Counters) -> &mut usize) -> usize {
     id
 }
 
+pub(crate) fn docpr() -> usize {
+    next(|c| &mut c.docpr)
+}
 pub(crate) fn pic() -> usize {
     next(|c| &mut c.pic)
 }

@@ -97,7 +97,7 @@ impl BuildXML for Drawing {
                     b = b.wrap_square("bothSides")?;
                 }
                 b = b
-                    .wp_doc_pr("1", "Figure")?
+                    .wp_doc_pr_described(p.doc_pr_id, &format!("Picture {}", p.doc_pr_id), &p.alt, &p.title)?
                     .open_wp_c_nv_graphic_frame_pr()?
                     .a_graphic_frame_locks("http://schemas.openxmlformats.org/drawingml/2006/main", "1")?
                     .close()?

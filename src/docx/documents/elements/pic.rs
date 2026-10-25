@@ -8,7 +8,7 @@ use crate::docx::xml_builder::*;
 pub struct Pic {
     pub id: String,
     // For writer only
-    pub image: Vec<u8>,
+    pub image: std::sync::Arc<[u8]>,
     // (width, height). unit is emu
     pub size: (u32, u32),
     pub position_type: DrawingPositionType,
@@ -42,15 +42,21 @@ pub struct Pic {
     pub dist_r: i32,
     // deg
     pub rot: u16,
+    /// Alternative text for assistive technology (`wp:docPr/@descr`). Empty: none.
+    pub alt: String,
+    /// Short title (`wp:docPr/@title`). Empty: none.
+    pub title: String,
+    /// Unique per drawing in the document (`wp:docPr/@id`).
+    pub doc_pr_id: usize,
 }
 
 impl Pic {
     /// Make a `Pic` element. For now only PNG is supported.
-    pub fn new_with_dimensions(buffer: Vec<u8>, width_px: u32, height_px: u32) -> Pic {
+    pub fn new_with_dimensions(buffer: impl Into<std::sync::Arc<[u8]>>, width_px: u32, height_px: u32) -> Pic {
         let id = create_pic_rid(generate_pic_id());
         Self {
             id,
-            image: buffer,
+            image: buffer.into(),
             size: (from_px(width_px), from_px(height_px)),
             position_type: DrawingPositionType::Inline,
             simple_pos: false,
@@ -68,7 +74,22 @@ impl Pic {
             dist_l: 0,
             dist_r: 0,
             rot: 0,
+            alt: String::new(),
+            title: String::new(),
+            doc_pr_id: super::super::ids::docpr(),
         }
+    }
+
+    /// Describe the picture for screen readers.
+    pub fn alt(mut self, text: impl Into<String>) -> Pic {
+        self.alt = text.into();
+        self
+    }
+
+    /// Give the picture a short title.
+    pub fn title(mut self, text: impl Into<String>) -> Pic {
+        self.title = text.into();
+        self
     }
 
     // unit is emu
@@ -88,7 +109,7 @@ impl BuildXML for Pic {
         XMLBuilder::from(stream)
             .open_pic("http://schemas.openxmlformats.org/drawingml/2006/picture")?
             .open_pic_nv_pic_pr()?
-            .pic_c_nv_pr("0", "")?
+            .pic_c_nv_pr_described(&format!("Picture {}", self.doc_pr_id), &self.alt)?
             .open_pic_c_nv_pic_pr()?
             .a_pic_locks("1", "1")?
             .close()?

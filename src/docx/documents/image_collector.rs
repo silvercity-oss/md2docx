@@ -31,9 +31,9 @@ impl MediaRegistry {
     /// picture while keeping the package-visible media ID encapsulated here.
     /// Reused picture IDs are checked before calculating a content fingerprint;
     /// byte equality still protects callers that reuse an ID for new content.
-    fn register(&mut self, preferred_id: &str, bytes: Vec<u8>) -> usize {
+    fn register(&mut self, preferred_id: &str, bytes: std::sync::Arc<[u8]>) -> usize {
         if let Some(index) = self.media_by_id.get(preferred_id).copied() {
-            if self.media[index].1 == bytes {
+            if std::sync::Arc::ptr_eq(&self.media[index].1, &bytes) || self.media[index].1 == bytes {
                 return index;
             }
         }

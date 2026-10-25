@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::control::CancelToken;
 use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, TagStyle};
 use crate::highlight::Highlighting;
 
@@ -126,10 +127,29 @@ pub struct Limits {
     pub max_highlight_bytes: usize,
     /// Size of one formula's LaTeX source.
     pub max_formula_bytes: usize,
-    /// Size of one embedded image (a file, or a renderer's output).
+    /// Size of one source image encoding: a file, bytes from an [`ImageResolver`](crate::ImageResolver)
+    /// or asset map, or a renderer's output.
     pub max_image_bytes: u64,
-    /// Total bytes of all embedded images.
+    /// Total bytes of all *distinct* source encodings read (an exact repeat of bytes already
+    /// read is not counted again).
     pub max_total_image_bytes: u64,
+    /// Number of distinct source encodings. Two encodings of the same pixels count as two; an
+    /// exact repeat of the same bytes counts once.
+    pub max_distinct_images: usize,
+    /// Pixels (width x height) of one image, judged from its header before anything is
+    /// allocated.
+    pub max_image_pixels: u64,
+    /// Longest side of one image, in pixels.
+    pub max_image_dimension: u32,
+    /// Total pixels decoded across the document: **actual decode work**. Every distinct source
+    /// encoding is charged when it is decoded, even if it normalises to pixels already seen;
+    /// only an exact repeat of bytes already decoded reuses the earlier result for free.
+    pub max_total_decode_pixels: u64,
+    /// Total bytes of the normalised PNGs that end up in the document, counting each distinct
+    /// picture once.
+    pub max_total_normalized_bytes: u64,
+    /// Memory a single image decode may allocate.
+    pub max_decode_alloc_bytes: u64,
     /// Total size of the scratch directory while external tools run.
     pub max_workspace_bytes: u64,
     /// Size of the finished (compressed) `.docx`, enforced exactly while it is
@@ -148,6 +168,12 @@ pub struct Limits {
     /// Total wall-clock time one conversion may spend in external tools, on top
     /// of the per-tool [`Config::tool_timeout`].
     pub max_total_tool_time: Duration,
+    /// Wall-clock time for the whole conversion, checked at every checkpoint (see
+    /// [`CancelToken`](crate::CancelToken)); `None` for no limit. Exceeding it is
+    /// [`CrateError::TimedOut`](crate::CrateError). It cannot interrupt a synchronous callback
+    /// that does not return; run the conversion in a worker you can terminate for a hard limit.
+    /// [`Config::untrusted`] sets 120 s.
+    pub max_conversion_time: Option<Duration>,
 }
 
 impl Limits {
@@ -164,11 +190,18 @@ impl Limits {
             max_formula_bytes: 16 * 1024,
             max_image_bytes: 25 * MIB,
             max_total_image_bytes: 150 * MIB,
+            max_distinct_images: 1_000,
+            max_image_pixels: 50_000_000,
+            max_image_dimension: 32_768,
+            max_total_decode_pixels: 1_000_000_000,
+            max_total_normalized_bytes: 256 * MIB,
+            max_decode_alloc_bytes: 256 * MIB,
             max_workspace_bytes: 256 * MIB,
             max_output_bytes: 256 * MIB,
             max_elements: 500_000,
             max_uncompressed_bytes: 1024 * MIB,
             max_total_tool_time: Duration::from_secs(300),
+            max_conversion_time: None,
         }
     }
 }
@@ -185,9 +218,16 @@ impl Default for Limits {
             max_formula_bytes: 4 * 1024,
             max_image_bytes: 5 * MIB,
             max_total_image_bytes: 25 * MIB,
+            max_distinct_images: 100,
+            max_image_pixels: 16_000_000,
+            max_image_dimension: 16_384,
+            max_total_decode_pixels: 64_000_000,
+            max_total_normalized_bytes: 25 * MIB,
+            max_decode_alloc_bytes: 128 * MIB,
             max_output_bytes: 50 * MIB,
             max_elements: 60_000,
             max_uncompressed_bytes: 64 * MIB,
+            max_conversion_time: Some(Duration::from_secs(120)),
             ..Limits::trusted()
         }
     }
@@ -534,6 +574,14 @@ pub struct Config {
     /// Renderers for fenced code blocks, by language. See [`FenceRenderer`].
     /// Empty by default.
     pub fence_renderers: FenceRenderers,
+    /// Directory under which the conversion creates its private scratch directory (rendered
+    /// files, tool logs, tool inputs). `None` uses the system temporary directory. Set it to a
+    /// host-owned job directory so every temporary artifact is inside storage the host accounts
+    /// for, limits and recovers; no environment variable is touched. The directory must exist; it
+    /// is trusted configuration, never document-controlled. See [`crate::sweep_scratch`].
+    pub scratch_dir: Option<PathBuf>,
+    /// A token the host can use to stop a running conversion; see [`CancelToken`](crate::CancelToken).
+    pub cancel: Option<CancelToken>,
 }
 
 /// The default is the **untrusted-input policy**: [`Config::untrusted`]. A host that wants
@@ -569,6 +617,12 @@ impl Config {
             return Err(bad(
                 "allowed_link_schemes entries must be bare scheme names like `https`".into(),
             ));
+        }
+        if self.scratch_dir.as_ref().is_some_and(|d| d.as_os_str().is_empty()) {
+            return Err(bad("scratch_dir must not be an empty path".into()));
+        }
+        if self.limits.max_conversion_time.is_some_and(|d| d.is_zero()) {
+            return Err(bad("max_conversion_time must be longer than zero".into()));
         }
         if self.compression_level > 9 {
             return Err(bad(format!(
@@ -633,6 +687,25 @@ impl Config {
     /// Choose the Mermaid renderer.
     pub fn with_mermaid_engine(mut self, engine: MermaidEngine) -> Self {
         self.graphs.use_engine(engine);
+        self
+    }
+
+    /// Create the conversion's scratch directory under `dir` instead of the system temporary
+    /// directory (see [`Config::scratch_dir`]).
+    pub fn with_scratch_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.scratch_dir = Some(dir.into());
+        self
+    }
+
+    /// Let the host stop a running conversion (see [`CancelToken`](crate::CancelToken)).
+    pub fn with_cancel_token(mut self, token: CancelToken) -> Self {
+        self.cancel = Some(token);
+        self
+    }
+
+    /// Set the wall-clock limit for the whole conversion ([`Limits::max_conversion_time`]).
+    pub fn with_deadline(mut self, limit: Duration) -> Self {
+        self.limits.max_conversion_time = Some(limit);
         self
     }
 
@@ -748,6 +821,8 @@ impl Config {
             highlighting: None,
             html_tags: BTreeMap::new(),
             fence_renderers: FenceRenderers::default(),
+            scratch_dir: None,
+            cancel: None,
         }
     }
 

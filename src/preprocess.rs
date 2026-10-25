@@ -4,10 +4,12 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
 use crate::config::{Config, DiagramFailure, MathMode};
+use crate::control::Ctl;
 use crate::error::{CrateError, Result};
 use crate::omml;
 use crate::parser::markdown_options;
@@ -28,8 +30,11 @@ pub enum AssetKind {
 /// Where a pre-rendered asset's content lives.
 #[derive(Debug, Clone)]
 pub enum AssetSource {
-    /// A rendered PNG inside the pre-processor's workspace.
+    /// A PNG a tool wrote inside the pre-processor's workspace.
     Png(PathBuf),
+    /// A PNG held in memory: a [`FenceRenderer`](crate::FenceRenderer)'s result. Never touches
+    /// the disk.
+    Bytes(Arc<[u8]>),
     /// Native math: the body of an `<m:oMath>` element.
     Omml(String),
 }
@@ -56,6 +61,8 @@ pub struct Preprocessed {
     pub assets: HashMap<String, Asset>,
     /// Title and author from the document's front matter.
     pub(crate) meta: (Option<String>, Option<String>),
+    /// Cancellation and deadline of this conversion, shared with the later stages.
+    pub(crate) ctl: Ctl,
     _workspace: Option<Workspace>,
 }
 
@@ -189,6 +196,12 @@ pub(crate) fn front_matter_meta(md: &str) -> (Option<String>, Option<String>) {
 
 /// Run Stage 1 over `markdown`.
 pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
+    preprocess_with(markdown, cfg, &Ctl::new(cfg))
+}
+
+/// Stage 1 under a conversion's cancellation and deadline.
+pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result<Preprocessed> {
+    ctl.check()?;
     let limits = &cfg.limits;
     if markdown.len() > limits.max_input_bytes {
         return Err(CrateError::LimitExceeded(format!(
@@ -303,11 +316,13 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     // and documents without diagrams need none, so a missing or read-only temp directory
     // does not break them.
     let needs_files = found.iter().any(|(_, f)| match f {
+        // An embedder's renderer returns its PNG in memory and needs no scratch directory.
+        Found::Graph(Fence::Custom(_), _) => false,
         Found::Graph(..) => true,
         Found::Math { .. } => cfg.math.mode == MathMode::ImageFallback,
     });
     let workspace = if needs_files {
-        Some(Workspace::with_budget(Some(limits.max_total_tool_time))?)
+        Some(Workspace::create(cfg, ctl)?)
     } else {
         None
     };
@@ -321,16 +336,34 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
     let mut omml_count = 0usize;
 
+    let mut byte_assets = 0usize;
+    // An identical block is rendered once: renderer output is held in memory, keyed by what asked.
+    let mut rendered_once: HashMap<(String, String), (String, Arc<[u8]>)> = HashMap::new();
     for (range, item) in found {
+        ctl.check()?;
         let is_fence = matches!(item, Found::Graph(..));
         let (dest, alt, asset) = match item {
             Found::Graph(fence, source) => {
-                let rendered = match &fence {
-                    Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg),
-                    Fence::Custom(lang) => render_custom(scratch()?, lang, &source, cfg),
+                let rendered: Result<(String, AssetSource)> = match &fence {
+                    Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg)
+                        .map(|png| (png.to_string_lossy().into_owned(), AssetSource::Png(png))),
+                    Fence::Custom(lang) => {
+                        let key = (lang.clone(), source.clone());
+                        if let Some((dest, bytes)) = rendered_once.get(&key) {
+                            Ok((dest.clone(), AssetSource::Bytes(Arc::clone(bytes))))
+                        } else {
+                            render_custom(ctl, lang, &source, cfg).map(|bytes| {
+                                let dest = format!("silvercity-asset{nonce}:{byte_assets}");
+                                byte_assets += 1;
+                                let bytes: Arc<[u8]> = bytes.into();
+                                rendered_once.insert(key, (dest.clone(), Arc::clone(&bytes)));
+                                (dest, AssetSource::Bytes(bytes))
+                            })
+                        }
+                    }
                 };
-                let png = match rendered {
-                    Ok(png) => png,
+                let (dest, source_of) = match rendered {
+                    Ok(done) => done,
                     // The block stays what it was written as: an ordinary code block.
                     Err(CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCLI { .. })
                         if cfg.graphs.on_failure == DiagramFailure::KeepAsCode =>
@@ -339,13 +372,12 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                     }
                     Err(e) => return Err(e),
                 };
-                let dest = png.to_string_lossy().into_owned();
                 (
                     dest,
                     "Rendered Graph",
                     Asset {
                         kind: AssetKind::Graph,
-                        source: AssetSource::Png(png),
+                        source: source_of,
                         original: source,
                     },
                 )
@@ -428,6 +460,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
         markdown: out,
         assets,
         meta,
+        ctl: ctl.clone(),
         _workspace: workspace,
     })
 }
