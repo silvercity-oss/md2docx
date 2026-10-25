@@ -1,10 +1,10 @@
 //! `md2docx`: command-line front end for the Markdown -> .docx converter.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 use silvercity_oss::{
     markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, ImageAccess as LibImageAccess, MathImageEngine,
     MathMode as LibMathMode, MermaidEngine as LibMermaidEngine,
@@ -209,18 +209,79 @@ fn config(args: &Args) -> Config {
     cfg
 }
 
+/// True when `out` is the same file as `input`, however either is spelled: through `.`/`..`,
+/// symbolic links or hard links. A path that does not exist yet cannot be the input.
+fn is_same_file(input: &Path, out: &Path) -> bool {
+    let Ok(input_real) = std::fs::canonicalize(input) else {
+        return false;
+    };
+    let out_real = std::fs::canonicalize(out).or_else(|_| {
+        // Not there yet: its directory (resolved) plus its name.
+        let dir = match out.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p,
+            _ => Path::new("."),
+        };
+        let name = out.file_name().ok_or_else(|| std::io::Error::other("no file name"))?;
+        std::fs::canonicalize(dir).map(|d| d.join(name))
+    });
+    if out_real.is_ok_and(|o| o == input_real) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(a), Ok(b)) = (std::fs::metadata(input), std::fs::metadata(out)) {
+            return a.dev() == b.dev() && a.ino() == b.ino();
+        }
+    }
+    false
+}
+
+/// Write `bytes` to `out` through a temporary file in the same directory and a rename, so a
+/// failure never leaves a half-written `.docx`, and a symbolic link at `out` is replaced, not
+/// followed.
+fn write_atomically(out: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = match out.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let mut tmp = tempfile::Builder::new().prefix(".md2docx-").tempfile_in(dir)?;
+    tmp.write_all(bytes)?;
+    tmp.flush()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // A temporary file is private (0600); a document is meant to be read.
+        tmp.as_file().set_permissions(std::fs::Permissions::from_mode(0o644))?;
+    }
+    tmp.persist(out).map_err(|e| e.error)?;
+    Ok(())
+}
+
 fn run(args: &Args) -> Result<PathBuf, String> {
     let out = args.output.clone().unwrap_or_else(|| args.input.with_extension("docx"));
-    if out == args.input {
-        return Err(format!("refusing to overwrite the input file {}", out.display()));
+    if is_same_file(&args.input, &out) {
+        return Err(format!("refusing to overwrite the input file {}", args.input.display()));
     }
     let bytes = markdown_file_to_docx(&args.input, &config(args)).map_err(|e| e.to_string())?;
-    std::fs::write(&out, bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    write_atomically(&out, &bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
     Ok(out)
 }
 
+/// Longest per-tool timeout `--untrusted --diagrams` accepts (the preset's own).
+const UNTRUSTED_MAX_TIMEOUT_SECS: u64 = 20;
+
 fn main() -> ExitCode {
     let args = Args::parse();
+    if args.untrusted && args.diagrams && args.timeout.is_some_and(|t| t > UNTRUSTED_MAX_TIMEOUT_SECS) {
+        Args::command()
+            .error(
+                clap::error::ErrorKind::ValueValidation,
+                format!("--timeout may not exceed {UNTRUSTED_MAX_TIMEOUT_SECS} seconds with --untrusted --diagrams"),
+            )
+            .exit();
+    }
     match run(&args) {
         Ok(out) => {
             eprintln!("wrote {}", out.display());

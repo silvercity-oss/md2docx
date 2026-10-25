@@ -88,11 +88,17 @@ pub mod omml;
 mod pack;
 mod parser;
 mod preprocess;
-/// External-tool plumbing. Not part of the stable API; exposed for the crate's
-/// own tests.
-#[doc(hidden)]
-pub mod renderer;
+mod renderer;
 mod safety;
+
+/// Not part of the public API: internals that the crate's own integration tests
+/// reach into. No stability promise of any kind; use [`markdown_to_docx`] and the
+/// other documented functions.
+#[doc(hidden)]
+pub mod __internals {
+    pub use crate::preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
+    pub use crate::renderer::{run_tool, ToolGuard, TEX_ENV};
+}
 
 use std::io::{Seek, Write};
 use std::path::Path;
@@ -103,7 +109,6 @@ pub use config::{
 };
 pub use error::{CrateError, Result};
 pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, TagStyle};
-pub use preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
 
 /// Convert Markdown text to the bytes of a `.docx` file.
 ///
@@ -121,7 +126,7 @@ pub fn markdown_to_docx(markdown: &str, config: &Config) -> Result<Vec<u8>> {
 /// `Limits::max_output_bytes`), the writer may hold a partial archive: discard it.
 pub fn markdown_to_docx_writer<W: Write + Seek>(markdown: &str, config: &Config, writer: W) -> Result<()> {
     config.validate()?;
-    let pre = preprocess(markdown, config)?;
+    let pre = preprocess::preprocess(markdown, config)?;
     parser::build_docx(&pre, config, writer)
 }
 
@@ -135,7 +140,11 @@ pub fn markdown_file_to_docx(path: &Path, config: &Config) -> Result<Vec<u8>> {
         .map_err(|_| CrateError::InvalidMarkdown(format!("{} is not valid UTF-8", path.display())))?;
     let mut cfg = config.clone();
     if cfg.base_dir.is_none() {
-        cfg.base_dir = path.parent().map(Path::to_path_buf);
+        // A bare file name has the empty path as its parent: that means the current directory.
+        cfg.base_dir = path
+            .parent()
+            .map(|p| if p.as_os_str().is_empty() { Path::new(".") } else { p })
+            .map(Path::to_path_buf);
     }
     markdown_to_docx(&text, &cfg)
 }

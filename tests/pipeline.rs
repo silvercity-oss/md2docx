@@ -5,7 +5,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, preprocess, CommandSpec, Config, CrateError, MathImageEngine};
+use silvercity_oss::__internals::preprocess;
+use silvercity_oss::{markdown_to_docx, CommandSpec, Config, CrateError, MathImageEngine};
 
 #[test]
 fn native_omml_mode_injects_editable_equations_without_external_tools() {

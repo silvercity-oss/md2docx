@@ -9,6 +9,7 @@ use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceR
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum MathMode {
     /// Render each formula to a transparent PNG with an external tool and
     /// embed it as a picture. Works for any LaTeX the tool understands, but
@@ -46,6 +47,7 @@ impl CommandSpec {
 
 /// Tool used to turn LaTeX into a PNG in [`MathMode::ImageFallback`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MathImageEngine {
     /// `latex` followed by `dvipng -T tight -bg Transparent` (TeX Live). The
     /// formula is wrapped in a minimal `standalone`-style document.
@@ -115,10 +117,15 @@ pub struct Limits {
     /// Size of the finished (compressed) `.docx`, enforced exactly while it is
     /// written; [`Config::untrusted`] sets 50 MiB.
     pub max_output_bytes: u64,
-    /// Size of the document's XML parts and pictures before compression. They
-    /// are held in memory (twice, briefly, while the archive is rewritten), so
-    /// this bounds peak memory; [`Config::untrusted`] sets 256 MiB. Text
-    /// expands about 40x into XML, so a 2 MiB input stays far below that.
+    /// Paragraphs, text runs, table cells and list instances in the document.
+    /// Each is built as an object that costs a few KiB until the document is
+    /// packaged (1M paragraphs peaked above 7 GiB), so this is the limit that
+    /// bounds memory *while building*; [`Config::untrusted`] sets 60 000.
+    pub max_elements: usize,
+    /// Size of the document's XML parts and pictures before compression, held in
+    /// memory while the archive is packaged; checked before packaging.
+    /// [`Config::untrusted`] sets 64 MiB. This bounds what readers must parse,
+    /// not peak memory during building (see [`Limits::max_elements`]).
     pub max_uncompressed_bytes: u64,
     /// Total wall-clock time one conversion may spend in external tools, on top
     /// of the per-tool [`Config::tool_timeout`].
@@ -138,6 +145,7 @@ impl Default for Limits {
             max_total_image_bytes: 150 * MIB,
             max_workspace_bytes: 256 * MIB,
             max_output_bytes: 256 * MIB,
+            max_elements: 500_000,
             max_uncompressed_bytes: 1024 * MIB,
             max_total_tool_time: Duration::from_secs(300),
         }
@@ -146,6 +154,7 @@ impl Default for Limits {
 
 /// Which local files a Markdown image reference may pull into the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ImageAccess {
     /// Never read files; images become `[alt text]`.
     None,
@@ -159,6 +168,7 @@ pub enum ImageAccess {
 
 /// Which program renders ```` ```mermaid ```` blocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum MermaidEngine {
     /// `merman-cli`: a headless Rust implementation of Mermaid. No browser and
     /// no JavaScript; it enforces its own layout and raster ceilings and does
@@ -265,6 +275,7 @@ impl Default for GraphOptions {
 
 /// Paper size of the generated document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum PageSize {
     /// 210 x 297 mm.
     #[default]
@@ -300,6 +311,7 @@ impl PageSize {
 
 /// How a code block (fenced, indented or HTML `<pre>`) is laid out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum CodeBlockLayout {
     /// One shaded paragraph per source line. Pasted into a plain-text editor,
     /// each line becomes a line.
@@ -378,7 +390,10 @@ impl DocumentOptions {
             ));
         }
         for (what, font) in [("body font", &self.body_font), ("code font", &self.code_font)] {
-            if font.trim().is_empty() || font.chars().count() > 64 || font.chars().any(char::is_control) {
+            if font.trim().is_empty()
+                || font.chars().count() > 64
+                || font.chars().any(|c| c.is_control() || !crate::safety::is_xml_char(c))
+            {
                 return Err(format!("{what} must be 1 to 64 printable characters"));
             }
         }
@@ -597,7 +612,8 @@ impl Config {
             max_image_bytes: 5 * 1024 * 1024,
             max_total_image_bytes: 25 * 1024 * 1024,
             max_output_bytes: 50 * 1024 * 1024,
-            max_uncompressed_bytes: 256 * 1024 * 1024,
+            max_elements: 60_000,
+            max_uncompressed_bytes: 64 * 1024 * 1024,
             ..Limits::default()
         };
         c

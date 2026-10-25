@@ -57,10 +57,25 @@ jobs:
         env:
           REQUIRE_TEX: ${{ runner.os == 'Linux' && '1' || '' }}
 
+      # `--all-targets` skips doctests; run them on every platform too.
+      - name: Doctests
+        run: cargo test --doc --locked
+
       # Library users build without the CLI feature (no clap/shlex).
       - name: Test as a library (no default features)
         if: runner.os == 'Linux'
         run: cargo test --no-default-features --locked
+
+  # Known vulnerabilities in the dependency tree (RustSec advisory database).
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
 
   # Oldest toolchain we promise to support (Cargo.toml `rust-version`; set by our dependencies).
   msrv:

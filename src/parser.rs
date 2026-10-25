@@ -277,8 +277,15 @@ struct Builder<'a> {
     sub: usize,
     mono: usize,
     def_depth: usize,
+    /// HTML tables that were open when a Markdown table started inside one of their cells.
+    outer_tables: Vec<TableState>,
     /// Custom HTML tags (from `Config::html_tags`) currently open, outermost first.
     custom_open: Vec<(&'a str, &'a TagStyle)>,
+    /// Paragraphs, runs, cells and list instances built so far; each costs kilobytes of
+    /// memory until the document is packaged, so the total is capped (`Limits::max_elements`).
+    elements: usize,
+    /// Set the moment `elements` passes the cap; reported by `feed`.
+    budget_error: Option<CrateError>,
 
     blocks: Vec<Block>,
     cur: Option<Vec<Child>>,
@@ -297,6 +304,20 @@ struct Builder<'a> {
     next_num_id: usize,
     table: Option<TableState>,
     omml: Vec<OmmlSlot>,
+}
+
+/// Longest paragraph a code block is split into in `CodeBlockLayout::SingleParagraph`.
+const SINGLE_PARAGRAPH_MAX_LINES: usize = 500;
+
+/// How many tables may be open inside one another.
+const MAX_NESTED_TABLES: usize = 8;
+
+/// Widest indent written: the largest page Word accepts is 22 inches (31 680 twips).
+const MAX_INDENT_TWIPS: usize = 31_680;
+
+fn indent_twips(twips: usize) -> i32 {
+    // MAX_INDENT_TWIPS is far below i32::MAX.
+    i32::try_from(twips.min(MAX_INDENT_TWIPS)).unwrap_or(0)
 }
 
 fn marker(nonce: &str, slot: usize) -> String {
@@ -350,7 +371,15 @@ fn fit_to_page(g: &Geometry, mut we: u128, mut he: u128) -> Option<(u32, u32)> {
 ///
 /// `Ok(None)` means "not an image we can embed" (SVG, WebP, corrupt data); the
 /// caller shows the alt text. An error means the image is dangerous or too big.
-fn make_picture(g: &Geometry, bytes: Vec<u8>, dpi: u32, origin: &Path, width: Option<ImgWidth>) -> Result<Option<Pic>> {
+/// The picture and the size of the PNG that will be embedded (JPEG and GIF are re-encoded, and
+/// may grow a lot).
+fn make_picture(
+    g: &Geometry,
+    bytes: Vec<u8>,
+    dpi: u32,
+    origin: &Path,
+    width: Option<ImgWidth>,
+) -> Result<Option<(Pic, usize)>> {
     let reader = || image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format();
     let Ok((w, h)) = reader().map_err(|e| CrateError::io(origin, e))?.into_dimensions() else {
         return Ok(None);
@@ -389,7 +418,8 @@ fn make_picture(g: &Geometry, bytes: Vec<u8>, dpi: u32, origin: &Path, width: Op
     };
     let (we, he) = sized
         .ok_or_else(|| CrateError::LimitExceeded(format!("image {} ({w}x{h} px) is out of range", origin.display())))?;
-    Ok(Some(Pic::new_with_dimensions(png, w, h).size(we, he)))
+    let png_len = png.len();
+    Ok(Some((Pic::new_with_dimensions(png, w, h).size(we, he), png_len)))
 }
 
 impl<'a> Builder<'a> {
@@ -416,7 +446,10 @@ impl<'a> Builder<'a> {
             sub: 0,
             mono: 0,
             def_depth: 0,
+            outer_tables: Vec::new(),
             custom_open: Vec::new(),
+            elements: 0,
+            budget_error: None,
             blocks: Vec::new(),
             cur: None,
             kind: ParaKind::Normal,
@@ -485,7 +518,19 @@ impl<'a> Builder<'a> {
         run
     }
 
+    /// Count `n` more elements against `Limits::max_elements`.
+    fn charge(&mut self, n: usize) {
+        self.elements = self.elements.saturating_add(n);
+        if self.elements > self.cfg.limits.max_elements && self.budget_error.is_none() {
+            self.budget_error = Some(CrateError::LimitExceeded(format!(
+                "the document has more than {} paragraphs, runs and table cells (Limits::max_elements)",
+                self.cfg.limits.max_elements
+            )));
+        }
+    }
+
     fn push(&mut self, child: Child) {
+        self.charge(1);
         if let Some(link) = self.link.as_mut() {
             link.children.push(child);
         } else {
@@ -506,6 +551,7 @@ impl<'a> Builder<'a> {
     // ---- block plumbing
 
     fn emit(&mut self, p: Paragraph) {
+        self.charge(1);
         if let Some(t) = self.table.as_mut() {
             if let Some(cell) = t.cell.take() {
                 t.cell = Some(cell.add_paragraph(p));
@@ -610,8 +656,10 @@ impl<'a> Builder<'a> {
         // Inside a list item the numbering fixes the indent; leave it alone.
         let in_item = self.table.is_none() && self.lists.last().is_some_and(|c| c.item_open);
         if b.indent_twips > 0 && !in_item {
-            let base = 360 * self.quote_depth + 720 * self.def_depth;
-            let left = i32::try_from(base.saturating_add(b.indent_twips as usize)).unwrap_or(i32::MAX);
+            let base = 360usize
+                .saturating_mul(self.quote_depth)
+                .saturating_add(720usize.saturating_mul(self.def_depth));
+            let left = indent_twips(base.saturating_add(b.indent_twips as usize));
             p = p.indent(Some(left), None, None, None);
         }
         if let Some(color) = &b.bar_color {
@@ -666,8 +714,10 @@ impl<'a> Builder<'a> {
 
     /// Indent for block quotes (with a grey bar) and definition-list bodies.
     fn indented(&self, p: Paragraph) -> Paragraph {
-        let left = 360 * self.quote_depth + 720 * self.def_depth;
-        let mut p = p.indent(Some(i32::try_from(left).unwrap_or(i32::MAX)), None, None, None);
+        let left = 360usize
+            .saturating_mul(self.quote_depth)
+            .saturating_add(720usize.saturating_mul(self.def_depth));
+        let mut p = p.indent(Some(indent_twips(left)), None, None, None);
         if self.quote_depth > 0 {
             p.property = p.property.set_borders(
                 ParagraphBorders::with_empty().set(
@@ -699,8 +749,8 @@ impl<'a> Builder<'a> {
     fn code_block(&mut self, text: &str) {
         let body = text.strip_suffix('\n').unwrap_or(text);
         let left = match (self.lists.last(), self.quote_depth) {
-            (Some(ctx), _) if ctx.item_open => Some(720 * (ctx.level as i32 + 1)),
-            (_, q) if q > 0 => Some(360 * q as i32),
+            (Some(ctx), _) if ctx.item_open => Some(indent_twips(720 * (ctx.level + 1))),
+            (_, q) if q > 0 => Some(indent_twips(360usize.saturating_mul(q))),
             _ => None,
         };
         let new_paragraph = || {
@@ -729,20 +779,32 @@ impl<'a> Builder<'a> {
         match self.cfg.document.code_blocks {
             CodeBlockLayout::LinePerParagraph => {
                 for line in body.split('\n') {
+                    if self.budget_error.is_some() {
+                        break;
+                    }
                     let p = new_paragraph().add_run(add_line(Run::new(), line));
                     self.emit(p);
                 }
             }
             CodeBlockLayout::SingleParagraph => {
-                let mut run = Run::new();
-                for (i, line) in body.split('\n').enumerate() {
-                    if i > 0 {
-                        run = run.add_break(BreakType::TextWrapping);
+                // One paragraph per chunk of lines: LibreOffice's layout time grows with the
+                // square of the lines in a paragraph (100k lines took 12 minutes).
+                let all: Vec<&str> = body.split('\n').collect();
+                for chunk in all.chunks(SINGLE_PARAGRAPH_MAX_LINES) {
+                    if self.budget_error.is_some() {
+                        break;
                     }
-                    run = add_line(run, line);
+                    let mut run = Run::new();
+                    for (i, line) in chunk.iter().enumerate() {
+                        if i > 0 {
+                            run = run.add_break(BreakType::TextWrapping);
+                        }
+                        run = add_line(run, line);
+                    }
+                    self.charge(chunk.len() / 16);
+                    let p = new_paragraph().add_run(run);
+                    self.emit(p);
                 }
-                let p = new_paragraph().add_run(run);
-                self.emit(p);
             }
         }
     }
@@ -788,12 +850,17 @@ impl<'a> Builder<'a> {
             self.cfg.image_access,
             self.cfg.limits.max_image_bytes,
         )?;
-        self.spend_image_bytes(bytes.len() as u64)?;
+        let input_len = bytes.len() as u64;
+        self.spend_image_bytes(input_len)?;
         match make_picture(&self.geo, bytes, 96, &path, ctx.width)? {
-            Some(pic) => self.push(Child::Picture {
-                run: Run::new().add_image(pic),
-                kind: AssetKind::Graph,
-            }),
+            Some((pic, png_len)) => {
+                // A JPEG or GIF is embedded as a (much larger) PNG: count what is embedded.
+                self.spend_image_bytes((png_len as u64).saturating_sub(input_len))?;
+                self.push(Child::Picture {
+                    run: Run::new().add_image(pic),
+                    kind: AssetKind::Graph,
+                });
+            }
             // A format we cannot embed (SVG, WebP, corrupt data): keep the alt text.
             None => self.placeholder(&ctx.alt, "image"),
         }
@@ -812,17 +879,21 @@ impl<'a> Builder<'a> {
         match &asset.source {
             AssetSource::Png(path) => {
                 let bytes = read_regular_file(path, "rendered asset", self.cfg.limits.max_image_bytes)?;
-                self.spend_image_bytes(bytes.len() as u64)?;
+                let input_len = bytes.len() as u64;
+                self.spend_image_bytes(input_len)?;
                 let dpi = match asset.kind {
                     AssetKind::Graph => self.cfg.graphs.dpi,
                     // Formulas are typeset at 12pt; body text is 11pt.
                     _ => self.cfg.math.dpi.saturating_mul(12) / 11,
                 };
                 match make_picture(&self.geo, bytes, dpi, path, None)? {
-                    Some(pic) => self.push(Child::Picture {
-                        run: Run::new().add_image(pic),
-                        kind: asset.kind,
-                    }),
+                    Some((pic, png_len)) => {
+                        self.spend_image_bytes((png_len as u64).saturating_sub(input_len))?;
+                        self.push(Child::Picture {
+                            run: Run::new().add_image(pic),
+                            kind: asset.kind,
+                        });
+                    }
                     None => {
                         return Err(CrateError::ExternalToolFailed {
                             program: "renderer".into(),
@@ -855,7 +926,9 @@ impl<'a> Builder<'a> {
             Some(start) => {
                 let id = self.next_num_id;
                 self.next_num_id += 1;
-                let start = usize::try_from(start).unwrap_or(1);
+                self.charge(1);
+                // Word reads the start as a 32-bit number.
+                let start = usize::try_from(start.min(i32::MAX as u64)).unwrap_or(1);
                 self.ordered_numberings
                     .push(Numbering::new(id, ORDERED_ABSTRACT_ID).add_override(LevelOverride::new(level).start(start)));
                 id
@@ -899,6 +972,7 @@ impl<'a> Builder<'a> {
             }
             t.col += 1;
         }
+        self.charge(1);
     }
 
     fn row_end(&mut self) {
@@ -923,6 +997,9 @@ impl<'a> Builder<'a> {
             self.flush();
         }
         for piece in html::tokenize(raw) {
+            if self.budget_error.is_some() {
+                break;
+            }
             match piece {
                 Piece::Text(t) if self.code.is_some() => {
                     // Inside <pre>: keep every space and newline.
@@ -1154,16 +1231,28 @@ impl<'a> Builder<'a> {
     }
 
     fn finish_table(&mut self) {
-        if let Some(t) = self.table.take() {
-            if t.rows.is_empty() {
-                return; // Word rejects a table without rows
-            }
+        let Some(t) = self.table.take() else { return };
+        // A Markdown table that started inside a cell of an HTML table: that table resumes.
+        let mut outer = if t.html { None } else { self.outer_tables.pop() };
+        if !t.rows.is_empty() {
+            // (Word rejects a table without rows, so an empty one is dropped.)
             let cols = t.aligns.len().max(t.max_cols).max(1);
             let table = Table::new(t.rows)
                 .set_grid(vec![self.geo.content_w / cols; cols])
                 .width(self.geo.content_w, WidthType::Dxa);
-            self.blocks.push(Block::Table(Box::new(table)));
+            match outer.as_mut() {
+                Some(o) if o.cell.is_some() => {
+                    if let Some(cell) = o.cell.take() {
+                        // A cell must end with a paragraph, so one follows the nested table.
+                        o.cell = Some(cell.add_table(table).add_paragraph(Paragraph::new()));
+                        o.cell_paras += 1;
+                    }
+                }
+                // No open cell: it goes in front of the HTML table, as browsers do.
+                _ => self.blocks.push(Block::Table(Box::new(table))),
+            }
         }
+        self.table = outer;
     }
 
     /// Close anything raw HTML left open at the end of the document.
@@ -1182,7 +1271,7 @@ impl<'a> Builder<'a> {
     // ---- footnotes
 
     fn footnote_reference(&mut self, label: &str) -> Result<()> {
-        let events = match self.footnotes.get(label) {
+        let events = match self.footnotes.get(&label.to_lowercase()) {
             Some(e) if !self.in_footnote => e.clone(),
             _ => {
                 // Unknown label, or a reference inside a footnote: keep it as written.
@@ -1207,10 +1296,15 @@ impl<'a> Builder<'a> {
         }
         let mut sub = Builder::new(self.pre, self.cfg, self.nonce.clone());
         sub.in_footnote = true;
+        sub.elements = self.elements;
         for ev in events {
             sub.feed(ev)?;
         }
         sub.flush();
+        self.elements = sub.elements;
+        if let Some(e) = sub.budget_error.take() {
+            return Err(e);
+        }
         let mut note = Footnote::new();
         let mut any = false;
         for block in sub.blocks {
@@ -1230,6 +1324,9 @@ impl<'a> Builder<'a> {
 
     /// Handle one event, then finish an image if this event closed one.
     fn feed(&mut self, ev: Event<'_>) -> Result<()> {
+        if let Some(e) = self.budget_error.take() {
+            return Err(e);
+        }
         let image_ended = matches!(ev, Event::End(TagEnd::Image));
         self.event(ev)?;
         if image_ended {
@@ -1239,7 +1336,10 @@ impl<'a> Builder<'a> {
                 self.image(ctx)?;
             }
         }
-        Ok(())
+        match self.budget_error.take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     fn event(&mut self, ev: Event<'_>) -> Result<()> {
@@ -1413,6 +1513,12 @@ impl<'a> Builder<'a> {
             }
             Tag::Table(aligns) => {
                 self.flush();
+                // A Markdown table inside a cell of an HTML table: keep the outer one.
+                if let Some(outer) = self.table.take() {
+                    if self.outer_tables.len() < MAX_NESTED_TABLES {
+                        self.outer_tables.push(outer);
+                    }
+                }
                 self.table = Some(TableState {
                     aligns,
                     ..TableState::default()
@@ -1500,6 +1606,18 @@ impl<'a> Builder<'a> {
     }
 
     fn finish_link(&mut self, url: String, children: Vec<Child>) {
+        if self.in_footnote {
+            // footnotes.xml has no relationships part here, so a hyperlink would point at a
+            // relationship id that does not exist and make the package invalid. Keep the
+            // text, styled as a link.
+            for c in children {
+                match c {
+                    Child::Run(r) | Child::Picture { run: r, .. } => self.push(Child::Run(r.style("Hyperlink"))),
+                    other => self.push(other),
+                }
+            }
+            return;
+        }
         let mut h = Hyperlink::new(url, HyperlinkType::External);
         let mut loose = Vec::new();
         for c in children {
@@ -1633,7 +1751,7 @@ fn collect_footnotes(markdown: &str) -> HashMap<String, Vec<Event<'_>>> {
     let mut open: Option<(String, Vec<Event<'_>>)> = None;
     for ev in TextMergeStream::new(Parser::new_ext(markdown, markdown_options(false))) {
         match ev {
-            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_string(), Vec::new())),
+            Event::Start(Tag::FootnoteDefinition(label)) => open = Some((label.to_lowercase(), Vec::new())),
             Event::End(TagEnd::FootnoteDefinition) => {
                 if let Some((label, events)) = open.take() {
                     map.entry(label).or_insert(events);

@@ -13,7 +13,14 @@ use std::fmt;
 
 /// Why a LaTeX formula could not be converted to OMML.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OmmlError(pub String);
+pub struct OmmlError(String);
+
+impl OmmlError {
+    /// What went wrong, as shown by `Display`.
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 impl fmt::Display for OmmlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -151,6 +158,9 @@ pub(crate) fn ensure_math_namespace(xml: &str) -> std::result::Result<String, Om
 
 /// Convert LaTeX math (without `$` delimiters) to the inner XML of `<m:oMath>`.
 pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
+    if let Some(c) = latex.chars().find(|&c| !crate::safety::is_xml_char(c)) {
+        return err(format!("character U+{:04X} cannot appear in a document", c as u32));
+    }
     let mut p = Parser {
         s: latex.chars().collect(),
         i: 0,

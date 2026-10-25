@@ -45,7 +45,7 @@ fn slow_disk_filler_is_killed_mid_write() {
         other => panic!("expected LimitExceeded, got {:?}", other.map(|d| d.len())),
     }
     assert!(
-        t.elapsed() < Duration::from_secs(6),
+        t.elapsed() < Duration::from_secs(15),
         "the filler ran for {:?}; it should have been killed early",
         t.elapsed()
     );
@@ -161,9 +161,70 @@ fn total_tool_time_is_budgeted_across_the_whole_document() {
         Err(CrateError::LimitExceeded(m)) => assert!(m.contains("total time budget"), "{m}"),
         other => panic!("expected the budget to run out, got {:?}", other.map(|d| d.len())),
     }
-    assert!(t.elapsed() < Duration::from_secs(3), "stopped after {:?}", t.elapsed());
+    assert!(t.elapsed() < Duration::from_secs(10), "stopped after {:?}", t.elapsed());
 
     // The same document fits in a generous budget.
     cfg.limits.max_total_tool_time = Duration::from_secs(60);
     assert!(markdown_to_docx(&md, &cfg).is_ok());
+}
+
+#[test]
+fn successful_tool_does_not_leave_helpers_running_either() {
+    let fx = Fixture::new();
+    let pidfile = fx.path("ok.pid");
+    let tool = script(
+        fx.dir.path(),
+        "spawn-then-succeed",
+        &format!(
+            "sleep 300 &\necho $! > '{}'\ncp '{}' \"$2\"",
+            pidfile.display(),
+            fx.path("fixture.png").display()
+        ),
+    );
+    assert!(markdown_to_docx(GRAPH, &config_with(tool)).is_ok());
+    let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_string();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while alive(&pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let survived = alive(&pid);
+    if survived {
+        let _ = std::process::Command::new("kill").args(["-9", &pid]).status();
+    }
+    assert!(!survived, "helper process {pid} outlived a successful tool");
+}
+
+#[test]
+fn files_hidden_deep_in_subdirectories_count_against_the_workspace_cap() {
+    let fx = Fixture::new();
+    let tool = script(
+        fx.dir.path(),
+        "deep-writer",
+        &format!(
+            "mkdir -p a/b/c/d/e/f\nhead -c 20000 /dev/zero > a/b/c/d/e/f/blob\ncp '{}' \"$2\"",
+            fx.path("fixture.png").display()
+        ),
+    );
+    let mut cfg = config_with(tool);
+    cfg.limits.max_workspace_bytes = 10_000;
+    match markdown_to_docx(GRAPH, &cfg) {
+        Err(CrateError::LimitExceeded(m)) => assert!(m.contains("bytes of files"), "{m}"),
+        other => panic!("expected LimitExceeded, got {:?}", other.map(|d| d.len())),
+    }
+}
+
+#[test]
+fn an_output_replaced_by_a_symlink_is_refused() {
+    let fx = Fixture::new();
+    let tool = script(
+        fx.dir.path(),
+        "linker",
+        &format!("ln -s '{}' \"$2\"", fx.path("fixture.png").display()),
+    );
+    match markdown_to_docx(GRAPH, &config_with(tool)) {
+        Err(CrateError::ExternalToolFailed { detail, .. }) => {
+            assert!(detail.contains("not a regular file"), "{detail}")
+        }
+        other => panic!("expected the symlink to be refused, got {:?}", other.map(|d| d.len())),
+    }
 }

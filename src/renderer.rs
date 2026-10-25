@@ -51,6 +51,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    #[cfg(test)]
     pub fn new() -> Result<Self> {
         Self::with_budget(None)
     }
@@ -145,16 +146,31 @@ pub struct ToolGuard<'a> {
     pub scrub_env_to: Option<&'a Path>,
 }
 
-fn dir_size(dir: &Path, depth: u8) -> u64 {
-    let Ok(entries) = fs::read_dir(dir) else { return 0 };
-    entries
-        .flatten()
-        .map(|e| match e.metadata() {
-            Ok(m) if m.is_dir() && depth > 0 => dir_size(&e.path(), depth - 1),
-            Ok(m) => m.len(),
-            Err(_) => 0,
-        })
-        .sum()
+/// Most directory entries `dir_size` will look at.
+const MAX_DIR_ENTRIES: usize = 20_000;
+
+/// Total size of the files under `dir`, without following symbolic links. A tree with more
+/// than `MAX_DIR_ENTRIES` entries counts as unboundedly large.
+fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let mut seen = 0usize;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(d) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&d) else { continue };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > MAX_DIR_ENTRIES {
+                return u64::MAX;
+            }
+            // `DirEntry::metadata` does not follow symlinks.
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => pending.push(entry.path()),
+                Ok(m) => total = total.saturating_add(m.len()),
+                Err(_) => {}
+            }
+        }
+    }
+    total
 }
 
 /// Kill the tool and everything it started (Chrome behind `mmdc`, for example).
@@ -260,7 +276,7 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
                     kill_tree(&mut child);
                     return Err(tool_err("killed: more than 1 MiB of console output".into()));
                 }
-                if dir_size(cwd, 2) > guard.max_dir_bytes {
+                if dir_size(cwd) > guard.max_dir_bytes {
                     kill_tree(&mut child);
                     return Err(CrateError::LimitExceeded(format!(
                         "`{program}` wrote more than {} bytes of files",
@@ -279,19 +295,19 @@ pub fn run_tool(program: &str, args: &[String], cwd: &Path, timeout: Duration, g
     // Polling can miss a tool that writes faster than the poll interval (a fast
     // disk writes hundreds of MB in a few milliseconds), so enforce the cap once more
     // now that it has exited. The kill above only limits how far it can overshoot.
-    if dir_size(cwd, 2) > guard.max_dir_bytes {
+    if dir_size(cwd) > guard.max_dir_bytes {
         return Err(CrateError::LimitExceeded(format!(
             "`{program}` wrote more than {} bytes of files",
             guard.max_dir_bytes
         )));
     }
-    if status.success() {
-        return Ok(());
-    }
-    // Failed tools may leave helpers behind.
+    // Whatever the tool's own outcome, helpers it started must not outlive it.
     #[cfg(unix)]
     if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
         let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+    }
+    if status.success() {
+        return Ok(());
     }
     let mut output = String::new();
     let _ = log.seek(SeekFrom::Start(0));
@@ -305,9 +321,12 @@ fn check_png(program: &str, path: &Path, max_bytes: u64) -> Result<()> {
         program: program.to_string(),
         detail,
     };
-    let len = fs::metadata(path)
-        .map_err(|_| bad(format!("did not produce {}", path.display())))?
-        .len();
+    // Not `metadata`: a symbolic link left in place of the output could point at any image.
+    let meta = fs::symlink_metadata(path).map_err(|_| bad(format!("did not produce {}", path.display())))?;
+    if !meta.is_file() {
+        return Err(bad(format!("{} is not a regular file", path.display())));
+    }
+    let len = meta.len();
     if len > max_bytes {
         return Err(CrateError::LimitExceeded(format!(
             "`{program}` produced a {len} byte image (limit {max_bytes})"
@@ -425,7 +444,7 @@ pub fn render_custom(ws: &Workspace, lang: &str, source: &str, cfg: &Config) -> 
         )));
     }
     fs::write(&output, &bytes).map_err(|e| CrateError::io(&output, e))?;
-    if dir_size(ws.path(), 0) > cfg.limits.max_workspace_bytes {
+    if dir_size(ws.path()) > cfg.limits.max_workspace_bytes {
         return Err(CrateError::LimitExceeded(format!(
             "rendered images exceed {} bytes in total",
             cfg.limits.max_workspace_bytes

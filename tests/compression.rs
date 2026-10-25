@@ -146,7 +146,7 @@ fn the_output_limit_applies_to_the_compressed_file_and_is_exact() {
         Err(CrateError::LimitExceeded(_))
     ));
 
-    // A caller's buffer never receives more than the limit.
+    // A caller's buffer receives the whole archive or nothing.
     let mut small = cfg();
     small.limits.max_output_bytes = 2048;
     let mut sink = Cursor::new(Vec::new());
@@ -154,7 +154,11 @@ fn the_output_limit_applies_to_the_compressed_file_and_is_exact() {
         markdown_to_docx_writer(&md, &small, &mut sink),
         Err(CrateError::LimitExceeded(_))
     ));
-    assert!(sink.get_ref().len() <= 2048, "wrote {} bytes", sink.get_ref().len());
+    assert!(
+        sink.get_ref().is_empty(),
+        "a refused document writes nothing, got {} bytes",
+        sink.get_ref().len()
+    );
 }
 
 #[test]
@@ -174,9 +178,10 @@ fn the_uncompressed_limit_bounds_memory_before_any_packaging() {
 #[test]
 fn untrusted_caps() {
     let l = Config::untrusted().limits;
-    assert_eq!((l.max_output_bytes, l.max_uncompressed_bytes), (50 << 20, 256 << 20));
+    assert_eq!((l.max_output_bytes, l.max_uncompressed_bytes), (50 << 20, 64 << 20));
+    assert_eq!(l.max_elements, 60_000);
     let l = Config::untrusted_with_diagrams().limits;
-    assert_eq!((l.max_output_bytes, l.max_uncompressed_bytes), (50 << 20, 256 << 20));
+    assert_eq!((l.max_output_bytes, l.max_uncompressed_bytes), (50 << 20, 64 << 20));
     let d = Config::default().limits;
-    assert!(d.max_output_bytes > 50 << 20 && d.max_uncompressed_bytes > 256 << 20);
+    assert!(d.max_output_bytes > 50 << 20 && d.max_uncompressed_bytes > 64 << 20 && d.max_elements > 60_000);
 }

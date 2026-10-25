@@ -81,6 +81,25 @@ First release.
   traps, runaway HTML) finish within a time budget on a default thread stack.
 
 ### Security
+- Audit fixes: entity decoding and hidden-tag detection were quadratic (200 s of CPU
+  from a 2 MiB input); memory while building is now bounded by `Limits::max_elements`
+  (60 000 in `Config::untrusted()`; a 2 MiB input used to take up to 7.7 GiB); links in
+  footnotes no longer leave a dangling relationship id; a Markdown table inside an
+  HTML table keeps both; `md2docx notes.md` finds images next to a bare file name;
+  integer overflow in code-block indents; list start numbers fit 32 bits; HTML
+  attribute lookup ignores text inside quoted values; a fence's picture is no
+  longer glued to the next line; image paths outside the base directory are refused
+  from the text alone (no existence oracle, no UNC lookups); JPEG/GIF are charged at
+  their re-encoded size; the CLI never overwrites its input through links or another
+  spelling, writes atomically, and caps `--timeout` under `--untrusted --diagrams`;
+  tool supervision counts files at any depth, kills helpers after success too and
+  refuses a symlinked output; a refused document writes nothing to a caller's writer.
+- `preprocess`, `Asset*`, `Preprocessed` and the renderer plumbing are no longer public
+  (they remain reachable under `#[doc(hidden)] __internals` for this crate's tests);
+  the public enums are `#[non_exhaustive]`; `OmmlError` has a private field and `message()`.
+- `Limits::max_uncompressed_bytes` is 64 MiB in `Config::untrusted()`.
+- Code blocks in `CodeBlockLayout::SingleParagraph` are split into paragraphs of at most
+  500 lines (LibreOffice's layout time grows with the square of a paragraph's lines).
 - Image mode runs a local TeX engine on document content; use native mode for
   untrusted input. See the README.
 - `Config::untrusted()` / `md2docx --untrusted`: native math, diagram fences left

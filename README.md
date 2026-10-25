@@ -29,10 +29,9 @@ let docx = markdown_to_docx(&user_markdown, &Config::untrusted())?;
 | Function | Use |
 | --- | --- |
 | `markdown_to_docx(&str, &Config) -> Result<Vec<u8>>` | The common case |
-| `markdown_to_docx_writer(&str, &Config, impl Write + Seek)` | Stream to a `File` or `Cursor`; nothing is written if conversion fails first |
+| `markdown_to_docx_writer(&str, &Config, impl Write + Seek)` | Write to a `File` or `Cursor`. The archive is built in memory first and written in one piece, so a refused or failed conversion writes nothing |
 | `markdown_file_to_docx(&Path, &Config)` | Reads the file with the input-size limit applied *before* it is read (devices and directories are refused); relative images resolve against its directory |
 | `omml::latex_to_omml(&str)` | The LaTeX to OMML converter on its own |
-| `preprocess(&str, &Config)` | Stage 1 only: renders math/diagrams and returns the rewritten Markdown |
 
 **Configuration.** `Config` is `#[non_exhaustive]`, so new options never break your
 code: start from a preset, then chain `with_*` methods or assign fields.
@@ -104,7 +103,7 @@ exposing `docx-rs` types would tie this crate's version to theirs.
 * **Errors** are `CrateError` (`#[non_exhaustive]`, `std::error::Error + Send +
   Sync`): `MissingExternalCLI`, `ExternalToolFailed`, `InvalidMarkdown`,
   `InvalidConfig`, `LimitExceeded`, `UnsafeContent`, `DocxGenerationError`,
-  `Io`. The crate never panics on bad input and is `#![forbid(unsafe_code)]`.
+  `Io`. The crate is `#![forbid(unsafe_code)]` and is tested to return errors, not panic, on hostile input (random, spec-corpus and pathological runs); a panic in a `FenceRenderer` you register is caught, though the default panic hook still prints it and `panic = "abort"` builds would still abort.
 * **Dependencies.** Library-only builds compile 80 crates (94 with the CLI).
   External tools (TeX, merman-cli, mmdc) are programs you install, never linked.
 
@@ -348,7 +347,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | `![x](/dev/zero)`, FIFOs, devices | Files are inspected before opening and must be regular, size-limited files |
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
-| Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion |
+| Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion, and `max_elements` (paragraphs, runs, cells and lists built, 60 000 untrusted: building 1M paragraphs peaked above 7 GiB before this limit existed) |
 | Small input that expands into a huge `.docx` (about 40x as XML: 1 MB of code lines is 39 MB before compression) | `Limits::max_uncompressed_bytes` (memory, checked before packaging: 1 GiB default, 256 MiB untrusted) and `Limits::max_output_bytes` (the finished compressed file, enforced exactly while it is written: 256 MiB default, **50 MiB in `Config::untrusted()`**) |
 | A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
 | Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist** (see "Raw HTML"): only the listed tags have an effect, attributes are not interpreted beyond the listed ones, scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. `<a href>` becomes a link only for `http`/`https`/`mailto`, and not at all with `--untrusted` |
@@ -358,6 +357,17 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 fences left as code (no browser), no local files, smaller limits.
 
 ### What is not covered
+
+* **Known content gaps.** Tables inside footnotes are dropped; a display equation
+  that is the whole content of a list item loses its bullet or checkbox; a lone
+  `\r` inside a code line is removed; `mailto:` links keep their query string
+  (`?subject=...`, and in principle `?attach=`, which a few old mail clients honour).
+* **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB
+  input to a few hundred MB while building; set `Limits::max_elements` lower, and
+  run conversions in a memory-limited worker, if that matters for your service.
+* **Windows UNC paths.** `//host/share` and `\\host\share` image references are
+  refused from the text alone, but this was reasoned from the code and not
+  exercised on Windows.
 
 * **Diagram tools are not sandboxed.** There is no seccomp/landlock/chroot around
   them; the protections are the ones listed above (no browser, scrubbed
@@ -388,7 +398,7 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
   the security gates, HTML tokenizer, image sizing, command parsing.
 * `tests/markdown_coverage.rs`: one case per Markdown construct (above).
 * `tests/spec_corpus.rs`: all 652 CommonMark spec examples, default and untrusted
-  (valid XML, no script-scheme links, no text dropped); `tests/parser_events.rs`:
+  (valid XML, no script-scheme links, the parser's text all present); `tests/parser_events.rs`:
   every parser tag/event is accounted for (exhaustive matches, so a
   pulldown-cmark upgrade cannot add one silently); `tests/pathological.rs`: deep
   nesting, wide/tall tables, huge lines, delimiter runs, runaway HTML under a

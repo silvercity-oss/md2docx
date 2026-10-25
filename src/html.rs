@@ -35,11 +35,14 @@ pub(crate) fn unclosed_hidden(raw: &str) -> Option<&'static str> {
     let lower = raw.to_ascii_lowercase();
     HIDDEN.iter().copied().find(|name| {
         let open = format!("<{name}");
+        // The last closing tag, found once: an opening tag is unclosed when none follows it.
+        let last_close = lower.rfind(&format!("</{name}"));
         lower.match_indices(&open).any(|(at, _)| {
-            matches!(
+            let ends_name = matches!(
                 lower.as_bytes().get(at + open.len()),
-                Some(b' ' | b'>' | b'/' | b'\t' | b'\n')
-            ) && !lower[at..].contains(&format!("</{name}"))
+                Some(b' ' | b'>' | b'/' | b'\t' | b'\n' | b'\r' | 0x0c)
+            );
+            ends_name && last_close.is_none_or(|close| close < at)
         })
     })
 }
@@ -127,23 +130,55 @@ pub(crate) fn tokenize(html: &str) -> Vec<Piece> {
 }
 
 /// Value of attribute `name` in a raw attribute string (quoted or bare).
+///
+/// Attributes are read as `name=value` pairs, left to right, so text inside a
+/// quoted value (`title="href=evil"`) is never mistaken for an attribute, and the
+/// first occurrence of a name wins, as in a browser. An attribute without a
+/// value has none.
 pub(crate) fn attr(attrs: &str, name: &str) -> Option<String> {
-    let lower = attrs.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(rel) = lower[from..].find(name) {
-        let at = from + rel;
-        from = at + name.len();
-        let boundary = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric() && lower.as_bytes()[at - 1] != b'-';
-        let after = attrs[from..].trim_start();
-        if !boundary || !after.starts_with('=') {
+    let b = attrs.as_bytes();
+    let skip_ws = |mut i: usize| {
+        while i < b.len() && b[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        i
+    };
+    let mut i = 0;
+    while i < b.len() {
+        i = skip_ws(i);
+        while i < b.len() && b[i] == b'/' {
+            i = skip_ws(i + 1);
+        }
+        let start = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'=' && b[i] != b'/' {
+            i += 1;
+        }
+        let key = &attrs[start..i];
+        if key.is_empty() {
+            i += 1; // a stray `=` or the like: always make progress
             continue;
         }
-        let value = after[1..].trim_start();
-        let v = match value.chars().next() {
-            Some(q @ ('"' | '\'')) => value[1..].split(q).next().unwrap_or(""),
-            _ => value.split(|c: char| c.is_whitespace()).next().unwrap_or(""),
-        };
-        return Some(decode_entities(v));
+        let mut j = skip_ws(i);
+        let mut value = None;
+        if j < b.len() && b[j] == b'=' {
+            j = skip_ws(j + 1);
+            if j < b.len() && (b[j] == b'"' || b[j] == b'\'') {
+                let from = j + 1;
+                let to = attrs[from..].find(b[j] as char).map_or(b.len(), |p| from + p);
+                value = Some(&attrs[from..to]);
+                j = (to + 1).min(b.len());
+            } else {
+                let from = j;
+                while j < b.len() && !b[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                value = Some(&attrs[from..j]);
+            }
+        }
+        i = j;
+        if key.eq_ignore_ascii_case(name) {
+            return value.map(decode_entities);
+        }
     }
     None
 }
@@ -156,7 +191,10 @@ pub(crate) fn decode_entities(s: &str) -> String {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         rest = &rest[amp..];
-        let decoded = rest[1..].find(';').filter(|&semi| semi <= 10).and_then(|semi| {
+        // Only the next few bytes can hold the `;`: searching further made a long run of
+        // `&` quadratic.
+        let semi = rest.as_bytes()[1..].iter().take(11).position(|&c| c == b';');
+        let decoded = semi.and_then(|semi| {
             let name = &rest[1..1 + semi];
             let ch = match name {
                 "amp" => Some('&'),
@@ -255,6 +293,48 @@ mod tests {
         assert_eq!(attr(a, "width").as_deref(), Some("40"));
         assert_eq!(attr("data-src=\"no\"", "src"), None, "`data-src` is not `src`");
         assert_eq!(attr("src", "src"), None);
+    }
+
+    #[test]
+    fn attribute_values_cannot_hide_attributes() {
+        let a = "title=\"href=https://evil.example/\" href=\"https://good.example/\"";
+        assert_eq!(attr(a, "href").as_deref(), Some("https://good.example/"));
+        assert_eq!(attr("title='src=x' alt=y", "src"), None);
+        assert_eq!(attr("a=1 a=2", "a").as_deref(), Some("1"), "first wins");
+        assert_eq!(attr("=== / /=x width = 5", "width").as_deref(), Some("5"));
+        assert_eq!(attr("href=\"unterminated", "href").as_deref(), Some("unterminated"));
+    }
+
+    #[test]
+    fn hidden_detection_is_linear_and_accepts_any_whitespace() {
+        assert_eq!(unclosed_hidden("<script\r\n>"), Some("script"));
+        assert_eq!(unclosed_hidden("<script\x0c>"), Some("script"));
+        // A close tag before the open one does not close it.
+        assert_eq!(unclosed_hidden("</script><script>"), Some("script"));
+        assert_eq!(unclosed_hidden("<script></script><script>"), Some("script"));
+        assert_eq!(unclosed_hidden("<script><script></script>"), None);
+        let started = std::time::Instant::now();
+        let hostile = format!("<b title=\"{}</script\">", "<script ".repeat(262_000));
+        assert_eq!(unclosed_hidden(&hostile), None);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn entity_decoding_is_linear() {
+        let started = std::time::Instant::now();
+        let s = "&".repeat(2 << 20);
+        assert_eq!(decode_entities(&s).len(), s.len());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(decode_entities("&#x10FFFF;&amp;"), "\u{10FFFF}&");
+        assert_eq!(decode_entities("&aaaaaaaaaaaaaaa;"), "&aaaaaaaaaaaaaaa;");
     }
 
     #[test]

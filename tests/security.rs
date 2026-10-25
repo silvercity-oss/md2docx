@@ -4,7 +4,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, preprocess, Config, CrateError, ImageAccess, Limits};
+use silvercity_oss::__internals::preprocess;
+use silvercity_oss::{markdown_to_docx, Config, CrateError, ImageAccess, Limits};
 
 fn err(md: &str, cfg: &Config) -> CrateError {
     markdown_to_docx(md, cfg).expect_err("should have been rejected")

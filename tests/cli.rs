@@ -342,3 +342,104 @@ fn code_blocks_flag() {
     let (run, _) = docx_for(&["--code-blocks", "wat"]);
     assert_eq!(run.status.code(), Some(2));
 }
+
+#[test]
+fn a_bare_file_name_resolves_images_next_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("img.png"), png_bytes(30, 20)).unwrap();
+    std::fs::write(dir.path().join("notes.md"), "# Notes\n\n![pic](img.png)\n").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        .current_dir(dir.path())
+        .arg("notes.md")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let docx = std::fs::read(dir.path().join("notes.docx")).unwrap();
+    assert_eq!(media_count(&docx), 1);
+}
+
+#[test]
+fn the_input_is_never_overwritten_however_the_output_is_spelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("notes.md");
+    std::fs::write(&input, "# keep me\n").unwrap();
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut spellings: Vec<std::path::PathBuf> =
+        vec![dir.path().join("./notes.md"), dir.path().join("sub/../notes.md")];
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&input, dir.path().join("link.docx")).unwrap();
+        spellings.push(dir.path().join("link.docx"));
+        std::fs::hard_link(&input, dir.path().join("hard.docx")).unwrap();
+        spellings.push(dir.path().join("hard.docx"));
+    }
+    for out in spellings {
+        let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .arg("-o")
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert_eq!(run.status.code(), Some(1), "{}", out.display());
+        assert!(String::from_utf8_lossy(&run.stderr).contains("refusing"));
+        assert_eq!(
+            std::fs::read_to_string(&input).unwrap(),
+            "# keep me\n",
+            "{}",
+            out.display()
+        );
+    }
+}
+
+#[test]
+fn output_is_written_atomically_with_ordinary_permissions() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("a.md");
+    let out = dir.path().join("a.docx");
+    std::fs::write(&out, b"previous output").unwrap();
+    // A conversion that fails leaves the existing output alone and no temporary files behind.
+    std::fs::write(&input, "bad \0 input").unwrap();
+    let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!run.status.success());
+    assert_eq!(std::fs::read(&out).unwrap(), b"previous output");
+    // A good one replaces it completely.
+    std::fs::write(&input, "# ok\n").unwrap();
+    let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(run.status.success());
+    assert!(std::fs::read(&out).unwrap().starts_with(b"PK"));
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(".md2docx-"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&out).unwrap().permissions().mode() & 0o777, 0o644);
+    }
+}
+
+#[test]
+fn the_untrusted_diagram_timeout_cannot_be_raised() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("a.md");
+    std::fs::write(&input, "plain\n").unwrap();
+    let run = |secs: &str| {
+        Command::new(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .args(["--untrusted", "--diagrams", "--timeout", secs])
+            .output()
+            .unwrap()
+    };
+    assert_eq!(run("21").status.code(), Some(2));
+    assert!(run("20").status.success());
+    assert!(run("5").status.success());
+}

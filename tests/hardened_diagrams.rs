@@ -6,7 +6,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, preprocess, Config, CrateError};
+use silvercity_oss::__internals::preprocess;
+use silvercity_oss::{markdown_to_docx, Config, CrateError};
 
 const MERMAID: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 

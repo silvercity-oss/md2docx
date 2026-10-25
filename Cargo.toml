@@ -49,3 +49,5 @@ rustix = { version = "1", features = ["process"] }
 # (Profiles only affect this repository's own builds, never a crate that depends on this one.)
 [profile.dev.package.miniz_oxide]
 opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3

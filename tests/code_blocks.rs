@@ -166,14 +166,38 @@ fn control_characters_and_markup_never_reach_the_xml_as_markup() {
 }
 
 #[test]
+fn long_blocks_are_split_into_paragraphs_of_500_lines() {
+    // LibreOffice lays out a paragraph in time that grows with the square of its lines
+    // (100k lines took 12 minutes), so one paragraph never holds more than 500.
+    let code = "let x = 1;\n".repeat(1200);
+    let doc = body_with(&fenced(code.trim_end()), &single());
+    let paras = code_paragraphs(&doc);
+    assert_eq!(paras.len(), 3, "{}", paras.len());
+    assert_eq!(paras[0].matches("<w:br").count(), 499);
+    assert_eq!(paras[2].matches("<w:br").count(), 199);
+    assert_eq!(copied_text(&doc), code.trim_end());
+    let exactly = "x\n".repeat(500);
+    assert_eq!(
+        code_paragraphs(&body_with(&fenced(exactly.trim_end()), &single())).len(),
+        1
+    );
+}
+
+#[test]
 fn a_huge_single_paragraph_block_is_fine() {
     let code = "let x = 1;\n".repeat(150_000);
-    let docx = markdown_to_docx(&fenced(&code), &single()).unwrap();
+    let code = code.trim_end();
+    let docx = markdown_to_docx(&fenced(code), &single()).unwrap();
     let doc = zip_text(&docx, "word/document.xml");
-    assert_eq!(code_paragraphs(&doc).len(), 1);
-    assert_eq!(doc.matches("<w:br").count(), 150_000);
-    // And the untrusted limits apply as usual.
+    assert_eq!(code_paragraphs(&doc).len(), 300);
+    assert_eq!(doc.matches("<w:br").count(), 150_000 - 300);
+    // The untrusted limits apply as usual: this many lines is refused, not built.
     let mut u = Config::untrusted();
     u.document.code_blocks = CodeBlockLayout::SingleParagraph;
-    assert!(markdown_to_docx(&fenced(&code), &u).is_ok());
+    assert!(markdown_to_docx(&fenced(code), &u).is_ok());
+    let more = "a\n".repeat(1_000_000);
+    assert!(matches!(
+        markdown_to_docx(&fenced(&more), &u),
+        Err(silvercity_oss::CrateError::LimitExceeded(m)) if m.contains("max_elements")
+    ));
 }

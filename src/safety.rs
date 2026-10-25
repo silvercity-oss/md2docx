@@ -13,7 +13,7 @@ use crate::error::{CrateError, Result};
 
 /// `Char` production of XML 1.0. Anything else makes Word report the file as
 /// corrupt, so it must never reach `document.xml`.
-fn is_xml_char(c: char) -> bool {
+pub(crate) fn is_xml_char(c: char) -> bool {
     matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}')
 }
 
@@ -170,13 +170,39 @@ pub(crate) fn read_local_image(
             return Err(CrateError::UnsafeContent("local images are disabled".into()));
         }
         ImageAccess::BaseDir => {
+            let outside = || {
+                CrateError::UnsafeContent(format!(
+                    "image `{reference}` is outside the base directory {}",
+                    base_dir.display()
+                ))
+            };
+            // Network-share and device paths are refused before anything touches the
+            // filesystem: on Windows, merely resolving `\\host\share\x` contacts the host.
+            if decoded.starts_with("\\\\") || decoded.starts_with("//") {
+                return Err(outside());
+            }
             let base = fs::canonicalize(base_dir).map_err(|e| CrateError::io(base_dir, e))?;
+            // Decide from the text alone whether the path can stay inside the base, so that
+            // paths pointing elsewhere get the same answer whether or not they exist.
+            let candidate = if Path::new(&decoded).is_relative() {
+                base.join(&decoded)
+            } else {
+                PathBuf::from(&decoded)
+            };
+            // On Windows a canonical path is `\\?\C:\...` while an absolute reference is `C:\...`;
+            // accept either spelling of the base here, and let the real check below decide.
+            let given_base = std::path::absolute(base_dir)
+                .ok()
+                .and_then(|p| lexically_normalized(&p));
+            match lexically_normalized(&candidate) {
+                Some(norm) if norm.starts_with(&base) || given_base.as_ref().is_some_and(|b| norm.starts_with(b)) => {
+                    path = norm;
+                }
+                _ => return Err(outside()),
+            }
             path = fs::canonicalize(&path).map_err(|e| CrateError::io(&path, e))?;
             if !path.starts_with(&base) {
-                return Err(CrateError::UnsafeContent(format!(
-                    "image `{reference}` is outside the base directory {}",
-                    base.display()
-                )));
+                return Err(outside());
             }
         }
         ImageAccess::Any => {}
@@ -184,6 +210,25 @@ pub(crate) fn read_local_image(
 
     let bytes = read_regular_file(&path, reference, max_bytes)?;
     Ok((path, bytes))
+}
+
+/// `path` with `.` and `..` resolved by text alone; `None` when a `..` would climb above
+/// the root.
+fn lexically_normalized(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    Some(out)
 }
 
 /// Read a regular file of at most `max_bytes`, never more than that into memory.
@@ -239,6 +284,13 @@ impl<W: std::io::Write + std::io::Seek> LimitedWriter<W> {
             max,
             exceeded: false,
         })
+    }
+}
+
+impl<W> LimitedWriter<W> {
+    /// The wrapped writer.
+    pub(crate) fn into_inner(self) -> W {
+        self.inner
     }
 }
 

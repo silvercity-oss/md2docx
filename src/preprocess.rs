@@ -54,7 +54,7 @@ pub struct Preprocessed {
     pub markdown: String,
     /// Image destination (as written in `markdown`) -> asset.
     pub assets: HashMap<String, Asset>,
-    _workspace: Workspace,
+    _workspace: Option<Workspace>,
 }
 
 fn line_of(text: &str, offset: usize) -> usize {
@@ -237,18 +237,35 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     }
 
     // Pass 2: render and build replacements.
-    let workspace = Workspace::with_budget(Some(limits.max_total_tool_time))?;
+    // The scratch directory exists only when something is rendered to a file: native math
+    // and documents without diagrams need none, so a missing or read-only temp directory
+    // does not break them.
+    let needs_files = found.iter().any(|(_, f)| match f {
+        Found::Graph(..) => true,
+        Found::Math { .. } => cfg.math.mode == MathMode::ImageFallback,
+    });
+    let workspace = if needs_files {
+        Some(Workspace::with_budget(Some(limits.max_total_tool_time))?)
+    } else {
+        None
+    };
+    let scratch = || {
+        workspace
+            .as_ref()
+            .ok_or_else(|| CrateError::DocxGenerationError("internal error: no scratch directory".into()))
+    };
     let nonce = asset_stem("", &[markdown.as_bytes()]);
     let mut assets = HashMap::new();
     let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
     let mut omml_count = 0usize;
 
     for (range, item) in found {
+        let is_fence = matches!(item, Found::Graph(..));
         let (dest, alt, asset) = match item {
             Found::Graph(fence, source) => {
                 let png = match &fence {
-                    Fence::Builtin(kind) => render_graph(&workspace, *kind, &source, cfg)?,
-                    Fence::Custom(lang) => render_custom(&workspace, lang, &source, cfg)?,
+                    Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg)?,
+                    Fence::Custom(lang) => render_custom(scratch()?, lang, &source, cfg)?,
                 };
                 let dest = png.to_string_lossy().into_owned();
                 (
@@ -275,7 +292,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 };
                 match cfg.math.mode {
                     MathMode::ImageFallback => {
-                        let png = render_math_image(&workspace, &latex, display, cfg)?;
+                        let png = render_math_image(scratch()?, &latex, display, cfg)?;
                         let dest = png.to_string_lossy().into_owned();
                         (
                             dest,
@@ -309,7 +326,20 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 }
             }
         };
-        replacements.push((range, format!("![{alt}](<{}>)", escape_dest(&dest))));
+        let mut text = format!("![{alt}](<{}>)", escape_dest(&dest));
+        if is_fence {
+            // The line after a fence would otherwise continue the picture's paragraph. End it
+            // with a blank line that carries the same quote markers.
+            let line_start = markdown[..range.start].rfind('\n').map_or(0, |i| i + 1);
+            let blank: String = markdown[line_start..range.start]
+                .chars()
+                .map(|c| if c == '>' { '>' } else { ' ' })
+                .collect();
+            text.push('\n');
+            text.push_str(blank.trim_end());
+            text.push('\n');
+        }
+        replacements.push((range, text));
         assets.insert(dest, asset);
     }
 

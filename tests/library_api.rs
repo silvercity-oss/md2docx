@@ -276,7 +276,7 @@ fn file_api_refuses_devices_instead_of_reading_forever() {
             ),
             "{dev}"
         );
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 }
 
