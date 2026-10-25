@@ -7,7 +7,7 @@
 
 use std::io::Cursor;
 
-use silvercity_oss::{AssetMap, Config, FenceError};
+use silvercity_oss::{AssetMap, Config};
 
 /// (file stem, Markdown source, whether the strict policy must accept it).
 pub const SOURCES: &[(&str, &str, bool)] = &[
@@ -57,7 +57,7 @@ pub fn config() -> Config {
     }
     #[cfg(not(feature = "mermaid"))]
     {
-        cfg.with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, FenceError> {
+        cfg.with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, silvercity_oss::FenceError> {
             Ok(png(400, 160, 200))
         })
     }
