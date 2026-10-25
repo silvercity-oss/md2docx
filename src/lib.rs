@@ -107,8 +107,8 @@ use std::io::{Seek, Write};
 use std::path::Path;
 
 pub use config::{
-    CodeBlockLayout, CommandSpec, Config, DocumentOptions, GraphOptions, ImageAccess, Limits, MathImageEngine,
-    MathMode, MathOptions, MermaidEngine, PageSize,
+    CodeBlockLayout, CommandSpec, Config, DiagramFailure, DocumentOptions, GraphOptions, ImageAccess, Limits,
+    MathImageEngine, MathMode, MathOptions, MermaidEngine, PageSize,
 };
 pub use error::{CrateError, Result};
 pub use extend::{BlockStyle, FenceError, FenceRenderer, FenceRenderers, TagStyle};

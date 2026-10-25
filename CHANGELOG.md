@@ -36,6 +36,18 @@ First release.
   devices and directories.
 - `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, runnable crate examples.
 
+### Navigation and document features
+- Internal links: `[text](#heading)` becomes a hyperlink to a bookmark on the heading
+  (GitHub-style slugs, `{#id}`, repeated headings `-1`, `-2`).
+- Footnotes show their number in front of the note (docx-rs wrote none) and the reference
+  mark is a real superscript character style.
+- `DocumentOptions::{title, author, page_numbers}`; title and author fall back to the
+  front matter; the file's created/modified times are the real time (they were 1970).
+- Code blocks have no gap between lines, a gap around the block and a thin frame
+  (`Theme::border`), so consecutive blocks are separate boxes and a white theme is visible.
+- `GraphOptions::on_failure` / `DiagramFailure::KeepAsCode` / `md2docx --keep-failed-diagrams`;
+  `CrateError::is_input_error()`; `CommandSpec` is `#[non_exhaustive]` (use `CommandSpec::new`).
+
 ### Extension points
 - **Syntax highlighting** (`Config::with_highlighting`, `Highlighting`, `Theme`,
   `TokenClass`, `Highlighter`, `BuiltinHighlighter`; `md2docx --highlight`): built-in
@@ -59,7 +71,7 @@ First release.
   file is now rewritten with deflate (about 10x smaller; pictures stay stored).
 - `Limits::max_output_bytes` (the finished file, enforced exactly while writing:
   256 MiB; **50 MiB** in `Config::untrusted()`) and `Limits::max_uncompressed_bytes`
-  (the parts held in memory, checked before packaging: 1 GiB; 256 MiB untrusted).
+  (the size readers must parse, checked before packaging: 1 GiB; 64 MiB untrusted).
   A small input can expand about 40x into XML.
 
 ### Diagrams for untrusted input

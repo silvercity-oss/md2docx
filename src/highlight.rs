@@ -198,6 +198,9 @@ pub struct Theme {
     pub background: String,
     /// Colour of text no span covers, six hex digits.
     pub foreground: String,
+    /// Colour of a thin frame around each code block, six hex digits. `None` frames
+    /// the block in its own background colour, which only pads it.
+    pub border: Option<String>,
     /// Styles by class; classes without an entry use the foreground.
     pub styles: BTreeMap<TokenClass, TokenStyle>,
 }
@@ -209,6 +212,7 @@ impl Theme {
             name: name.into(),
             background: background.into(),
             foreground: foreground.into(),
+            border: None,
             styles: BTreeMap::new(),
         }
     }
@@ -219,10 +223,17 @@ impl Theme {
         self
     }
 
-    /// Visual Studio Code *Light+*.
+    /// Frame code blocks with a thin line of this colour.
+    pub fn border(mut self, hex: impl Into<String>) -> Self {
+        self.border = Some(hex.into());
+        self
+    }
+
+    /// Visual Studio Code *Light+* (with a light-grey frame, since its background is white).
     pub fn vscode_light() -> Self {
         use TokenClass::*;
         Theme::new("VS Code Light+", "FFFFFF", "000000")
+            .border("D0D0D0")
             .style(Keyword, TokenStyle::color("0000FF"))
             .style(ControlKeyword, TokenStyle::color("AF00DB"))
             .style(String, TokenStyle::color("A31515"))
@@ -267,6 +278,9 @@ impl Theme {
             return Err("theme name must be at most 64 printable characters".into());
         }
         let mut colors = vec![("background", &self.background), ("foreground", &self.foreground)];
+        if let Some(b) = &self.border {
+            colors.push(("border", b));
+        }
         for style in self.styles.values() {
             if let Some(c) = &style.color {
                 colors.push(("token colour", c));
@@ -353,7 +367,9 @@ pub(crate) fn fence_language(info: &str) -> Option<String> {
         .chars()
         .take_while(|c| !c.is_whitespace() && *c != ',' && *c != '{')
         .collect();
-    (!word.is_empty()).then(|| word.to_lowercase())
+    // Only plain language names are passed on (to highlighters and into messages).
+    let word = word.to_lowercase();
+    crate::extend::validate_fence_language(&word).ok().map(|()| word)
 }
 
 /// Highlight one code block: the spans, `None` for "draw it plain", or an error
@@ -431,6 +447,14 @@ mod tests {
         assert_eq!(fence_language("  python title=x"), Some("python".into()));
         assert_eq!(fence_language(""), None);
         assert_eq!(fence_language("{.rust}"), None);
+        assert_eq!(
+            fence_language("\u{dc}n\u{ef}code<script>"),
+            None,
+            "unusual names are not passed on"
+        );
+        assert_eq!(fence_language(&"a".repeat(40)), None);
+        assert_eq!(fence_language("c++"), Some("c++".into()));
+        assert_eq!(fence_language("c#"), Some("c#".into()));
     }
 
     #[test]

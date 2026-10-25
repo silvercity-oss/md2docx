@@ -102,9 +102,10 @@ fn the_element_budget_is_configurable() {
 }
 
 #[test]
-fn huge_quote_depth_does_not_overflow_indents() {
-    // 6 million `>` made 360 * depth overflow i32: a panic in debug builds.
-    let md = format!("{}\n```\nx\n```\n", ">".repeat(6_000_000));
+fn deep_quotes_get_bounded_indents() {
+    // 6 million `>` made 360 * depth overflow i32 (a panic in debug builds). The arithmetic is
+    // covered by a unit test in parser.rs; this checks the document for a deep but quick case.
+    let md = format!("{}\n```\nx\n```\n", ">".repeat(200_000));
     match fast(&md, &Config::native_math()) {
         Ok(docx) => {
             let doc = zip_text(&docx, "word/document.xml");
@@ -340,4 +341,41 @@ fn untrusted_conversion_does_not_need_a_scratch_directory() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn a_replaced_fence_keeps_its_container() {
+    // The blank line after the picture must not end the quote or the list item that the
+    // following text belongs to.
+    let cfg = Config::default().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
+        Ok(png_bytes(40, 20))
+    });
+    let pre = |md: &str| silvercity_oss::__internals::preprocess(md, &cfg).unwrap().markdown;
+    for md in [
+        "> - a\n>   ```chart\n>   1\n>   ```\n>   NEXT\n> - b\n",
+        "> 1. ```chart\n>    1\n>    ```\n>    NEXT\n",
+        "- ```chart\n  1\n  ```\n  NEXT\n- b\n",
+        "> ```chart\n> 1\n> ```\n> NEXT\n",
+        "```chart\n1\n```\nNEXT\n",
+    ] {
+        let out = pre(md);
+        // Every line of the rewritten document that is blank must carry the quote marker
+        // when the original lines did, so no container ends early.
+        let quoted = md.starts_with('>');
+        for line in out.lines() {
+            if quoted {
+                assert!(
+                    line.starts_with('>'),
+                    "{md:?} became {out:?}: line {line:?} left the quote"
+                );
+            }
+        }
+        let b = body_with(md, &cfg);
+        assert_well_formed(&b);
+        assert_eq!(b.matches("<w:drawing>").count(), 1, "{md:?}");
+    }
+    // The text after the fence stays in the list item (it is indented in the output), not in
+    // a new top-level paragraph.
+    let out = pre("- ```chart\n  1\n  ```\n  NEXT\n- b\n");
+    assert!(out.contains("\n  NEXT\n"), "{out:?}");
 }

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
-use crate::config::{Config, MathMode};
+use crate::config::{Config, DiagramFailure, MathMode};
 use crate::error::{CrateError, Result};
 use crate::omml;
 use crate::parser::markdown_options;
@@ -54,6 +54,8 @@ pub struct Preprocessed {
     pub markdown: String,
     /// Image destination (as written in `markdown`) -> asset.
     pub assets: HashMap<String, Asset>,
+    /// Title and author from the document's front matter.
+    pub(crate) meta: (Option<String>, Option<String>),
     _workspace: Option<Workspace>,
 }
 
@@ -91,11 +93,31 @@ enum Found {
 /// or its first non-blank line is `key: value` (YAML) / `key = value` (TOML).
 fn blank_front_matter(md: &str) -> std::borrow::Cow<'_, str> {
     let body = md.strip_prefix('\u{feff}').unwrap_or(md);
+    match front_matter(body) {
+        Some(fm) => {
+            let blanked: String = body[..fm.consumed].chars().filter(|&c| c == '\n').collect();
+            format!("{blanked}{}", &body[fm.consumed..]).into()
+        }
+        None => md.into(),
+    }
+}
+
+/// A metadata block found at the very start of a document.
+struct FrontMatter<'a> {
+    /// `---` (YAML) or `+++` (TOML).
+    delim: &'a str,
+    /// The lines between the delimiters.
+    inner: &'a str,
+    /// Bytes of the whole block, closing delimiter line included.
+    consumed: usize,
+}
+
+fn front_matter(body: &str) -> Option<FrontMatter<'_>> {
     let mut lines = body.split_inclusive('\n');
-    let Some(first) = lines.next() else { return md.into() };
+    let first = lines.next()?;
     let delim = first.trim_end();
     if delim != "---" && delim != "+++" {
-        return md.into();
+        return None;
     }
     let looks_like_metadata = |line: &str| {
         let sep = if delim == "---" { ':' } else { '=' };
@@ -110,20 +132,59 @@ fn blank_front_matter(md: &str) -> std::borrow::Cow<'_, str> {
     let mut consumed = first.len();
     let mut checked_first_content = false;
     for line in lines {
-        consumed += line.len();
         let t = line.trim_end();
         if t == delim || (delim == "---" && t == "...") {
-            let blanked: String = body[..consumed].chars().filter(|&c| c == '\n').collect();
-            return format!("{blanked}{}", &body[consumed..]).into();
+            return Some(FrontMatter {
+                delim,
+                inner: &body[first.len()..consumed],
+                consumed: consumed + line.len(),
+            });
         }
+        consumed += line.len();
         if !checked_first_content && !t.trim().is_empty() {
             checked_first_content = true;
             if !looks_like_metadata(t) {
-                return md.into();
+                return None;
             }
         }
     }
-    md.into() // never closed: not front matter
+    None // never closed: not front matter
+}
+
+/// Document title and author from simple `title:` / `author:` front matter lines
+/// (`title = "x"` in TOML). Values are cut to 200 characters; lists and nested values are ignored.
+pub(crate) fn front_matter_meta(md: &str) -> (Option<String>, Option<String>) {
+    let body = md.strip_prefix('\u{feff}').unwrap_or(md);
+    let Some(fm) = front_matter(body) else {
+        return (None, None);
+    };
+    let sep = if fm.delim == "---" { ':' } else { '=' };
+    let (mut title, mut author) = (None, None);
+    for line in fm.inner.lines() {
+        let Some((key, value)) = line.split_once(sep) else {
+            continue;
+        };
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            .unwrap_or(value);
+        if value.is_empty() || value.starts_with(['[', '{', '|', '>']) {
+            continue;
+        }
+        let value: String = sanitize_xml_chars(value)
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect();
+        match key.trim().to_lowercase().as_str() {
+            "title" if title.is_none() => title = Some(value),
+            "author" if author.is_none() => author = Some(value),
+            _ => {}
+        }
+    }
+    (title, author)
 }
 
 /// Run Stage 1 over `markdown`.
@@ -141,6 +202,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     }
     // Control characters are illegal in XML; left in, Word calls the file corrupt.
     let markdown = sanitize_xml_chars(markdown);
+    let meta = front_matter_meta(&markdown);
     let markdown = &*blank_front_matter(&markdown);
     let too_many = || {
         CrateError::LimitExceeded(format!(
@@ -263,9 +325,19 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
         let is_fence = matches!(item, Found::Graph(..));
         let (dest, alt, asset) = match item {
             Found::Graph(fence, source) => {
-                let png = match &fence {
-                    Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg)?,
-                    Fence::Custom(lang) => render_custom(scratch()?, lang, &source, cfg)?,
+                let rendered = match &fence {
+                    Fence::Builtin(kind) => render_graph(scratch()?, *kind, &source, cfg),
+                    Fence::Custom(lang) => render_custom(scratch()?, lang, &source, cfg),
+                };
+                let png = match rendered {
+                    Ok(png) => png,
+                    // The block stays what it was written as: an ordinary code block.
+                    Err(CrateError::ExternalToolFailed { .. } | CrateError::MissingExternalCLI { .. })
+                        if cfg.graphs.on_failure == DiagramFailure::KeepAsCode =>
+                    {
+                        continue;
+                    }
+                    Err(e) => return Err(e),
                 };
                 let dest = png.to_string_lossy().into_owned();
                 (
@@ -337,7 +409,10 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
                 .collect();
             text.push('\n');
             text.push_str(blank.trim_end());
-            text.push('\n');
+            // The source's own newline completes the blank line, unless the range took it.
+            if markdown[range.clone()].ends_with('\n') {
+                text.push('\n');
+            }
         }
         replacements.push((range, text));
         assets.insert(dest, asset);
@@ -352,6 +427,7 @@ pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     Ok(Preprocessed {
         markdown: out,
         assets,
+        meta,
         _workspace: workspace,
     })
 }

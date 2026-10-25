@@ -200,7 +200,7 @@ fn a_huge_single_paragraph_block_is_fine() {
         Err(silvercity_oss::CrateError::LimitExceeded(m)) if m.contains("max_elements")
     ));
     // ...while a still very long one fits.
-    let fits = "let x = 1;\n".repeat(40_000);
+    let fits = "let x = 1;\n".repeat(25_000);
     assert!(markdown_to_docx(&fenced(fits.trim_end()), &u).is_ok());
     let more = "a\n".repeat(1_000_000);
     assert!(matches!(

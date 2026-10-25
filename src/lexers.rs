@@ -1109,10 +1109,10 @@ fn generic(g: &Grammar, src: &str) -> Vec<Span> {
             continue;
         }
         // directives such as `#include` count as keywords
-        if c == '#' && g.keywords.iter().any(|k| k.starts_with('#') && rest.starts_with(k)) {
-            let word: String = rest
-                .chars()
-                .take_while(|ch| ch.is_alphanumeric() || *ch == '#')
+        if c == '#' && at_line_start && g.keywords.iter().any(|k| k.starts_with('#')) {
+            // At most a directive's length is read: `#` followed by a long run must stay cheap.
+            let word: String = std::iter::once('#')
+                .chain(rest[1..].chars().take_while(|ch| ch.is_ascii_alphabetic()).take(12))
                 .collect();
             if in_list(g.keywords, &word, false) {
                 out.push(Span::new(i, i + word.len(), C::Keyword));
@@ -1674,8 +1674,36 @@ mod tests {
     #[test]
     fn running_time_is_linear_on_adversarial_input() {
         let unit_sets: &[&str] = &[
-            "\"", "'", "`", "/*", "//", "<!--", "<a ", "\"\"\"", "r#\"", "$", "${", "@", "#", "[", "{", "\\", "e+",
-            "0x", ".5", "&", "<", "a:", "a=", "-", "+",
+            "\"",
+            "'",
+            "`",
+            "/*",
+            "//",
+            "<!--",
+            "<a ",
+            "\"\"\"",
+            "r#\"",
+            "$",
+            "${",
+            "@",
+            "#",
+            "[",
+            "{",
+            "\\",
+            "e+",
+            "0x",
+            ".5",
+            "&",
+            "<",
+            "a:",
+            "a=",
+            "-",
+            "+",
+            "#if",
+            "#include",
+            "\n#define",
+            "#ifdef#",
+            "\n#",
         ];
         for unit in unit_sets {
             let src = unit.repeat(50_000 / unit.len());

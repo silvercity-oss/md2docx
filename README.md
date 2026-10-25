@@ -85,6 +85,14 @@ let cfg = Config::untrusted()
   Light+/Dark+ themes, or your own `Highlighter` (a closure works) for anything else. How
   to plug in `syntect` or `tree-sitter` for better accuracy, with tested code, is in
   [docs/highlighting.md](docs/highlighting.md).
+* **Errors by cause.** `CrateError::is_input_error()` is true when the document itself is at
+  fault (malformed, over a limit, forbidden): show that to the author. Missing tools, bad
+  configuration and I/O are the operator's. A renderer that rejects a diagram is
+  `ExternalToolFailed`, which can be either; set `GraphOptions::on_failure =
+  DiagramFailure::KeepAsCode` (`--keep-failed-diagrams`) to keep such blocks as code instead of
+  failing, which is usually what a service wants for other people's documents.
+* **Document properties and page numbers.** `DocumentOptions::{title, author, page_numbers}`;
+  `title:` and `author:` in the front matter are used when the options are unset.
 * `DocumentOptions` also sets `code_background`, `link_color` and
   `quote_bar_color`.
 * `Config::with_compression_level(0..=9)` sets how the finished `.docx` is
@@ -257,9 +265,15 @@ line number. (Formulas with unbalanced `{}` are not recognised as math by
 | Images | Local PNG/JPEG/GIF (Markdown `![]()` or HTML `<img>` with `width=`) scaled to the text width, subject to the image policy; SVG, WebP and corrupt images, and all remote or `data:` images become `[alt text]` (nothing is fetched) |
 | `$..$` / `$$..$$` math, `mermaid` / `dolphin` fences | See above |
 
-Not supported: HTML `<a href>` links (their text is kept), bare-URL autolinking, wiki links,
-super/subscript via `^x^`/`~x~` (use `<sup>`/`<sub>`), `<table>` layout (cell text
-is kept), math inside footnotes (shown as source text).
+Internal links: `[text](#heading-slug)` jumps to that heading (GitHub-style slugs, `{#id}`
+respected, repeated headings numbered `-1`, `-2`; a link to a heading that does not exist stays
+plain text; links inside footnotes stay text).
+
+Not supported: bare-URL autolinking, wiki links, super/subscript via `^x^`/`~x~` (use
+`<sup>`/`<sub>`), tables inside footnotes (dropped), math inside footnotes (shown as source text),
+anchors from raw HTML (`<a href="#x">` stays text, `<a name>` is ignored), a table of contents,
+reference `.docx` templates, heading numbering and content-based table column widths (columns
+are equal). Code blocks can be highlighted, see "Extending it".
 
 ### Raw HTML
 
@@ -308,6 +322,8 @@ md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppetee
 | `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
 | `--code-blocks <lines\|single>` | Code block layout: a paragraph per line (default) or one paragraph per block, easy to select and copy |
 | `--compression-level <0-9>` | Deflate level of the `.docx`: 0 stores it, 9 is smallest (default 6) |
+| `--highlight none\|light\|dark` | Syntax-highlight code blocks (VS Code Light+/Dark+ colours; default `none`) |
+| `--keep-failed-diagrams` | A `mermaid`/`dolphin` block that cannot be rendered (tool missing, invalid diagram) stays a code block instead of failing the conversion |
 
 Note the CLI defaults to `native` math while the library's `Config::default()`
 uses `ImageFallback`; use `Config::native_math()` for the safe mode. On Windows,
@@ -353,7 +369,7 @@ TeX install; (3) the scratch directory is private, size-capped and deleted.
 | Image decompression bombs | Pixel-count check on the header before any decode, decoder allocation ceiling, per-file and total byte budgets |
 | Control characters in text (make Word call the file corrupt) | Stripped from all input; the XML is checked well-formed in tests |
 | Huge input, many blocks, footnote amplification | `Limits`: input size, number of diagrams/formulas, formula and diagram size, image and workspace bytes, footnote expansion, and `max_elements` (paragraphs, runs, cells and lists built, 60 000 untrusted: building 1M paragraphs peaked above 7 GiB before this limit existed) |
-| Small input that expands into a huge `.docx` (about 40x as XML: 1 MB of code lines is 39 MB before compression) | `Limits::max_uncompressed_bytes` (memory, checked before packaging: 1 GiB default, 256 MiB untrusted) and `Limits::max_output_bytes` (the finished compressed file, enforced exactly while it is written: 256 MiB default, **50 MiB in `Config::untrusted()`**) |
+| Small input that expands into a huge `.docx` (about 40x as XML: 1 MB of code lines is 39 MB before compression) | `Limits::max_uncompressed_bytes` (the size readers must parse, checked before packaging: 1 GiB default, 64 MiB untrusted; building memory is bounded by `max_elements`) and `Limits::max_output_bytes` (the finished compressed file, enforced exactly while it is written: 256 MiB default, **50 MiB in `Config::untrusted()`**) |
 | A renderer that hangs, floods output, fills the disk or leaves helpers behind | Per-tool timeout and a total tool-time budget per document, 1 MiB console cap, scratch-directory cap (also checked after the tool exits), output-file cap; on Unix the whole process group is killed (so Chrome behind `mmdc` does not linger) |
 | Active or unsafe raw HTML (`<script>`, `<a href=javascript:>`, `onclick=`, `<iframe>`, `<object>`, `<svg onload>`, `<form>`...) | HTML is an **allowlist** (see "Raw HTML"): only the listed tags have an effect, attributes are not interpreted beyond the listed ones, scripts/styles/iframes/objects are dropped with their content, and no HTML is ever copied into the document as markup. `<a href>` becomes a link only for `http`/`https`/`mailto`, and not at all with `--untrusted` |
 | `---` blocks mid-document silently deleted as "front matter" | Front matter is only recognised at the very start and only if it looks like metadata |

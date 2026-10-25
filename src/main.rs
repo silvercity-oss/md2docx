@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 use silvercity_oss::{
-    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, Highlighting, ImageAccess as LibImageAccess,
-    MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Theme,
+    markdown_file_to_docx, CodeBlockLayout, CommandSpec, Config, DiagramFailure, Highlighting,
+    ImageAccess as LibImageAccess, MathImageEngine, MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, Theme,
 };
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +152,12 @@ pub struct Args {
 
     #[arg(
         long,
+        help = "If a mermaid/dolphin block cannot be rendered (tool missing, invalid diagram), keep it as a code block instead of failing"
+    )]
+    pub keep_failed_diagrams: bool,
+
+    #[arg(
+        long,
         value_enum,
         default_value_t = CodeBlocks::Lines,
         help = "Code block layout: one paragraph per line, or the whole block as one paragraph (triple-click selects it)"
@@ -179,7 +185,7 @@ fn parse_command(template: &str) -> Result<CommandSpec, String> {
     if !mentions("{input}") || !mentions("{output}") {
         return Err("command must contain both {input} and {output} placeholders".into());
     }
-    Ok(CommandSpec { program, args })
+    Ok(CommandSpec::new(program, args))
 }
 
 fn config(args: &Args) -> Config {
@@ -217,6 +223,9 @@ fn config(args: &Args) -> Config {
         cfg
     };
     cfg.compression_level = args.compression_level;
+    if args.keep_failed_diagrams {
+        cfg.graphs.on_failure = DiagramFailure::KeepAsCode;
+    }
     cfg.highlighting = match args.highlight {
         Highlight::None => None,
         Highlight::Light => Some(Highlighting::new(Theme::vscode_light())),
@@ -269,14 +278,22 @@ fn write_atomically(out: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
     };
-    let mut tmp = tempfile::Builder::new().prefix(".md2docx-").tempfile_in(dir)?;
-    tmp.write_all(bytes)?;
-    tmp.flush()?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".md2docx-");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // A temporary file is private (0600); a document is meant to be read.
-        tmp.as_file().set_permissions(std::fs::Permissions::from_mode(0o644))?;
+        // What `File::create` would give: 0666 less the process umask.
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let mut tmp = builder.tempfile_in(dir)?;
+    tmp.write_all(bytes)?;
+    tmp.flush()?;
+    // Replacing an existing file keeps its permissions (a 0600 document stays 0600).
+    if let Ok(existing) = std::fs::metadata(out) {
+        if existing.is_file() {
+            tmp.as_file().set_permissions(existing.permissions())?;
+        }
     }
     tmp.persist(out).map_err(|e| e.error)?;
     Ok(())

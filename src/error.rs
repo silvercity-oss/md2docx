@@ -59,6 +59,21 @@ pub enum CrateError {
 }
 
 impl CrateError {
+    /// True when the document itself is at fault (malformed, too big, or forbidden by the
+    /// security policy): report it to whoever wrote the Markdown. False for problems on the
+    /// operator's side (a missing tool, a bad [`Config`](crate::Config), I/O).
+    ///
+    /// [`CrateError::ExternalToolFailed`] is `false` because it is ambiguous: a renderer can
+    /// reject a user's diagram text or be broken itself. Set
+    /// [`GraphOptions::on_failure`](crate::GraphOptions) to
+    /// [`DiagramFailure::KeepAsCode`](crate::DiagramFailure) to keep such blocks as code instead.
+    pub fn is_input_error(&self) -> bool {
+        matches!(
+            self,
+            CrateError::InvalidMarkdown(_) | CrateError::LimitExceeded(_) | CrateError::UnsafeContent(_)
+        )
+    }
+
     pub(crate) fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
         CrateError::Io {
             path: path.into(),
@@ -80,7 +95,7 @@ pub(crate) fn install_hint(program: &str) -> &'static str {
         .or_else(|| base.strip_suffix(".bat"))
         .unwrap_or(base);
     match name {
-        "merman-cli" => "; install it with `cargo install merman-cli`, or use the `mmdc` engine instead",
+        "merman-cli" => "; install it with `cargo install merman-cli` (for your own documents, the `mmdc` engine is the alternative)",
         "mmdc" => "; install it with `npm install -g @mermaid-js/mermaid-cli`, or use the `merman` engine instead",
         "latex" | "dvipng" => {
             "; install a TeX distribution (TeX Live: texlive-latex-base and dvipng), or use native math"

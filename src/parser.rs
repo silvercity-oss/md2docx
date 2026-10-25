@@ -8,12 +8,13 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use docx_rs::{
-    AbstractNumbering, AlignmentType, BorderType, BreakType, Docx, Footnote, Hyperlink, HyperlinkType, IndentLevel,
-    Level, LevelJc, LevelOverride, LevelText, LineSpacing, NumberFormat, Numbering, NumberingId, PageMargin, Paragraph,
-    ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Pic, Run, RunFonts, Shading, SpecialIndentType, Start,
-    Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
+    AbstractNumbering, AlignmentType, BorderType, BreakType, Docx, Footer, Footnote, Hyperlink, HyperlinkType,
+    IndentLevel, Level, LevelJc, LevelOverride, LevelText, LineSpacing, NumberFormat, Numbering, NumberingId,
+    PageMargin, PageNum, Paragraph, ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Pic, Run, RunFonts,
+    Shading, SpecialIndentType, Start, Style, StyleType, Table, TableCell, TableRow, VertAlignType, WidthType,
 };
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
@@ -136,8 +137,16 @@ fn base_docx(o: &crate::config::DocumentOptions, g: &Geometry) -> Docx {
         Style::new("CodeBlock", StyleType::Paragraph)
             .name("Code Block")
             .fonts(fonts(&o.code_font))
-            .size(19),
+            .size(19)
+            // Lines of one block sit directly under each other, with no gap.
+            .line_spacing(LineSpacing::new().before(0).after(0)),
     )
+    .add_style({
+        // The small raised number in the text, and in front of the note itself.
+        let mut style = Style::new("FootnoteReference", StyleType::Character).name("footnote reference");
+        style.run_property = style.run_property.vert_align(VertAlignType::SuperScript);
+        style
+    })
 }
 
 fn numbering_definitions() -> (AbstractNumbering, AbstractNumbering) {
@@ -279,6 +288,12 @@ struct Builder<'a> {
     sub: usize,
     mono: usize,
     def_depth: usize,
+    /// Headings by anchor: `#slug` links resolve to the number of the heading's bookmark.
+    anchors: Arc<HashMap<String, usize>>,
+    /// Markdown headings started so far (the bookmark numbers).
+    next_heading: usize,
+    /// The heading whose paragraph is being built, if any.
+    cur_heading: Option<usize>,
     /// HTML tables that were open when a Markdown table started inside one of their cells.
     outer_tables: Vec<TableState>,
     /// Custom HTML tags (from `Config::html_tags`) currently open, outermost first.
@@ -387,6 +402,135 @@ fn code_line_runs(
     }
     *next_span = k;
     runs
+}
+
+/// What a link points at.
+enum LinkTarget {
+    /// An external address (already checked against the scheme allowlist).
+    External(String),
+    /// The heading with this number, by bookmark.
+    Heading(usize),
+}
+
+/// Bookmark names must start with a letter and contain no spaces or hyphens.
+fn bookmark_name(heading: usize) -> String {
+    format!("md_h{heading}")
+}
+
+/// GitHub's heading anchors: lower case, spaces to hyphens, punctuation dropped.
+fn github_slug(text: &str) -> String {
+    text.trim()
+        .to_lowercase()
+        .chars()
+        .filter_map(|c| match c {
+            ' ' | '-' => Some('-'),
+            '_' => Some('_'),
+            c if c.is_alphanumeric() => Some(c),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Anchor name -> number of the heading, for every Markdown heading outside footnotes, in
+/// document order. An explicit `{#id}` is used as written; repeated names get `-1`, `-2`...
+fn heading_anchors(markdown: &str) -> HashMap<String, usize> {
+    let mut anchors = HashMap::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut in_definition = false;
+    let mut open: Option<(Option<String>, String)> = None;
+    let mut number = 0;
+    for event in TextMergeStream::new(Parser::new_ext(markdown, markdown_options(false))) {
+        match event {
+            Event::Start(Tag::FootnoteDefinition(_)) => in_definition = true,
+            Event::End(TagEnd::FootnoteDefinition) => in_definition = false,
+            _ if in_definition => {}
+            Event::Start(Tag::Heading { id, .. }) => open = Some((id.map(|i| i.to_string()), String::new())),
+            Event::Text(t) | Event::Code(t) => {
+                if let Some((_, text)) = open.as_mut() {
+                    text.push_str(&t);
+                }
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if let Some((id, text)) = open.take() {
+                    let base: String = id.unwrap_or_else(|| github_slug(&text)).chars().take(200).collect();
+                    let times = seen.entry(base.clone()).or_insert(0);
+                    let name = if *times == 0 { base } else { format!("{base}-{times}") };
+                    *times += 1;
+                    anchors.entry(name).or_insert(number);
+                    number += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    anchors
+}
+
+/// Put the footnote number in front of each note's first paragraph (docx-rs writes none, so
+/// Word would show the note text without its number).
+fn add_footnote_marks(xml: Vec<u8>) -> Vec<u8> {
+    const MARK: &str = "<w:r><w:rPr><w:rStyle w:val=\"FootnoteReference\"/></w:rPr><w:footnoteRef/></w:r>\
+                        <w:r><w:t xml:space=\"preserve\"> </w:t></w:r>";
+    let Ok(text) = String::from_utf8(xml.clone()) else {
+        return xml;
+    };
+    let mut out = String::with_capacity(text.len() + 256);
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find("<w:footnote ") {
+        let (head, tail) = rest.split_at(at);
+        out.push_str(head);
+        let note_end = tail.find("</w:footnote>").unwrap_or(tail.len());
+        let note = &tail[..note_end];
+        // After the first paragraph's opening tag and its properties.
+        let insert_at = note.find("<w:p ").and_then(|p| {
+            let open_end = p + note[p..].find('>')? + 1;
+            let after_props = if note[open_end..].starts_with("<w:pPr>") {
+                open_end + note[open_end..].find("</w:pPr>")? + "</w:pPr>".len()
+            } else {
+                open_end
+            };
+            Some(after_props)
+        });
+        match insert_at {
+            Some(i) if !note.contains("w:type=") => {
+                out.push_str(&note[..i]);
+                out.push_str(MARK);
+                out.push_str(&note[i..]);
+            }
+            _ => out.push_str(note),
+        }
+        rest = &tail[note_end..];
+    }
+    out.push_str(rest);
+    out.into_bytes()
+}
+
+/// `YYYY-MM-DDThh:mm:ssZ` for the current time (UTC), without a date library.
+fn now_rfc3339() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+fn xml_text(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 fn marker(nonce: &str, slot: usize) -> String {
@@ -515,6 +659,9 @@ impl<'a> Builder<'a> {
             sub: 0,
             mono: 0,
             def_depth: 0,
+            anchors: Arc::new(HashMap::new()),
+            next_heading: 0,
+            cur_heading: None,
             outer_tables: Vec::new(),
             custom_open: Vec::new(),
             elements: 0,
@@ -642,6 +789,11 @@ impl<'a> Builder<'a> {
         }
         let Some(children) = self.cur.take() else { return };
         let kind = std::mem::replace(&mut self.kind, ParaKind::Normal);
+        let heading = if matches!(kind, ParaKind::Heading(_)) {
+            self.cur_heading.take()
+        } else {
+            None
+        };
         if children.is_empty() {
             return;
         }
@@ -665,6 +817,9 @@ impl<'a> Builder<'a> {
         let mut p = Paragraph::new();
         if let ParaKind::Heading(n) = kind {
             p = p.style(&format!("Heading{n}"));
+        }
+        if let Some(n) = heading {
+            p = p.add_bookmark_start(n, bookmark_name(n));
         }
 
         let mut task = None;
@@ -697,6 +852,9 @@ impl<'a> Builder<'a> {
             for c in children {
                 p = self.attach(p, c);
             }
+        }
+        if let Some(n) = heading {
+            p = p.add_bookmark_end(n);
         }
         if centred {
             p = p.align(AlignmentType::Center);
@@ -837,9 +995,28 @@ impl<'a> Builder<'a> {
             (_, q) if q > 0 => Some(indent_twips(360usize.saturating_mul(q))),
             _ => None,
         };
+        // A thin frame when the theme asks for one (a white background would not show otherwise);
+        // neighbouring paragraphs with equal borders are drawn as one box.
+        let frame = theme.and_then(|t| t.border.as_deref());
         let new_paragraph = || {
             let mut p = Paragraph::new().style("CodeBlock");
             p.property = p.property.shading(Shading::new().fill(fill));
+            if let Some(color) = frame {
+                let side = |position| {
+                    ParagraphBorder::new(position)
+                        .val(BorderType::Single)
+                        .size(4)
+                        .space(4)
+                        .color(color)
+                };
+                p.property = p.property.set_borders(
+                    ParagraphBorders::with_empty()
+                        .set(side(ParagraphBorderPosition::Top))
+                        .set(side(ParagraphBorderPosition::Left))
+                        .set(side(ParagraphBorderPosition::Bottom))
+                        .set(side(ParagraphBorderPosition::Right)),
+                );
+            }
             if let Some(l) = left {
                 p = p.indent(Some(l), None, None, None);
             }
@@ -879,9 +1056,11 @@ impl<'a> Builder<'a> {
                         break;
                     }
                     let mut p = new_paragraph();
-                    let mut count = chunk.len() / 16;
+                    let mut count = 0;
                     for (i, range) in chunk.iter().enumerate() {
                         if i > 0 {
+                            // Every line break is a run of its own.
+                            count += 1;
                             p = p.add_run(Run::new().add_break(BreakType::TextWrapping));
                         }
                         let runs = code_line_runs(body, *range, &spans, &mut next_span, theme);
@@ -894,6 +1073,14 @@ impl<'a> Builder<'a> {
                     self.emit(p);
                 }
             }
+        }
+        // A thin empty paragraph, so a following code block is a box of its own instead of
+        // merging with this one, and prose after the block has a gap.
+        if self.budget_error.is_none() {
+            let spacer = Paragraph::new()
+                .line_spacing(LineSpacing::new().before(0).after(0))
+                .run_property(docx_rs::RunProperty::new().size(8));
+            self.emit(spacer);
         }
     }
 
@@ -1258,7 +1445,7 @@ impl<'a> Builder<'a> {
     fn close_html_link(&mut self) {
         self.html_link = false;
         if let Some(link) = self.link.take() {
-            self.finish_link(link.url, link.children);
+            self.finish_link(LinkTarget::External(link.url), link.children);
         }
     }
 
@@ -1384,6 +1571,7 @@ impl<'a> Builder<'a> {
         }
         let mut sub = Builder::new(self.pre, self.cfg, self.nonce.clone());
         sub.in_footnote = true;
+        sub.anchors = Arc::clone(&self.anchors);
         sub.elements = self.elements;
         for ev in events {
             sub.feed(ev)?;
@@ -1523,6 +1711,11 @@ impl<'a> Builder<'a> {
                     HeadingLevel::H6 => 6,
                 };
                 self.start_para(ParaKind::Heading(n));
+                self.cur_heading = None;
+                if !self.in_footnote {
+                    self.cur_heading = Some(self.next_heading);
+                    self.next_heading += 1;
+                }
             }
             Tag::BlockQuote(kind) => {
                 self.flush();
@@ -1669,8 +1862,14 @@ impl<'a> Builder<'a> {
             TagEnd::Strikethrough => self.strike = self.strike.saturating_sub(1),
             TagEnd::Link => {
                 if let Some(link) = self.link.take() {
+                    // `[x](#some-heading)` jumps to that heading.
+                    let heading = link.url.strip_prefix('#').and_then(|f| self.heading_for(f));
+                    if let (Some(n), false) = (heading, self.in_footnote) {
+                        self.finish_link(LinkTarget::Heading(n), link.children);
+                        return Ok(());
+                    }
                     match safe_link(&link.url, &self.cfg.allowed_link_schemes) {
-                        Some(url) => self.finish_link(url, link.children),
+                        Some(url) => self.finish_link(LinkTarget::External(url), link.children),
                         // Not an allowed destination: keep the visible text, drop the target.
                         None => {
                             for c in link.children {
@@ -1697,7 +1896,16 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    fn finish_link(&mut self, url: String, children: Vec<Child>) {
+    /// The number of the heading that the anchor `fragment` (percent-encoded) names.
+    fn heading_for(&self, fragment: &str) -> Option<usize> {
+        let decoded = percent_encoding::percent_decode_str(fragment).decode_utf8_lossy();
+        self.anchors
+            .get(decoded.as_ref())
+            .or_else(|| self.anchors.get(&decoded.to_lowercase()))
+            .copied()
+    }
+
+    fn finish_link(&mut self, target: LinkTarget, children: Vec<Child>) {
         if self.in_footnote {
             // footnotes.xml has no relationships part here, so a hyperlink would point at a
             // relationship id that does not exist and make the package invalid. Keep the
@@ -1710,7 +1918,10 @@ impl<'a> Builder<'a> {
             }
             return;
         }
-        let mut h = Hyperlink::new(url, HyperlinkType::External);
+        let mut h = match target {
+            LinkTarget::External(url) => Hyperlink::new(url, HyperlinkType::External),
+            LinkTarget::Heading(n) => Hyperlink::new(bookmark_name(n), HyperlinkType::Anchor),
+        };
         let mut loose = Vec::new();
         for c in children {
             match c {
@@ -1863,6 +2074,7 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
     let nonce = crate::renderer::asset_stem("", &[pre.markdown.as_bytes()]).replace('_', "");
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown);
+    b.anchors = Arc::new(heading_anchors(&pre.markdown));
 
     let mut in_definition = false;
     // Adjacent text events (escapes, entities, stray delimiters) become one run, not one each.
@@ -1883,7 +2095,10 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
     b.finish_html();
 
     let (bullets, ordered) = numbering_definitions();
+    let now = now_rfc3339();
     let mut docx = base_docx(&cfg.document, &b.geo)
+        .created_at(&now)
+        .updated_at(&now)
         .add_abstract_numbering(bullets)
         .add_abstract_numbering(ordered)
         .add_numbering(Numbering::new(BULLET_NUM_ID, BULLET_ABSTRACT_ID));
@@ -1897,7 +2112,44 @@ pub fn build_docx<W: std::io::Write + std::io::Seek>(pre: &Preprocessed, cfg: &C
         };
     }
 
+    if cfg.document.page_numbers {
+        docx = docx.footer(
+            Footer::new().add_paragraph(
+                Paragraph::new()
+                    .align(AlignmentType::Center)
+                    .add_page_num(PageNum::new()),
+            ),
+        );
+    }
+
     let mut parts = docx.build();
+    parts.footnotes = add_footnote_marks(std::mem::take(&mut parts.footnotes));
+    let (front_title, front_author) = pre.meta.clone();
+    let title = cfg.document.title.clone().or(front_title);
+    let author = cfg.document.author.clone().or(front_author);
+    if title.is_some() || author.is_some() {
+        if let Ok(mut core) = String::from_utf8(std::mem::take(&mut parts.doc_props.core)) {
+            if let Some(a) = &author {
+                let a = xml_text(a);
+                core = core
+                    .replace(
+                        "<dc:creator>unknown</dc:creator>",
+                        &format!("<dc:creator>{a}</dc:creator>"),
+                    )
+                    .replace(
+                        "<cp:lastModifiedBy>unknown</cp:lastModifiedBy>",
+                        &format!("<cp:lastModifiedBy>{a}</cp:lastModifiedBy>"),
+                    );
+            }
+            if let Some(t) = &title {
+                core = core.replace(
+                    "<dc:creator>",
+                    &format!("<dc:title>{}</dc:title><dc:creator>", xml_text(t)),
+                );
+            }
+            parts.doc_props.core = core.into_bytes();
+        }
+    }
     if !b.omml.is_empty() {
         debug_assert!(cfg.math.mode == MathMode::NativeOmml);
         let xml = String::from_utf8(std::mem::take(&mut parts.document))
@@ -1927,6 +2179,16 @@ mod tests {
         png.extend_from_slice(&h.to_be_bytes());
         png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
         png
+    }
+
+    #[test]
+    fn indents_never_overflow_or_exceed_the_widest_page() {
+        for n in [0, 1, 1440, 31_680, 31_681, usize::MAX / 2, usize::MAX] {
+            let v = indent_twips(n);
+            assert!((0..=31_680).contains(&v), "{n} -> {v}");
+        }
+        assert_eq!(indent_twips(720), 720);
+        assert_eq!(indent_twips(360usize.saturating_mul(6_000_000)), 31_680);
     }
 
     #[test]

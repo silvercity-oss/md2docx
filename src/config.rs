@@ -29,6 +29,7 @@ pub enum MathMode {
 /// * `{dpi}`    – target resolution (from [`MathOptions::dpi`] / [`GraphOptions::dpi`])
 /// * `{display}` – `1` for display math, `0` for inline math (math only)
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CommandSpec {
     /// Executable name or path.
     pub program: String,
@@ -96,6 +97,18 @@ impl Default for MathOptions {
 
 /// Hard ceilings that keep one document from exhausting memory, disk or time.
 /// Exceeding any of them is a [`CrateError::LimitExceeded`](crate::CrateError).
+///
+/// The struct is `#[non_exhaustive]`, so change a preset's limits by assigning to its fields
+/// (a struct literal with `..Limits::default()` does not compile outside this crate):
+///
+/// ```
+/// use silvercity_oss::Config;
+///
+/// let mut cfg = Config::untrusted();
+/// cfg.limits.max_input_bytes = 512 * 1024;
+/// cfg.limits.max_elements = 20_000;
+/// assert!(cfg.validate().is_ok());
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Limits {
@@ -222,10 +235,26 @@ impl MermaidEngine {
     }
 }
 
+/// What happens when a fenced block's renderer fails: the tool is missing, rejects the
+/// diagram text, times out, or a registered [`FenceRenderer`](crate::FenceRenderer) errors.
+/// Limit errors ([`CrateError::LimitExceeded`](crate::CrateError)) are never softened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum DiagramFailure {
+    /// The conversion fails with the renderer's error (default): nothing is hidden.
+    #[default]
+    Error,
+    /// The block stays an ordinary code block and the conversion carries on. Good for
+    /// documents from other people, where one bad diagram should not lose the rest.
+    KeepAsCode,
+}
+
 /// How diagrams are rendered.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct GraphOptions {
+    /// What to do when a block's renderer fails (default: fail the conversion).
+    pub on_failure: DiagramFailure,
     /// Render `mermaid`/`dolphin` fences. When `false` they stay ordinary code
     /// blocks and no diagram tool is ever started.
     pub enabled: bool,
@@ -269,6 +298,7 @@ impl GraphOptions {
 impl Default for GraphOptions {
     fn default() -> Self {
         GraphOptions {
+            on_failure: DiagramFailure::default(),
             enabled: true,
             hardened: false,
             mermaid: MermaidEngine::default().command(),
@@ -354,6 +384,14 @@ pub struct DocumentOptions {
     pub quote_bar_color: String,
     /// Layout of code blocks (default one paragraph per line).
     pub code_blocks: CodeBlockLayout,
+    /// Show the page number, centred in the footer (default off).
+    pub page_numbers: bool,
+    /// Document title for the file's properties. Falls back to `title:` in the
+    /// document's front matter. At most 200 printable characters.
+    pub title: Option<String>,
+    /// Document author for the file's properties. Falls back to `author:` in the front
+    /// matter; otherwise "unknown". At most 200 printable characters.
+    pub author: Option<String>,
 }
 
 impl Default for DocumentOptions {
@@ -369,6 +407,9 @@ impl Default for DocumentOptions {
             link_color: "0563C1".into(),
             quote_bar_color: "A6A6A6".into(),
             code_blocks: CodeBlockLayout::default(),
+            page_numbers: false,
+            title: None,
+            author: None,
         }
     }
 }
@@ -400,6 +441,13 @@ impl DocumentOptions {
                 || font.chars().any(|c| c.is_control() || !crate::safety::is_xml_char(c))
             {
                 return Err(format!("{what} must be 1 to 64 printable characters"));
+            }
+        }
+        for (what, value) in [("title", &self.title), ("author", &self.author)] {
+            if let Some(v) = value {
+                if v.chars().count() > 200 || v.chars().any(|c| c.is_control() || !crate::safety::is_xml_char(c)) {
+                    return Err(format!("{what} must be at most 200 printable characters"));
+                }
             }
         }
         for (what, value) in [

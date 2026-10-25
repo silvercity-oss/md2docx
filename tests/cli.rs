@@ -474,3 +474,37 @@ fn highlight_flag() {
     let (run, _) = doc(&["--highlight", "neon"]);
     assert_eq!(run.status.code(), Some(2));
 }
+
+#[cfg(unix)]
+#[test]
+fn output_permissions_follow_the_umask_and_existing_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("p.md");
+    std::fs::write(&input, "# p\n").unwrap();
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let run = |umask: &str, out: &Path| {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!("umask {umask}; exec \"$0\" \"$1\" -o \"$2\""))
+            .arg(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(&input)
+            .arg(out)
+            .output()
+            .unwrap()
+    };
+    // A new file: 0666 less the umask.
+    let fresh = dir.path().join("fresh.docx");
+    assert!(run("077", &fresh).status.success());
+    assert_eq!(mode(&fresh), 0o600);
+    let open = dir.path().join("open.docx");
+    assert!(run("022", &open).status.success());
+    assert_eq!(mode(&open), 0o644);
+    // An existing file keeps its permissions.
+    let private = dir.path().join("private.docx");
+    std::fs::write(&private, b"old").unwrap();
+    std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(run("022", &private).status.success());
+    assert_eq!(mode(&private), 0o600);
+    assert!(std::fs::read(&private).unwrap().starts_with(b"PK"));
+}
