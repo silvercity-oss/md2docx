@@ -12,6 +12,8 @@ pub enum HyperlinkData {
         rid: String,
         // path is writer only
         path: String,
+        /// A bookmark in the target document to land on.
+        anchor: Option<String>,
     },
     Anchor {
         anchor: String,
@@ -32,6 +34,7 @@ impl Hyperlink {
                 HyperlinkType::External => HyperlinkData::External {
                     rid: create_hyperlink_rid(generate_hyperlink_id()),
                     path: escape_owned(value.into()),
+                    anchor: None,
                 },
                 HyperlinkType::Anchor => HyperlinkData::Anchor { anchor: value.into() },
             }
@@ -41,6 +44,15 @@ impl Hyperlink {
             history: None,
             children: vec![],
         }
+    }
+
+    /// A link to another file that also names a bookmark in it.
+    pub fn external_with_anchor(value: impl Into<String>, anchor: impl Into<String>) -> Self {
+        let mut h = Hyperlink::new(value, HyperlinkType::External);
+        if let HyperlinkData::External { anchor: a, .. } = &mut h.link {
+            *a = Some(anchor.into());
+        }
+        h
     }
 
     pub fn add_run(mut self, run: Run) -> Self {
@@ -59,9 +71,13 @@ impl BuildXML for Hyperlink {
                 HyperlinkData::Anchor { ref anchor } => {
                     b.open_hyperlink(None, Some(anchor.clone()).as_ref(), Some(self.history.unwrap_or(1)))
                 }
-                HyperlinkData::External { ref rid, .. } => {
-                    b.open_hyperlink(Some(rid.clone()).as_ref(), None, Some(self.history.unwrap_or(1)))
-                }
+                HyperlinkData::External {
+                    ref rid, ref anchor, ..
+                } => b.open_hyperlink(
+                    Some(rid.clone()).as_ref(),
+                    anchor.as_ref(),
+                    Some(self.history.unwrap_or(1)),
+                ),
             })?
             .add_children(&self.children)?
             .close()?

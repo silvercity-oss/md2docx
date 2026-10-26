@@ -147,6 +147,14 @@ use std::time::{Duration, UNIX_EPOCH};
 let cfg = Config::default().with_timestamp(UNIX_EPOCH + Duration::from_secs(1_700_000_000));
 ```
 
+## Links
+
+A relative link is text unless you allow it. For documents you control, `Config::links`
+(`LinkOptions`) can make links to local files and folders, rewrite them to web addresses, and link
+documents converted together to each other; for documents you do not control, give the converter a
+`LinkResolver` that maps the links you accept to addresses you choose, without it ever touching the
+file system. See [links.md](links.md).
+
 ## Streams, async and blocking
 
 The conversion is synchronous and CPU-bound. In an async service run it where blocking is

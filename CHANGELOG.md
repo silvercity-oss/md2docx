@@ -100,7 +100,7 @@ First release.
   `GraphOptions::enabled` to `false`. `Config::native_math()` is documented as a trusted preset.
   The `md2docx` binary starts from `Config::trusted()`.
 - **Findings and strict mode.** `convert`, `convert_to_writer`, `convert_file` and `analyze` return
-  `Diagnostic`s (20 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
+  `Diagnostic`s (23 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
   `Config::loss_policy` (`LossPolicy::Allow` default, `Reject` = `CrateError::LossyContent`);
   `md2docx --strict`, with `file:line:column` output. See docs/diagnostics.md.
 - **Host-supplied images.** `ImageResolver` / `AssetMap` / `Config::with_image_resolver`: exact
@@ -139,6 +139,15 @@ First release.
   environment variables. `docs/containers.md` and a `Dockerfile` describe a locked-down worker.
 - **Reproducible output.** `DocumentOptions::timestamp` / `Config::with_timestamp` fix the file's
   created and modified time; `SOURCE_DATE_EPOCH` is honoured by the CLI.
+- **Links to files and folders.** For documents you trust, relative links can become working
+  hyperlinks: `--allow-links local|all`, written relative to the saved `.docx` or as `file:///`
+  addresses (`--link-style`), as web addresses (`--link-base`, `--link-tree-base`, `--link-map`),
+  and between documents (`--markdown-links docx|follow`, `--link-layout`, `--copy-linked`:
+  `file.md#heading` opens the converted document at that heading, and a whole tree of linked
+  Markdown files can be converted and copied together). Broken links and missing `#heading`s are
+  findings (`link.target-missing`, `link.outside-root`, `link.blocked`, `link.anchor-missing`), so
+  `--check --strict` doubles as a link checker. Library: `LinkOptions`, `LocalLinks`, `LinkStyle`,
+  `DocumentLayout`, `LinkResolver`, `Report::local_links`. Off by default; docs/links.md.
 - **Streams.** `convert_reader`, `analyze_reader` and `analyze_file`.
 - **Review fixes.** Footnotes: every note shows its number (also with a table or a line break),
   lists inside them are numbered and declared, they are built in linear time and honour the

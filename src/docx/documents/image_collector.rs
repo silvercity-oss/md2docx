@@ -193,7 +193,7 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
     }
 
     fn visit_hyperlink(&mut self, link: &crate::docx::Hyperlink) {
-        if let crate::docx::HyperlinkData::External { rid, path } = &link.link {
+        if let crate::docx::HyperlinkData::External { rid, path, .. } = &link.link {
             if self.seen_links.insert(rid.clone()) {
                 self.hyperlinks.push((rid.clone(), path.clone()));
             }

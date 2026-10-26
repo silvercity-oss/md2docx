@@ -7,7 +7,9 @@ use silvercity_oss::{
     MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, PageSize, TableOfContents, Theme,
 };
 
-use super::args::{Args, CodeBlocks, Highlight, ImageAccess, MathMode, MermaidEngine};
+use super::args::{
+    AllowLinks, Args, CodeBlocks, Highlight, ImageAccess, LinkStyle, MarkdownLinks, MathMode, MermaidEngine,
+};
 use super::exit::CliError;
 
 /// Longest per-tool timeout `--untrusted --diagrams` accepts (the preset's own).
@@ -142,6 +144,7 @@ pub fn config(args: &Args) -> Result<Config, CliError> {
         limits.max_conversion_time = Some(requested);
     }
 
+    links(args, &mut cfg)?;
     cfg.compression_level = args.compression_level;
     cfg.autolink_bare_urls = args.autolink;
     cfg.superscript_subscript = args.sup_sub;
@@ -220,6 +223,49 @@ pub fn config(args: &Args) -> Result<Config, CliError> {
     }
     cfg.validate().map_err(CliError::from)?;
     Ok(cfg)
+}
+
+/// The link options. Per-document parts (where this file is, where its `.docx` goes, the tree of
+/// documents) are filled in for each input by the runner.
+fn links(args: &Args, cfg: &mut Config) -> Result<(), CliError> {
+    let follows = args.markdown_links != MarkdownLinks::Keep;
+    let wants = args.link_root.is_some()
+        || args.link_base.is_some()
+        || args.link_tree_base.is_some()
+        || !args.link_map.is_empty()
+        || args.no_check_link_anchors
+        || args.copy_linked
+        || follows;
+    if args.untrusted && wants {
+        return Err(CliError::usage(
+            "--untrusted does not combine with the local-link options (they read the file system)",
+        ));
+    }
+    let local = match args.allow_links {
+        AllowLinks::Local => silvercity_oss::LocalLinks::Local,
+        AllowLinks::All => silvercity_oss::LocalLinks::All,
+        // Converting linked documents is a decision to follow local links.
+        AllowLinks::None if follows => silvercity_oss::LocalLinks::Local,
+        AllowLinks::None => silvercity_oss::LocalLinks::Off,
+    };
+    if wants && local == silvercity_oss::LocalLinks::Off {
+        return Err(CliError::usage("the link options need --allow-links local or all"));
+    }
+    if args.copy_linked && !follows {
+        return Err(CliError::usage("--copy-linked needs --markdown-links docx or follow"));
+    }
+    let o = &mut cfg.links;
+    o.local = local;
+    o.root = args.link_root.clone();
+    o.style = match args.link_style {
+        LinkStyle::Rebased => silvercity_oss::LinkStyle::Rebased,
+        LinkStyle::Absolute => silvercity_oss::LinkStyle::Absolute,
+    };
+    o.base_url = args.link_base.clone();
+    o.dir_base_url = args.link_tree_base.clone();
+    o.rewrites = args.link_map.clone();
+    o.check_anchors = !args.no_check_link_anchors;
+    Ok(())
 }
 
 /// `--untrusted --diagrams`: with the `mermaid` feature the diagrams are rendered inside this

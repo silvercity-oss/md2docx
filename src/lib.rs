@@ -108,6 +108,7 @@ mod highlight;
 mod html;
 mod images;
 mod lexers;
+mod links;
 #[cfg(feature = "mermaid")]
 pub mod mermaid;
 pub mod omml;
@@ -141,6 +142,9 @@ pub use extend::{
     AssetMap, BlockStyle, FenceError, FenceRenderer, FenceRenderers, ImageResolver, RenderContext, TagStyle,
 };
 pub use highlight::{BuiltinHighlighter, Highlighter, Highlighting, Span, Theme, TokenClass, TokenStyle};
+pub use links::{
+    DocumentLayout, LinkDecision, LinkOptions, LinkRequest, LinkResolver, LinkStyle, LocalLink, LocalLinks,
+};
 pub use renderer::sweep_scratch;
 pub use template::ReferenceDocx;
 
@@ -155,6 +159,8 @@ pub struct Conversion {
     pub diagnostics: Vec<Diagnostic>,
     /// What was produced, for cross-checking against a preview.
     pub stats: Stats,
+    /// Files and directories on disk the document links to; see [`Report::local_links`].
+    pub local_links: Vec<LocalLink>,
 }
 
 /// Convert Markdown text to the bytes of a `.docx` file.
@@ -190,6 +196,7 @@ pub fn convert(markdown: &str, config: &Config) -> Result<Conversion> {
         docx: out.into_inner(),
         diagnostics: report.diagnostics,
         stats: report.stats,
+        local_links: report.local_links,
     })
 }
 
@@ -256,12 +263,16 @@ fn read_markdown_file(path: &Path, config: &Config) -> Result<(String, Config)> 
     let text = String::from_utf8(bytes)
         .map_err(|_| CrateError::InvalidMarkdown(format!("{} is not valid UTF-8", path.display())))?;
     let mut cfg = config.clone();
+    // A bare file name has the empty path as its parent: that means the current directory.
+    let dir = path
+        .parent()
+        .map(|p| if p.as_os_str().is_empty() { Path::new(".") } else { p })
+        .map(Path::to_path_buf);
     if cfg.base_dir.is_none() {
-        // A bare file name has the empty path as its parent: that means the current directory.
-        cfg.base_dir = path
-            .parent()
-            .map(|p| if p.as_os_str().is_empty() { Path::new(".") } else { p })
-            .map(Path::to_path_buf);
+        cfg.base_dir = dir.clone();
+    }
+    if cfg.links.source_dir.is_none() {
+        cfg.links.source_dir = dir;
     }
     Ok((text, cfg))
 }

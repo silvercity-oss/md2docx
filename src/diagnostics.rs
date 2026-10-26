@@ -84,6 +84,12 @@ codes! {
     LinkAnchorMissing => ("link.anchor-missing", Warning, "a link points at a heading anchor that does not exist"),
     /// A link target was shortened to make it safe (a `mailto:` field outside the allow-list).
     LinkModified => ("link.modified", Warning, "a link target was shortened: parts of it are not allowed"),
+    /// A relative link names a file or directory that does not exist.
+    LinkTargetMissing => ("link.target-missing", Warning, "a link names a file or directory that does not exist"),
+    /// A relative link leaves the link root (or is an absolute path) and was not linked.
+    LinkOutsideRoot => ("link.outside-root", Warning, "a link leaves the link root and was not linked"),
+    /// A relative link names a program, a macro document or a network location and was not linked.
+    LinkBlocked => ("link.blocked", Warning, "a link names a program, a macro document or a network location and was not linked"),
     /// A raw HTML `<a>` that was not turned into a hyperlink.
     LinkHtmlDropped => ("link.html-dropped", Warning, "a raw HTML link was not turned into a hyperlink"),
     /// List nesting deeper than the document format's levels was flattened to the deepest level.
@@ -203,6 +209,10 @@ pub struct Report {
     pub diagnostics: Vec<Diagnostic>,
     /// What was produced.
     pub stats: Stats,
+    /// The files and directories on disk this document links to, found inside the link root
+    /// (see [`LinkOptions`](crate::LinkOptions)); empty unless local links are on. A caller that
+    /// converts a tree uses it to find the next Markdown file to convert or file to copy.
+    pub local_links: Vec<crate::links::LocalLink>,
 }
 
 impl Report {

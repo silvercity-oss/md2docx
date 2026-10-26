@@ -21,6 +21,8 @@ pub fn describe(input: &str, d: &Diagnostic) -> String {
 pub struct Success {
     pub diagnostics: Vec<Diagnostic>,
     pub stats: Stats,
+    /// Files and directories the document links to (not part of the JSON report).
+    pub local_links: Vec<silvercity_oss::LocalLink>,
 }
 
 fn quote(out: &mut String, s: &str) {
@@ -80,19 +82,20 @@ fn diagnostics(out: &mut String, list: &[Diagnostic]) {
 /// One line of JSON for one input.
 ///
 /// ```text
-/// {"schema":1,"input":"a.md","output":"a.docx","status":"ok","exit_code":0,"error":null,
+/// {"schema":1,"input":"a.md","output":"a.docx","origin":"input","status":"ok","exit_code":0,"error":null,
 ///  "diagnostics":[{"code":"link.dropped","severity":"warning","message":"...",
 ///                  "span":{"start":0,"end":9,"line":1,"column":1,"end_line":1,"end_column":10}}],
 ///  "stats":{"headings":1,"tables":0,"pictures":0,"equations":0,"footnotes":0,"hyperlinks":2,
 ///           "code_blocks":0}}
 /// ```
 ///
-/// `input` is `"-"` for standard input and `null` when the failure came before any input was
+/// `origin` is `"input"` for a file you named and `"link"` for a Markdown file converted because a
+/// document linked to it (`--markdown-links follow`). `input` is `"-"` for standard input and `null` when the failure came before any input was
 /// looked at (a usage error); `output` is `"-"` for standard output and `null` with
 /// `--check` or when nothing was written. `status` is `"ok"` or `"error"`. On error `error` is
 /// `{"kind": ..., "message": ...}`, `stats` is `null`, and `diagnostics` holds the findings behind a
 /// `--strict` refusal (otherwise it is empty).
-pub fn json(input: Option<&str>, output: Option<&str>, result: &Result<Success, CliError>) -> String {
+pub fn json(input: Option<&str>, output: Option<&str>, via_link: bool, result: &Result<Success, CliError>) -> String {
     let mut out = String::with_capacity(256);
     out.push_str("{\"schema\":1,\"input\":");
     match input {
@@ -104,6 +107,11 @@ pub fn json(input: Option<&str>, output: Option<&str>, result: &Result<Success, 
         (Some(o), Ok(_)) => quote(&mut out, o),
         _ => out.push_str("null"),
     }
+    out.push_str(if via_link {
+        ",\"origin\":\"link\""
+    } else {
+        ",\"origin\":\"input\""
+    });
     match result {
         Ok(ok) => {
             out.push_str(",\"status\":\"ok\",\"exit_code\":0,\"error\":null,\"diagnostics\":");
@@ -145,10 +153,10 @@ mod tests {
     #[test]
     fn an_error_report_has_the_documented_shape() {
         let e = CliError::new(Exit::Rejected, "limit_exceeded", "too \"big\"");
-        let line = json(Some("-"), Some("out.docx"), &Err(e));
+        let line = json(Some("-"), Some("out.docx"), false, &Err(e));
         assert_eq!(
             line,
-            "{\"schema\":1,\"input\":\"-\",\"output\":null,\"status\":\"error\",\"exit_code\":4,\
+            "{\"schema\":1,\"input\":\"-\",\"output\":null,\"origin\":\"input\",\"status\":\"error\",\"exit_code\":4,\
              \"error\":{\"kind\":\"limit_exceeded\",\"message\":\"too \\\"big\\\"\"},\"diagnostics\":[],\"stats\":null}"
         );
         assert!(!line.contains('\n'));
@@ -159,10 +167,11 @@ mod tests {
         let ok = Success {
             diagnostics: vec![],
             stats: Stats::default(),
+            local_links: vec![],
         };
         assert_eq!(
-            json(Some("a.md"), None, &Ok(ok)),
-            "{\"schema\":1,\"input\":\"a.md\",\"output\":null,\"status\":\"ok\",\"exit_code\":0,\"error\":null,\
+            json(Some("a.md"), None, false, &Ok(ok)),
+            "{\"schema\":1,\"input\":\"a.md\",\"output\":null,\"origin\":\"input\",\"status\":\"ok\",\"exit_code\":0,\"error\":null,\
              \"diagnostics\":[],\"stats\":{\"headings\":0,\"tables\":0,\"pictures\":0,\"equations\":0,\
              \"footnotes\":0,\"hyperlinks\":0,\"code_blocks\":0}}"
         );

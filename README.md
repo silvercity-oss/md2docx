@@ -438,6 +438,16 @@ npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly
 through `--mermaid-command`. Running it in a container or a hardened worker:
 [docs/containers.md](docs/containers.md).
 
+### Links to files and folders
+
+Relative links (`docs/cli.md`, `LICENSE`, `tests/`) are shown as text by default. For documents you
+trust, `--allow-links local|all` turns them into working links, relative to where the `.docx` is
+saved or as `file:///` addresses; `--link-base` makes them web addresses;
+`--markdown-links follow --copy-linked -o site/` converts every Markdown file the README links to
+(opening `file.docx` at the right heading) and copies the other linked files, giving a
+self-contained tree; and `--check --strict` reports broken links. The library has the same
+options (`LinkOptions`) and a `LinkResolver` hook. See [docs/links.md](docs/links.md).
+
 ## Security
 
 > **Security Advisory Notice: Image Mode runs a local TeX engine on document content.**

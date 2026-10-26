@@ -9,6 +9,7 @@ use crate::control::CancelToken;
 use crate::diagnostics::LossPolicy;
 use crate::extend::{validate_fence_language, validate_tag, FenceRenderer, FenceRenderers, ImageResolver, TagStyle};
 use crate::highlight::Highlighting;
+use crate::links::{LinkOptions, LinkResolver};
 use crate::template::ReferenceDocx;
 
 /// How `$...$` and `$$...$$` formulas end up in the `.docx`.
@@ -685,6 +686,11 @@ pub struct Config {
     /// [`ImageResolver`]. Consulted before [`Config::image_access`], so it works with
     /// [`ImageAccess::None`].
     pub image_resolver: Option<Arc<dyn ImageResolver>>,
+    /// Links to files on disk; see [`LinkOptions`]. Off by default, in every preset: a relative
+    /// path is shown as text.
+    pub links: LinkOptions,
+    /// Decides links before the built-in rules; see [`LinkResolver`].
+    pub link_resolver: Option<Arc<dyn LinkResolver>>,
 }
 
 /// The default is the **untrusted-input policy**: [`Config::untrusted`]. A host that wants
@@ -721,6 +727,7 @@ impl Config {
                 "allowed_link_schemes entries must be bare scheme names like `https`".into(),
             ));
         }
+        self.links.validate().map_err(bad)?;
         if self.scratch_dir.as_ref().is_some_and(|d| d.as_os_str().is_empty()) {
             return Err(bad("scratch_dir must not be an empty path".into()));
         }
@@ -797,6 +804,24 @@ impl Config {
     /// Choose the Mermaid renderer.
     pub fn with_mermaid_engine(mut self, engine: MermaidEngine) -> Self {
         self.graphs.use_engine(engine);
+        self
+    }
+
+    /// Turn relative links into hyperlinks for local files; see [`LinkOptions`].
+    pub fn with_local_links(mut self, local: crate::links::LocalLinks) -> Self {
+        self.links.local = local;
+        self
+    }
+
+    /// Replace the whole link configuration.
+    pub fn with_link_options(mut self, links: LinkOptions) -> Self {
+        self.links = links;
+        self
+    }
+
+    /// Decide links yourself, before the built-in rules; see [`LinkResolver`].
+    pub fn with_link_resolver(mut self, resolver: impl LinkResolver + 'static) -> Self {
+        self.link_resolver = Some(Arc::new(resolver));
         self
     }
 
@@ -972,6 +997,8 @@ impl Config {
             autolink_bare_urls: false,
             loss_policy: LossPolicy::default(),
             image_resolver: None,
+            links: LinkOptions::default(),
+            link_resolver: None,
         }
     }
 

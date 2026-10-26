@@ -68,7 +68,7 @@ else (usage errors that clap reports before it knows the format are the one exce
 text, status 2). `--quiet` has no effect on it.
 
 ```json
-{"schema":1,"input":"notes.md","output":"notes.docx","status":"ok","exit_code":0,"error":null,
+{"schema":1,"input":"notes.md","output":"notes.docx","origin":"input","status":"ok","exit_code":0,"error":null,
  "diagnostics":[{"code":"link.dropped","severity":"warning","message":"…",
                  "span":{"start":10,"end":22,"line":2,"column":5,"end_line":2,"end_column":17}}],
  "stats":{"headings":1,"tables":0,"pictures":0,"equations":0,"footnotes":0,"hyperlinks":2,"code_blocks":0}}
@@ -79,6 +79,7 @@ text, status 2). `--quiet` has no effect on it.
 | `schema` | number | `1`. Changes only for a breaking change of this format. Fields may be **added** within a schema version; ignore ones you do not know. |
 | `input` | string or null | The input path; `"-"` for standard input; `null` when the failure came before any input was read (a usage error). |
 | `output` | string or null | The output path; `"-"` for standard output; `null` for `--check` and for failures. |
+| `origin` | `"input"` \| `"link"` | `"link"` for a Markdown file converted because a document linked to it (`--markdown-links follow`). |
 | `status` | `"ok"` \| `"error"` | |
 | `exit_code` | number | The status this input contributes (see above). |
 | `error` | null or object | `{"kind": …, "message": …}` on failure. `message` is for people. |
@@ -107,7 +108,7 @@ md2docx a.md b.md c.md                 # a.docx, b.docx, c.docx next to the inpu
 md2docx docs/*.md -o build/            # build/<name>.docx; the directory must exist
 ```
 
-Two inputs that would write the same output file are refused before anything runs (status 2).
+Two inputs that would write the same output file are refused before anything runs (status 2). With `--markdown-links follow` the list grows as links are followed; see [links.md](links.md).
 `-` cannot be combined with other inputs, and `-o -` takes a single input.
 
 ## Configuration
@@ -167,6 +168,7 @@ the conversion is recorded.
 | Limits | `--deadline`, `--max-input-bytes`, `--max-output-bytes`, `--max-uncompressed-bytes`, `--max-elements`, `--max-image-bytes`, `--max-images` |
 | Document | `--title`, `--author`, `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`, `--page-numbers`, `--reference-doc`, `--number-headings`, `--toc`, `--code-blocks`, `--highlight`, `--compression-level`, `--source-date-epoch` |
 | Markdown extras | `--autolink`, `--sup-sub` |
+| Links to files | `--allow-links none\|local\|all`, `--link-root`, `--link-style rebased\|absolute`, `--link-base`, `--link-tree-base`, `--link-map`, `--no-check-link-anchors`, `--markdown-links keep\|docx\|follow`, `--link-layout mirror\|flat`, `--copy-linked`, `--max-linked-files`, `--max-copy-bytes` (see [links.md](links.md)) |
 
 `--mermaid-engine inprocess` exists only in builds with the `mermaid` feature
 (`cargo install silvercity-oss --features mermaid`; `md2docx --version` says whether it is compiled

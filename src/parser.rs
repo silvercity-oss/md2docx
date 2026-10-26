@@ -5,9 +5,11 @@
 //! runs and swapped for real `<m:oMath>` XML in the rendered `document.xml`
 //! before the package is zipped (see [`inject_omml`]).
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::docx::{
@@ -250,6 +252,8 @@ struct LinkCtx {
     children: Vec<Child>,
     /// An internal target (heading or HTML anchor number) instead of `url`.
     bookmark: Option<usize>,
+    /// Another document (address, bookmark in it) instead of `url`.
+    doc: Option<(String, Option<String>)>,
 }
 
 /// Width requested for an image by an HTML `width=` attribute.
@@ -393,6 +397,10 @@ struct Builder<'a> {
     def_depth: usize,
     /// Headings by anchor: `#slug` links resolve to the number of the heading's bookmark.
     anchors: Arc<HashMap<String, usize>>,
+    /// The anchor name of every heading and HTML anchor by number, for the bookmarks other documents link to.
+    anchor_names: Arc<HashMap<usize, String>>,
+    /// Local-link rules for this conversion; `None` when nothing needs them.
+    links: Option<Rc<RefCell<crate::links::Engine>>>,
     /// Markdown headings started so far (the bookmark numbers).
     next_heading: usize,
     /// The heading whose paragraph is being built, if any.
@@ -595,11 +603,29 @@ enum LinkTarget {
     External(String),
     /// The heading with this number, by bookmark.
     Heading(usize),
+    /// Another document, and the bookmark in it to land on.
+    Document { target: String, anchor: Option<String> },
+}
+
+/// What a link destination turned into.
+enum Resolved {
+    External(String),
+    Heading(usize),
+    Document {
+        target: String,
+        anchor: Option<String>,
+    },
+    /// Not linked. `noted`: a specific finding was already reported.
+    Dropped {
+        noted: bool,
+    },
 }
 
 /// Bookmark names must start with a letter and contain no spaces or hyphens.
 /// Anchor numbers at or above this are HTML `id`/`name` targets, below it headings.
 const HTML_ANCHOR_BASE: usize = 1 << 20;
+/// Bookmark ids of the exported anchors start here, clear of headings and HTML anchors.
+const EXPORTED_BOOKMARK_BASE: usize = 1 << 22;
 /// Most HTML anchors one document may define.
 const MAX_HTML_ANCHORS: usize = 10_000;
 /// Open aligned HTML blocks (`<center>`, `align=`) tracked at once; deeper ones keep the outer alignment.
@@ -633,6 +659,12 @@ fn github_slug(text: &str) -> String {
 struct HeadingInfo {
     level: u8,
     text: String,
+}
+
+/// Every anchor a link to this Markdown text can name (heading anchors and HTML `id`s), lower-cased.
+pub(crate) fn anchor_names(markdown: &str, sup_sub: bool) -> HashSet<String> {
+    let (anchors, _) = heading_anchors(markdown, sup_sub, &HashMap::new());
+    anchors.into_keys().map(|k| k.to_lowercase()).collect()
 }
 
 fn heading_anchors(
@@ -944,6 +976,8 @@ impl<'a> Builder<'a> {
             mono: 0,
             def_depth: 0,
             anchors: Arc::new(HashMap::new()),
+            anchor_names: Arc::new(HashMap::new()),
+            links: None,
             next_heading: 0,
             cur_heading: None,
             outer_tables: Vec::new(),
@@ -1159,6 +1193,7 @@ impl<'a> Builder<'a> {
                                 url: url.clone(),
                                 children: Vec::new(),
                                 bookmark: None,
+                                doc: None,
                             });
                             self.text(raw);
                             if let Some(link) = self.link.take() {
@@ -1185,6 +1220,109 @@ impl<'a> Builder<'a> {
             );
         }
         Some(target)
+    }
+
+    /// The extra bookmark (id, name) other documents can link to for the heading or anchor `n`,
+    /// when this conversion exports them.
+    fn exported_bookmark(&self, n: usize) -> Option<(usize, String)> {
+        let engine = self.links.as_ref()?;
+        if !engine.borrow().exports_anchors() {
+            return None;
+        }
+        let name = self.anchor_names.get(&n)?;
+        Some((EXPORTED_BOOKMARK_BASE + n, crate::links::exported_bookmark(name)))
+    }
+
+    /// Decide where a Markdown or HTML link goes: the host's [`LinkResolver`](crate::LinkResolver)
+    /// first, then the scheme allow-list for addresses, then the local-link rules for paths.
+    fn resolve_link(&mut self, url: &str, html: bool) -> Resolved {
+        if let Some(resolver) = self.cfg.link_resolver.as_ref() {
+            let request = crate::links::LinkRequest { target: url, html };
+            let decision = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resolver.resolve(&request)));
+            match decision {
+                Err(_) => {
+                    self.note(Code::LinkDropped, "the link resolver panicked; the link was not made");
+                    return Resolved::Dropped { noted: true };
+                }
+                Ok(crate::links::LinkDecision::Default) => {}
+                Ok(crate::links::LinkDecision::Text) => return Resolved::Dropped { noted: true },
+                Ok(crate::links::LinkDecision::Url(u)) => return self.host_address(u, None),
+                Ok(crate::links::LinkDecision::Document { target, heading }) => {
+                    return self.host_address(target, Some(heading));
+                }
+                Ok(crate::links::LinkDecision::Heading(h)) => {
+                    return match self.heading_for(&h) {
+                        Some(n) => Resolved::Heading(n),
+                        None => {
+                            self.note(
+                                Code::LinkAnchorMissing,
+                                format!("no heading has the anchor `{}`", short(&h)),
+                            );
+                            Resolved::Dropped { noted: true }
+                        }
+                    };
+                }
+            }
+        }
+        if url.starts_with('#') {
+            return Resolved::Dropped { noted: false };
+        }
+        let local = self.links.as_ref().is_some_and(|e| e.borrow().is_local_target(url));
+        if !local {
+            return match self.link_target(url) {
+                Some(u) => Resolved::External(u),
+                None => Resolved::Dropped { noted: false },
+            };
+        }
+        let Some(engine) = self.links.clone() else {
+            return Resolved::Dropped { noted: false };
+        };
+        let resolution = engine.borrow_mut().resolve(url);
+        if let Some((code, message)) = resolution.note {
+            self.note(code, message);
+        }
+        match resolution.local {
+            crate::links::Local::Text => Resolved::Dropped { noted: true },
+            crate::links::Local::Link { target, anchor } => {
+                // A web address made by a rewrite must be one the scheme list allows.
+                if target.contains("://") && !target.starts_with("file://") {
+                    return match safe_link_checked(&target, &self.cfg.allowed_link_schemes) {
+                        Some((u, _)) => Resolved::External(u),
+                        None => {
+                            self.note(
+                                Code::LinkDropped,
+                                format!("the rewritten link `{}` is not an allowed destination", short(&target)),
+                            );
+                            Resolved::Dropped { noted: true }
+                        }
+                    };
+                }
+                Resolved::Document { target, anchor }
+            }
+        }
+    }
+
+    /// An address chosen by the host: trusted, but it must be safe to write into the package.
+    fn host_address(&mut self, target: String, heading: Option<Option<String>>) -> Resolved {
+        let fine = !target.is_empty()
+            && target.len() <= 2048
+            && target.chars().all(|c| !c.is_control() && crate::safety::is_xml_char(c));
+        if !fine {
+            self.note(
+                Code::LinkDropped,
+                "the link resolver gave an unusable address; the link was not made",
+            );
+            return Resolved::Dropped { noted: true };
+        }
+        match heading {
+            None => Resolved::External(target),
+            Some(h) => Resolved::Document {
+                target,
+                anchor: h.map(|h| {
+                    crate::links::exported_bookmark(&percent_encoding::percent_decode_str(&h).decode_utf8_lossy())
+                }),
+            },
+        }
     }
 
     fn start_para(&mut self, kind: ParaKind) {
@@ -1274,6 +1412,9 @@ impl<'a> Builder<'a> {
         }
         if let Some(n) = heading {
             p = p.add_bookmark_start(n, bookmark_name(n));
+            if let Some((id, name)) = self.exported_bookmark(n) {
+                p = p.add_bookmark_start(id, name);
+            }
             // Only Markdown headings are numbered, so the numbers in the contents (which lists
             // exactly those) agree with Word's.
             if let (true, ParaKind::Heading(level)) = (self.cfg.document.number_headings, kind) {
@@ -1320,6 +1461,9 @@ impl<'a> Builder<'a> {
         }
         if let Some(n) = heading {
             p = p.add_bookmark_end(n);
+            if let Some((id, _)) = self.exported_bookmark(n) {
+                p = p.add_bookmark_end(id);
+            }
         }
         if centred {
             p = p.align(AlignmentType::Center);
@@ -1402,7 +1546,13 @@ impl<'a> Builder<'a> {
         match c {
             Child::Run(r) | Child::Picture { run: r, .. } => p.add_run(r),
             Child::Link(l) => p.add_hyperlink(l),
-            Child::Bookmark(n) => p.add_bookmark_start(n, bookmark_name(n)).add_bookmark_end(n),
+            Child::Bookmark(n) => {
+                let p = p.add_bookmark_start(n, bookmark_name(n)).add_bookmark_end(n);
+                match self.exported_bookmark(n) {
+                    Some((id, name)) => p.add_bookmark_start(id, name).add_bookmark_end(id),
+                    None => p,
+                }
+            }
             Child::Omml { slot, .. } => p.add_run(Run::new().add_text(marker(&self.nonce, slot))),
         }
     }
@@ -2065,6 +2215,7 @@ impl<'a> Builder<'a> {
                     url: String::new(),
                     children: Vec::new(),
                     bookmark: Some(n),
+                    doc: None,
                 });
                 self.html_link = true;
                 return;
@@ -2086,21 +2237,39 @@ impl<'a> Builder<'a> {
             return;
         }
         let href = html::attr(attrs, "href");
-        let url = href.as_deref().and_then(|h| self.link_target(h));
-        if url.is_none() {
-            if let Some(h) = &href {
-                self.note(
-                    Code::LinkHtmlDropped,
-                    format!("a raw HTML link to `{}` is not an allowed destination", short(h)),
-                );
-            }
-        }
-        if let Some(url) = url {
-            self.link = Some(LinkCtx {
+        let resolved = href.as_deref().map(|h| self.resolve_link(h, true));
+        let ctx = match resolved {
+            Some(Resolved::External(url)) => Some(LinkCtx {
                 url,
                 children: Vec::new(),
                 bookmark: None,
-            });
+                doc: None,
+            }),
+            Some(Resolved::Heading(n)) => Some(LinkCtx {
+                url: String::new(),
+                children: Vec::new(),
+                bookmark: Some(n),
+                doc: None,
+            }),
+            Some(Resolved::Document { target, anchor }) => Some(LinkCtx {
+                url: String::new(),
+                children: Vec::new(),
+                bookmark: None,
+                doc: Some((target, anchor)),
+            }),
+            Some(Resolved::Dropped { noted }) => {
+                if let (false, Some(h)) = (noted, &href) {
+                    self.note(
+                        Code::LinkHtmlDropped,
+                        format!("a raw HTML link to `{}` is not an allowed destination", short(h)),
+                    );
+                }
+                None
+            }
+            None => None,
+        };
+        if let Some(ctx) = ctx {
+            self.link = Some(ctx);
             self.html_link = true;
         }
     }
@@ -2108,9 +2277,10 @@ impl<'a> Builder<'a> {
     fn close_html_link(&mut self) {
         self.html_link = false;
         if let Some(link) = self.link.take() {
-            let target = match link.bookmark {
-                Some(n) => LinkTarget::Heading(n),
-                None => LinkTarget::External(link.url),
+            let target = match (link.bookmark, link.doc) {
+                (Some(n), _) => LinkTarget::Heading(n),
+                (None, Some((target, anchor))) => LinkTarget::Document { target, anchor },
+                (None, None) => LinkTarget::External(link.url),
             };
             self.finish_link(target, link.children);
         }
@@ -2315,6 +2485,8 @@ impl<'a> Builder<'a> {
         let mut sub = Builder::new(self.pre, self.cfg, self.nonce.clone());
         sub.in_footnote = true;
         sub.anchors = Arc::clone(&self.anchors);
+        sub.anchor_names = Arc::clone(&self.anchor_names);
+        sub.links = self.links.clone();
         // One budget for the whole document: the footnote's pictures, equations and element
         // count are charged to the same pipeline and slot list as the body's.
         sub.elements = self.elements;
@@ -2579,6 +2751,7 @@ impl<'a> Builder<'a> {
                     url,
                     children: Vec::new(),
                     bookmark: None,
+                    doc: None,
                 });
             }
             // An image inside another image's alt text only contributes its alt text.
@@ -2674,11 +2847,16 @@ impl<'a> Builder<'a> {
                         self.finish_link(LinkTarget::Heading(n), link.children);
                         return Ok(());
                     }
-                    match self.link_target(&link.url) {
-                        Some(url) => self.finish_link(LinkTarget::External(url), link.children),
+                    match self.resolve_link(&link.url, false) {
+                        Resolved::External(url) => self.finish_link(LinkTarget::External(url), link.children),
+                        Resolved::Heading(n) => self.finish_link(LinkTarget::Heading(n), link.children),
+                        Resolved::Document { target, anchor } => {
+                            self.finish_link(LinkTarget::Document { target, anchor }, link.children)
+                        }
                         // Not an allowed destination: keep the visible text, drop the target.
-                        None => {
-                            if link.url.starts_with('#') {
+                        Resolved::Dropped { noted } => {
+                            if noted {
+                            } else if link.url.starts_with('#') {
                                 self.note(
                                     Code::LinkAnchorMissing,
                                     format!("no heading has the anchor `{}`", short(&link.url)),
@@ -2729,6 +2907,11 @@ impl<'a> Builder<'a> {
         let mut h = match target {
             LinkTarget::External(url) => Hyperlink::new(url, HyperlinkType::External),
             LinkTarget::Heading(n) => Hyperlink::new(bookmark_name(n), HyperlinkType::Anchor),
+            LinkTarget::Document {
+                target,
+                anchor: Some(anchor),
+            } => Hyperlink::external_with_anchor(target, anchor),
+            LinkTarget::Document { target, anchor: None } => Hyperlink::new(target, HyperlinkType::External),
         };
         let mut loose = Vec::new();
         for c in children {
@@ -2942,7 +3125,16 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     let mut b = Builder::new(pre, cfg, nonce);
     b.footnotes = collect_footnotes(&pre.markdown, cfg.superscript_subscript);
     let (anchors, headings) = heading_anchors(&pre.markdown, cfg.superscript_subscript, &pre.assets);
+    b.anchor_names = Arc::new(anchors.iter().map(|(name, &n)| (n, name.clone())).collect());
     b.anchors = Arc::new(anchors);
+    if cfg.links.local != crate::links::LocalLinks::Off || cfg.links.export_anchors || cfg.links.documents.is_some() {
+        b.links = Some(Rc::new(RefCell::new(crate::links::Engine::new(
+            &cfg.links,
+            cfg.base_dir.as_deref(),
+            cfg.superscript_subscript,
+            cfg.limits.max_input_bytes,
+        ))));
+    }
 
     let mut in_definition = false;
     let mut events = 0usize;
@@ -3071,6 +3263,11 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
         report: Report {
             diagnostics: crate::diagnostics::finish(&collected, &pre.offsets, original),
             stats: b.stats,
+            local_links: b
+                .links
+                .as_ref()
+                .map(|e| e.borrow_mut().take_found())
+                .unwrap_or_default(),
         },
     })
 }

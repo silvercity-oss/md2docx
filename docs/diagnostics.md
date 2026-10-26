@@ -19,6 +19,9 @@ Get them with `convert` / `convert_file` (with the document), `analyze` (without
 | `footnote.unreferenced` | warning | A footnote definition is never referenced, so its content was dropped. | Reference it from the text, or delete the definition. |
 | `link.dropped` | warning | A link destination is not allowed, so only its text was kept. | Use an absolute `https:`/`mailto:` link (or whatever `Config::allowed_link_schemes` allows). |
 | `link.modified` | warning | A link target was shortened: a `mailto:` link keeps only the `subject`, `body`, `cc` and `bcc` fields and no fragment. | Remove the other fields from the link. |
+| `link.target-missing` | warning | A relative link names a file or directory that does not exist (local links on). | Fix the path. In `--allow-links all` the link is made anyway. |
+| `link.outside-root` | warning | A relative link leaves the link root, or is an absolute path, and was not linked. | Move the target inside the root, widen `--link-root`, or use `--allow-links all`. |
+| `link.blocked` | warning | A relative link names a program, a macro document or a network location and was not linked. | Link to something else; `all` links programs, never network paths. |
 | `link.anchor-missing` | warning | A link points at a heading anchor that does not exist. | Fix the heading anchor (GitHub-style slug of the heading text). |
 | `link.html-dropped` | warning | A raw HTML link was not turned into a hyperlink. | Use Markdown link syntax, or set `Config::html_links` for trusted input. |
 | `list.depth-clamped` | warning | List nesting deeper than the supported levels was flattened. | Flatten the list; Word numbering defines nine levels. |

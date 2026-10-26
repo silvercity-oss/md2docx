@@ -63,6 +63,16 @@ impl CliError {
         }
     }
 
+    /// A copy, for reporting the same failure twice.
+    pub fn clone_error(&self) -> Self {
+        CliError {
+            exit: self.exit,
+            kind: self.kind,
+            message: self.message.clone(),
+            diagnostics: self.diagnostics.clone(),
+        }
+    }
+
     pub fn usage(message: impl Into<String>) -> Self {
         Self::new(Exit::Usage, "usage", message)
     }

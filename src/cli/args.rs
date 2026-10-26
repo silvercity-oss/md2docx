@@ -61,6 +61,45 @@ pub enum Format {
     Json,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AllowLinks {
+    /// Relative and absolute paths stay text (default).
+    None,
+    /// Paths to existing files and directories inside the link root become hyperlinks; anything
+    /// else (missing, outside the root, programs, network paths) stays text and is reported.
+    Local,
+    /// Every path becomes a hyperlink, existing or not, inside the root or not. Network paths are
+    /// still refused. Only for documents you wrote.
+    All,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkStyle {
+    /// Relative to where the .docx is saved: survives moving the whole tree.
+    Rebased,
+    /// A `file:///` address: survives moving the .docx on this machine.
+    Absolute,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkdownLinks {
+    /// A link to a Markdown file points at that file (default).
+    Keep,
+    /// A link to a Markdown file points at the .docx it becomes (and `#heading` lands on that
+    /// heading). You convert those files too: list them, or use `follow`.
+    Docx,
+    /// Like `docx`, and every Markdown file reached through a link is converted as well.
+    Follow,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkLayout {
+    /// Keep the directory structure under the output directory (default).
+    Mirror,
+    /// Put every .docx directly in the output directory.
+    Flat,
+}
+
 #[cfg(feature = "mermaid")]
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -98,7 +137,6 @@ pub struct Args {
         short,
         long,
         value_name = "PATH",
-        conflicts_with = "check",
         help = "Output .docx file; a directory when converting several inputs; `-` writes to standard output [default: <input>.docx next to the input; standard output for `-`]"
     )]
     pub output: Option<PathBuf>,
@@ -313,6 +351,94 @@ pub struct Args {
 
     #[arg(
         long,
+        value_enum,
+        default_value_t = AllowLinks::None,
+        conflicts_with_all = ["untrusted"],
+        help = "Turn links to local files and directories into hyperlinks: `local` for existing ones inside the link root, `all` for any path. Off by default: a relative link is shown as text. See docs/links.md"
+    )]
+    pub allow_links: AllowLinks,
+
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "The tree local links must stay inside [default: the input's directory, or the common directory of the inputs with --markdown-links docx|follow]"
+    )]
+    pub link_root: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = LinkStyle::Rebased,
+        help = "Write local links relative to where the .docx is saved, or as file:/// addresses"
+    )]
+    pub link_style: LinkStyle,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Make local files into web links instead: docs/a.md becomes URL + docs/a.md, e.g. https://github.com/me/repo/blob/v1.0/"
+    )]
+    pub link_base: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "URL",
+        help = "Like --link-base, for directories (…/tree/v1.0/) [default: --link-base]"
+    )]
+    pub link_tree_base: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PREFIX=URL",
+        value_parser = parse_link_map,
+        help = "Web address for local paths under PREFIX (relative to the link root, `/`-separated); repeatable, first match wins"
+    )]
+    pub link_map: Vec<(String, String)>,
+
+    #[arg(long, help = "Do not check that `file.md#heading` names a heading that exists")]
+    pub no_check_link_anchors: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = MarkdownLinks::Keep,
+        help = "What a link to another Markdown file points at: that file (keep), the .docx it becomes (docx), or also convert it (follow)"
+    )]
+    pub markdown_links: MarkdownLinks,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = LinkLayout::Mirror,
+        help = "With --markdown-links docx|follow: where the .docx files go under -o DIR"
+    )]
+    pub link_layout: LinkLayout,
+
+    #[arg(
+        long,
+        help = "With --markdown-links docx|follow and -o DIR: copy the other files and directories the documents link to into DIR (same relative path), so the links work in the output tree"
+    )]
+    pub copy_linked: bool,
+
+    #[arg(
+        long,
+        value_name = "COUNT",
+        default_value_t = 1000,
+        help = "Most documents converted plus files copied through links in one run"
+    )]
+    pub max_linked_files: usize,
+
+    #[arg(
+        long,
+        value_name = "BYTES",
+        value_parser = parse_size,
+        default_value = "256M",
+        help = "Most bytes --copy-linked may copy in one run"
+    )]
+    pub max_copy_bytes: u64,
+
+    #[arg(
+        long,
         value_name = "SECONDS",
         env = "SOURCE_DATE_EPOCH",
         help = "Set the document's created/modified time (Unix seconds) so the same input gives the same bytes. Honours the SOURCE_DATE_EPOCH convention"
@@ -434,6 +560,17 @@ pub fn parse_command(template: &str) -> Result<CommandSpec, String> {
         return Err("command must contain both {input} and {output} placeholders".into());
     }
     Ok(CommandSpec::new(program, args))
+}
+
+/// `PREFIX=URL`.
+pub fn parse_link_map(text: &str) -> Result<(String, String), String> {
+    let (prefix, url) = text
+        .split_once('=')
+        .ok_or_else(|| format!("`{text}` is not PREFIX=URL"))?;
+    if url.is_empty() {
+        return Err(format!("`{text}` has no URL"));
+    }
+    Ok((prefix.to_string(), url.to_string()))
 }
 
 /// A byte count: digits with an optional binary suffix (`K`, `M`, `G`, optionally `iB`/`B`).

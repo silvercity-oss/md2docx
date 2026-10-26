@@ -520,7 +520,7 @@ impl Docx {
                             self.insert_comment_to_map(&mut comment_map, c);
                         }
                         if let ParagraphChild::Hyperlink(h) = child {
-                            if let HyperlinkData::External { rid, path } = &h.link {
+                            if let HyperlinkData::External { rid, path, .. } = &h.link {
                                 hyperlink_map.insert(rid.clone(), path.clone());
                             }
                             for child in &h.children {
@@ -571,7 +571,7 @@ impl Docx {
                             push_comment_and_comment_extended(&mut comments, &mut comments_extended, &comment_map, c);
                         }
                         if let ParagraphChild::Hyperlink(h) = child {
-                            if let HyperlinkData::External { rid, path } = &h.link {
+                            if let HyperlinkData::External { rid, path, .. } = &h.link {
                                 hyperlink_map.insert(rid.clone(), path.clone());
                             };
                             for child in &h.children {
@@ -610,7 +610,7 @@ impl Docx {
                                     );
                                 }
                                 if let ParagraphChild::Hyperlink(h) = child {
-                                    if let HyperlinkData::External { rid, path } = &h.link {
+                                    if let HyperlinkData::External { rid, path, .. } = &h.link {
                                         hyperlink_map.insert(rid.clone(), path.clone());
                                     };
                                     for child in &h.children {
@@ -648,7 +648,7 @@ impl Docx {
                                     );
                                 }
                                 if let ParagraphChild::Hyperlink(h) = child {
-                                    if let HyperlinkData::External { rid, path } = &h.link {
+                                    if let HyperlinkData::External { rid, path, .. } = &h.link {
                                         hyperlink_map.insert(rid.clone(), path.clone());
                                     };
                                     for child in &h.children {
@@ -742,7 +742,7 @@ fn collect_dependencies_in_paragraph(
             push_comment_and_comment_extended(comments, comments_extended, comment_map, c);
         }
         if let ParagraphChild::Hyperlink(h) = child {
-            if let HyperlinkData::External { rid, path } = &h.link {
+            if let HyperlinkData::External { rid, path, .. } = &h.link {
                 hyperlink_map.insert(rid.clone(), path.clone());
             };
             for child in &h.children {
@@ -770,7 +770,7 @@ fn collect_comment_map_in_paragraph(
             }
         }
         if let ParagraphChild::Hyperlink(h) = child {
-            if let HyperlinkData::External { rid, path } = &h.link {
+            if let HyperlinkData::External { rid, path, .. } = &h.link {
                 hyperlink_map.insert(rid.clone(), path.clone());
             }
             for child in &h.children {
