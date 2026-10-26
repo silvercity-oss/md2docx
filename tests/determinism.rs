@@ -43,3 +43,29 @@ fn numbering_restarts_at_one_for_every_document() {
     assert!(rels.contains("rIdHyperlink1"), "{rels}");
     assert!(!rels.contains("rIdHyperlink3"), "only two links exist: {rels}");
 }
+
+#[test]
+fn a_fixed_timestamp_makes_the_whole_file_reproducible() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let at = UNIX_EPOCH + Duration::from_secs(1_700_000_000); // 2023-11-14T22:13:20Z
+    let cfg = Config::native_math().with_timestamp(at);
+    let first = markdown_to_docx(DOC, &cfg).unwrap();
+    std::thread::sleep(Duration::from_millis(1100)); // the wall clock moves on
+    let second = markdown_to_docx(DOC, &cfg).unwrap();
+    assert_eq!(first, second, "identical input and timestamp must give identical bytes");
+    let core = zip_text(&first, "docProps/core.xml");
+    assert!(core.contains("2023-11-14T22:13:20Z"), "{core}");
+    // Without one, the time of the conversion is used.
+    let now = markdown_to_docx(DOC, &Config::native_math()).unwrap();
+    assert!(!zip_text(&now, "docProps/core.xml").contains("2023-11-14"));
+}
+
+#[test]
+fn an_impossible_timestamp_is_a_configuration_error() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let far = UNIX_EPOCH + Duration::from_secs(300_000_000_000);
+    assert!(matches!(
+        markdown_to_docx(DOC, &Config::native_math().with_timestamp(far)),
+        Err(silvercity_oss::CrateError::InvalidConfig(_))
+    ));
+}

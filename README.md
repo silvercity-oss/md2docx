@@ -15,7 +15,7 @@ std::fs::write("out.docx", docx)?;
 
 ```toml
 [dependencies]
-# default-features = false: skip the `md2docx` binary's dependencies (clap, shlex).
+# default-features = false: skip the `md2docx` binary's dependencies (clap, its completion and man-page generators, shlex).
 silvercity-oss = { version = "0.1", default-features = false }
 ```
 
@@ -389,33 +389,54 @@ the same HTML; the only differences are `<a>` links and the image policy.
 ```
 md2docx notes.md                                  # -> notes.docx, native equations
 md2docx notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
-md2docx notes.md --dolphin-command 'dolphin -i {input} -o {output}'
-md2docx notes.md --mermaid-engine mmdc          # official Mermaid CLI instead of merman
-md2docx notes.md --mermaid-command 'mmdc -i {input} -o {output} -s 2 -p puppeteer.json'
+md2docx - < notes.md > out.docx                   # standard input to standard output
+md2docx docs/*.md -o build/                       # several files into a directory
+md2docx --check --strict docs/*.md                # CI lint: write nothing, fail on any loss
+md2docx --untrusted --format json - < upload.md > out.docx 2> report.json
+md2docx notes.md --mermaid-engine mmdc            # official Mermaid CLI instead of merman
 ```
+
+The command line is an interface you can script against: **exit status, standard streams, the
+JSON report and the environment variables are specified in [docs/cli.md](docs/cli.md)** and tested
+by number. In short:
+
+| Status | Meaning |
+| ---: | --- |
+| `0` | converted (warnings may have been printed) |
+| `1` | other failure (a bug, a cancelled conversion) |
+| `2` | usage: the command line or its configuration is wrong |
+| `3` | file I/O: the input could not be read, or the output written |
+| `4` | the **document** is rejected: malformed, over a limit, or forbidden by the security policy |
+| `5` | `--strict`: valid, but it would lose something; nothing was written |
+| `6` | an external tool is missing or failed |
+| `7` | `--deadline` passed |
 
 | Flag | Meaning |
 | --- | --- |
-| `<input>` | Markdown file (relative image paths resolve against its directory) |
-| `-o, --output` | Output path (default: `<input>.docx`; refuses to overwrite the input) |
+| `<input>…` | Markdown files (relative image paths resolve against each file's directory), or `-` for standard input |
+| `-o, --output` | Output file; a directory for several inputs; `-` for standard output (default: `<input>.docx`; refuses to overwrite the input) |
+| `--check` | Convert and report, write nothing |
+| `--format text\|json`, `-q` | One JSON object per input on standard error; or quiet text |
+| `--strict` | Refuse a document that could not be converted faithfully; lists every problem with line and column |
+| `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it; limit flags may only lower its limits |
+| `--diagrams` | Only with `--untrusted`: also render Mermaid diagrams (in-process in builds with the `mermaid` feature, else with `merman-cli`; see "Diagrams from untrusted input") |
 | `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
-| `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it |
-| `--diagrams` | Only with `--untrusted`: also render Mermaid diagrams with `merman-cli` (hardened, bounded; see "Diagrams from untrusted input"). Needs `cargo install merman-cli` |
-| `--image-access none\|base-dir\|any` | Default `base-dir`: only images inside the input file's directory |
-| `--mermaid-engine merman\|mmdc` | Mermaid renderer; default `merman` (Rust, no browser) |
+| `--image-access none\|base-dir\|any`, `--base-dir` | Default `base-dir`: only images inside the input file's directory (or `--base-dir`) |
+| `--mermaid-engine merman\|mmdc\|inprocess` | Mermaid renderer; default `merman` (Rust, no browser); `inprocess` needs the `mermaid` feature |
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
-| `--latex`, `--dvipng` | Executables for `image` math (e.g. `xelatex`) |
-| `--timeout <seconds>` | Kill a renderer that runs longer (default 60) |
-| `--code-blocks <lines\|single>` | Code block layout: a paragraph per line (default) or one paragraph per block, easy to select and copy |
-| `--compression-level <0-9>` | Deflate level of the `.docx`: 0 stores it, 9 is smallest (default 6) |
-| `--highlight none\|light\|dark` | Syntax-highlight code blocks (VS Code Light+/Dark+ colours; default `none`) |
-| `--keep-failed-diagrams` | A `mermaid`/`dolphin` block that cannot be rendered (tool missing, invalid diagram) stays a code block instead of failing the conversion |
+| `--latex`, `--dvipng`, `--timeout`, `--scratch-dir`, `--keep-failed-diagrams` | External renderer settings |
+| `--deadline`, `--max-input-bytes`, `--max-output-bytes`, `--max-uncompressed-bytes`, `--max-elements`, `--max-image-bytes`, `--max-images` | Limits (sizes accept `K`, `M`, `G`) |
+| `--link-schemes`, `--no-html-links` | Which links become hyperlinks |
+| `--title`, `--author`, `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`, `--page-numbers`, `--reference-doc`, `--number-headings`, `--toc`, `--code-blocks`, `--highlight`, `--compression-level`, `--autolink`, `--sup-sub` | Document look and Markdown extras |
+| `--source-date-epoch` (or `SOURCE_DATE_EPOCH`) | Fix the created/modified time for byte-identical output |
+| `--completions SHELL`, `--man` | Shell completions and the manual page |
 
 The CLI converts files you point it at, so it starts from `Config::trusted()` (with
 `native` math unless you pass `--math-mode image`); `--untrusted` switches to the safe
 preset. On Windows,
 npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly
-through `--mermaid-command`.
+through `--mermaid-command`. Running it in a container or a hardened worker:
+[docs/containers.md](docs/containers.md).
 
 ## Security
 

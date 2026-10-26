@@ -127,6 +127,19 @@ First release.
   from a `.docx`; `--reference-doc`). Always on: table columns sized by content, HTML `id=` /
   `<a name>` anchors usable as `#` link targets, `mailto:` links limited to `subject`, `body`,
   `cc` and `bcc`.
+- **A command line for automation.** `md2docx` reads standard input and writes standard output
+  (`-`), converts several files (`-o DIR`), validates without writing (`--check`), reports one JSON
+  object per input (`--format json`, schema 1), and exits with a documented status that says who has
+  to act (0 ok, 2 usage, 3 file I/O, 4 document rejected, 5 `--strict` refusal, 6 external tool, 7
+  deadline; docs/cli.md). New flags: `--quiet`, `--base-dir`, the `--max-*` limits (which can only
+  be lowered under `--untrusted`), `--link-schemes`, `--no-html-links`, `--title`, `--author`,
+  `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`,
+  `--page-numbers`, `--mermaid-engine inprocess` (with the `mermaid` feature),
+  `--source-date-epoch`, `--completions`, `--man`; operational options can come from `MD2DOCX_*`
+  environment variables. `docs/containers.md` and a `Dockerfile` describe a locked-down worker.
+- **Reproducible output.** `DocumentOptions::timestamp` / `Config::with_timestamp` fix the file's
+  created and modified time; `SOURCE_DATE_EPOCH` is honoured by the CLI.
+- **Streams.** `convert_reader`, `analyze_reader` and `analyze_file`.
 - **Review fixes.** Footnotes: every note shows its number (also with a table or a line break),
   lists inside them are numbered and declared, they are built in linear time and honour the
   deadline. List markers survive in HTML table cells and when an item starts with a code block,

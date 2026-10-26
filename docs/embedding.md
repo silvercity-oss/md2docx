@@ -135,7 +135,32 @@ the library); use the in-process renderer, or put the worker in a job object.
 
 ## Reproducibility
 
-Relationship, footnote, picture and bookmark identifiers restart for every conversion and are kept
-per thread, so equal input gives equal identifiers and one conversion cannot observe another's
-activity. The package contains creation and modification timestamps, so bytes differ between runs;
-compare parts (`word/document.xml`, relationships) rather than whole files.
+Relationship, footnote, picture, bookmark and paragraph identifiers restart for every conversion
+and are kept per thread, so equal input gives equal identifiers and one conversion cannot observe
+another's activity. The package records a creation and modification time; by default that is the
+time of the conversion, so bytes differ between runs. Set one and the whole file is reproducible
+(same input, same configuration, same crate version, same bytes), which suits caches keyed by
+content and snapshot tests:
+
+```rust
+use std::time::{Duration, UNIX_EPOCH};
+let cfg = Config::default().with_timestamp(UNIX_EPOCH + Duration::from_secs(1_700_000_000));
+```
+
+## Streams, async and blocking
+
+The conversion is synchronous and CPU-bound. In an async service run it where blocking is
+allowed (`tokio::task::spawn_blocking`, a dedicated thread pool, or a worker process) and give it a
+`CancelToken` and a deadline so abandoned requests stop:
+
+```rust
+let docx = tokio::task::spawn_blocking(move || convert_reader(body_reader, &cfg)).await??;
+```
+
+`convert_reader` / `analyze_reader` take anything that implements `Read` (a request body, a pipe)
+and read at most `Limits::max_input_bytes`; `convert_file` / `analyze_file` do the same for a path.
+`Config` is `Send + Sync + Clone`: build it once per policy and share it.
+
+If you would rather not link the library, the `md2docx` binary has a stable, scriptable interface:
+standard input and output, a JSON report and a documented exit status ([cli.md](cli.md),
+[containers.md](containers.md)).

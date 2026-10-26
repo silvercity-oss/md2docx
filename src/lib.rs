@@ -224,6 +224,32 @@ pub fn markdown_file_to_docx(path: &Path, config: &Config) -> Result<Vec<u8>> {
 /// Like [`markdown_file_to_docx`], and also returns the findings and statistics. Spans refer to
 /// the file's text.
 pub fn convert_file(path: &Path, config: &Config) -> Result<Conversion> {
+    let (text, cfg) = read_markdown_file(path, config)?;
+    convert(&text, &cfg)
+}
+
+/// [`analyze`] for a file: validate it, with the same limits and relative-image rules as
+/// [`convert_file`], without producing a document.
+pub fn analyze_file(path: &Path, config: &Config) -> Result<Report> {
+    let (text, cfg) = read_markdown_file(path, config)?;
+    analyze(&text, &cfg)
+}
+
+/// [`convert`] for input that arrives as a stream (a socket, a pipe, an upload): reads at most
+/// [`Limits::max_input_bytes`] bytes, then converts. More than that is
+/// [`CrateError::LimitExceeded`] and bytes that are not UTF-8 are [`CrateError::InvalidMarkdown`];
+/// the reader is never read to its end. Relative images resolve against [`Config::base_dir`] (the
+/// current directory when unset).
+pub fn convert_reader<R: std::io::Read>(reader: R, config: &Config) -> Result<Conversion> {
+    convert(&read_markdown(reader, config)?, config)
+}
+
+/// [`analyze`] for input that arrives as a stream; see [`convert_reader`].
+pub fn analyze_reader<R: std::io::Read>(reader: R, config: &Config) -> Result<Report> {
+    analyze(&read_markdown(reader, config)?, config)
+}
+
+fn read_markdown_file(path: &Path, config: &Config) -> Result<(String, Config)> {
     // Bounded read: a huge file or a device like /dev/zero must not be slurped into memory.
     let max = u64::try_from(config.limits.max_input_bytes).unwrap_or(u64::MAX);
     let bytes = safety::read_regular_file(path, &path.display().to_string(), max)?;
@@ -237,5 +263,19 @@ pub fn convert_file(path: &Path, config: &Config) -> Result<Conversion> {
             .map(|p| if p.as_os_str().is_empty() { Path::new(".") } else { p })
             .map(Path::to_path_buf);
     }
-    convert(&text, &cfg)
+    Ok((text, cfg))
+}
+
+fn read_markdown<R: std::io::Read>(reader: R, config: &Config) -> Result<String> {
+    use std::io::Read;
+    let max = u64::try_from(config.limits.max_input_bytes).unwrap_or(u64::MAX);
+    let mut bytes = Vec::new();
+    reader
+        .take(max.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| CrateError::io("<reader>", e))?;
+    if bytes.len() as u64 > max {
+        return Err(CrateError::LimitExceeded(format!("input exceeds {max} bytes")));
+    }
+    String::from_utf8(bytes).map_err(|_| CrateError::InvalidMarkdown("the input is not valid UTF-8".into()))
 }

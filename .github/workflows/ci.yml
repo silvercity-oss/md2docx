@@ -123,6 +123,37 @@ jobs:
       - run: cargo test --features mermaid --locked --no-fail-fast
       - run: cargo test --doc --features mermaid --locked
 
+  # The container recipe in docs/containers.md really works: build the image, then convert
+  # through the hostile-input settings with no network, a read-only filesystem and no mounts.
+  container:
+    name: container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build
+        run: docker build -t silvercity/md2docx:local .
+      - name: Convert on standard input, hostile-input settings
+        run: |
+          set -e
+          printf '# Hello\n\n```mermaid\ngraph TD; A-->B\n```\n\n[x](relative.md)\n' > in.md
+          docker run --rm -i --init --network none --read-only --tmpfs /scratch:rw,size=64m \
+            --memory 512m --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges \
+            -e MD2DOCX_UNTRUSTED=1 -e MD2DOCX_FORMAT=json -e MD2DOCX_SCRATCH_DIR=/scratch \
+            silvercity/md2docx:local - --diagrams < in.md > out.docx 2> report.json
+          head -c 2 out.docx | grep -q PK
+          cat report.json
+          grep -q '"status":"ok"' report.json
+          unzip -l out.docx | grep -q 'word/media/'
+      - name: Strict refusal is status 5 and writes nothing
+        run: |
+          set +e
+          docker run --rm -i --network none --read-only -e MD2DOCX_UNTRUSTED=1 silvercity/md2docx:local - --strict < in.md > strict.docx 2> strict.txt
+          status=$?
+          set -e
+          cat strict.txt
+          test "$status" = 5
+          test ! -s strict.docx
+
   # What `cargo publish` would upload must build on its own, and the docs must be warning-free.
   package:
     name: package + docs

@@ -127,7 +127,7 @@ fn runtime_errors_exit_nonzero_with_a_message() {
     let fx = Fixture::new();
     let missing = fx.path("nope.md");
     let out = md2docx(&[path_str(&missing)]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(3));
     assert!(
         stderr(&out).starts_with("error:") && stderr(&out).contains("nope.md"),
         "{}",
@@ -137,11 +137,11 @@ fn runtime_errors_exit_nonzero_with_a_message() {
     let bad = fx.path("bad.md");
     std::fs::write(&bad, "$$\\left( x$$\n").unwrap();
     let out = md2docx(&[path_str(&bad)]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(4));
     assert!(stderr(&out).contains("line 1"), "{}", stderr(&out));
 
     let same = md2docx(&[path_str(&bad), "-o", path_str(&bad)]);
-    assert_eq!(same.status.code(), Some(1));
+    assert_eq!(same.status.code(), Some(2));
     assert!(stderr(&same).contains("overwrite"));
     assert_eq!(
         std::fs::read_to_string(&bad).unwrap(),
@@ -224,7 +224,7 @@ fn images_are_confined_to_the_input_directory_by_default() {
     let input = fx.path("docs/page.md");
     std::fs::write(&input, "![in](inside.png)\n\n![out](../fixture.png)\n").unwrap();
     let out = md2docx(&[path_str(&input)]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(4));
     assert!(stderr(&out).contains("outside the base directory"), "{}", stderr(&out));
 
     let ok = md2docx(&[path_str(&input), "--image-access", "any"]);
@@ -253,7 +253,7 @@ fn oversized_input_is_refused_with_a_clear_message() {
     // Just over the --untrusted 2 MiB ceiling.
     std::fs::write(&input, "word ".repeat(2 * 1024 * 1024 / 5 + 10)).unwrap();
     let out = md2docx(&[path_str(&input), "--untrusted"]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(4));
     assert!(stderr(&out).contains("limit exceeded"), "{}", stderr(&out));
     assert!(!fx.path("big.docx").exists());
 }
@@ -267,14 +267,14 @@ fn mermaid_engine_flag_names_the_missing_tool_and_how_to_get_it() {
     let input = fx.path("d.md");
     std::fs::write(&input, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
     let default = md2docx(&[path_str(&input)]);
-    assert_eq!(default.status.code(), Some(1));
+    assert_eq!(default.status.code(), Some(6));
     assert!(
         stderr(&default).contains("merman-cli") && stderr(&default).contains("cargo install merman-cli"),
         "{}",
         stderr(&default)
     );
     let mmdc = md2docx(&[path_str(&input), "--mermaid-engine", "mmdc"]);
-    assert_eq!(mmdc.status.code(), Some(1));
+    assert_eq!(mmdc.status.code(), Some(6));
     assert!(
         stderr(&mmdc).contains("`mmdc`") && stderr(&mmdc).contains("mermaid-cli"),
         "{}",
@@ -381,7 +381,7 @@ fn the_input_is_never_overwritten_however_the_output_is_spelled() {
             .arg(&out)
             .output()
             .unwrap();
-        assert_eq!(run.status.code(), Some(1), "{}", out.display());
+        assert_eq!(run.status.code(), Some(2), "{}", out.display());
         assert!(String::from_utf8_lossy(&run.stderr).contains("refusing"));
         assert_eq!(
             std::fs::read_to_string(&input).unwrap(),
@@ -533,7 +533,7 @@ fn strict_refuses_a_lossy_document_lists_everything_and_writes_nothing() {
     )
     .unwrap();
     let out = md2docx(&["--strict", "--untrusted", path_str(&input)]);
-    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(5), "--strict refusals have their own status");
     let err = stderr(&out);
     for code in ["link.dropped", "image.remote", "diagram.not-rendered"] {
         assert!(err.contains(&format!("[{code}]")), "{code} missing:\n{err}");
@@ -567,7 +567,7 @@ fn the_scratch_directory_option_moves_the_working_directory() {
     let fenced = fx.path("d.md");
     std::fs::write(&fenced, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
     let bad = md2docx(&["--scratch-dir", "/definitely/not/there", path_str(&fenced)]);
-    assert!(!bad.status.success());
+    assert_eq!(bad.status.code(), Some(3), "{}", stderr(&bad));
 }
 
 #[cfg(unix)]

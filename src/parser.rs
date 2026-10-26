@@ -772,9 +772,10 @@ fn add_footnote_marks(xml: Vec<u8>) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// `YYYY-MM-DDThh:mm:ssZ` for the current time (UTC), without a date library.
-fn now_rfc3339() -> String {
-    let secs = std::time::SystemTime::now()
+/// `YYYY-MM-DDThh:mm:ssZ` for `at` (default: now), in UTC, without a date library.
+fn rfc3339(at: Option<std::time::SystemTime>) -> String {
+    let secs = at
+        .unwrap_or_else(std::time::SystemTime::now)
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let (days, rem) = (secs / 86_400, secs % 86_400);
@@ -2972,7 +2973,7 @@ pub(crate) fn build_parts(pre: &Preprocessed, cfg: &Config, original: &str) -> R
     }
 
     let (bullets, ordered) = numbering_definitions();
-    let now = now_rfc3339();
+    let now = rfc3339(cfg.document.timestamp);
     let mut docx = base_docx(&cfg.document, &b.geo)
         .created_at(&now)
         .updated_at(&now)

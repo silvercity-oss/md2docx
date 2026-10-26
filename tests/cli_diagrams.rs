@@ -73,7 +73,7 @@ fn untrusted_with_diagrams_renders_mermaid_or_says_how_to_install_merman() {
         assert!(body.contains("<m:oMathPara>"));
         assert!(visible_text(&body).contains("node a"), "dolphin stays code");
     } else {
-        assert_eq!(out.status.code(), Some(1));
+        assert_eq!(out.status.code(), Some(6));
         assert!(stderr(&out).contains("cargo install merman-cli"), "{}", stderr(&out));
         assert!(!fx.path("d.docx").exists(), "no partial output");
     }

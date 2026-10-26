@@ -8,7 +8,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["markdown", "docx", "word", "latex", "mermaid"]
 categories = ["text-processing", "command-line-utilities"]
-exclude = [".github/", ".gitattributes", ".cargo/", "tests/data/"]
+exclude = [".github/", ".gitattributes", ".cargo/", "tests/data/", "Dockerfile", ".dockerignore"]
 
 [lib]
 name = "silvercity_oss"
@@ -21,9 +21,9 @@ required-features = ["cli"]
 
 [features]
 # The `md2docx` command-line tool. Library users should depend on this crate with
-# `default-features = false` to avoid compiling clap and shlex.
+# `default-features = false` to avoid compiling clap, its completion and man-page generators, and shlex.
 default = ["cli"]
-cli = ["dep:clap", "dep:shlex"]
+cli = ["dep:clap", "dep:clap_complete", "dep:clap_mangen", "dep:shlex"]
 # Mermaid diagrams rendered *inside the process* by `merman` (a pure-Rust Mermaid): no child
 # process, no browser, no JavaScript, nothing written to disk. Needs Rust 1.95 (merman's MSRV);
 # the rest of the crate still builds with 1.88. The tested merman version is pinned exactly.
@@ -43,7 +43,9 @@ sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
-clap = { version = "4", features = ["derive"], optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
+clap_complete = { version = "4", optional = true }
+clap_mangen = { version = "0.2", optional = true }
 percent-encoding = "2.3.2"
 shlex = { version = "2", optional = true }
 # Reads and writes the .docx archive (also used by the vendored writer in src/docx).

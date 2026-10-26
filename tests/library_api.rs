@@ -325,3 +325,36 @@ fn config_is_send_sync_and_errors_are_std_errors() {
     }
     run().unwrap();
 }
+
+#[test]
+fn readers_and_files_are_read_within_the_input_limit() {
+    use silvercity_oss::{analyze_file, analyze_reader, convert_reader};
+    let cfg = Config::default();
+    let ok = convert_reader(std::io::Cursor::new("# Hi\n\n[x](relative.md)\n"), &cfg).unwrap();
+    assert!(ok.diagnostics.iter().any(|d| d.code.as_str() == "link.dropped"));
+    assert!(ok.docx.starts_with(b"PK"));
+    let report = analyze_reader(std::io::Cursor::new("# Hi\n"), &cfg).unwrap();
+    assert_eq!(report.stats.headings, 1);
+
+    let mut small = Config::default();
+    small.limits.max_input_bytes = 10;
+    // Never reads past the limit, however long the stream is.
+    let endless = std::io::repeat(b'a');
+    assert!(matches!(
+        convert_reader(endless, &small),
+        Err(CrateError::LimitExceeded(_))
+    ));
+    assert!(matches!(
+        convert_reader(std::io::Cursor::new(vec![0xff, 0xfe]), &cfg),
+        Err(CrateError::InvalidMarkdown(_))
+    ));
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    std::fs::write(&file, "# One\n\n# Two\n").unwrap();
+    assert_eq!(analyze_file(&file, &cfg).unwrap().stats.headings, 2);
+    assert!(matches!(
+        analyze_file(&dir.path().join("missing.md"), &cfg),
+        Err(CrateError::Io { .. })
+    ));
+}

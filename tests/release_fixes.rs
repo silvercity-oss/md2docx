@@ -289,7 +289,7 @@ fn the_cli_can_keep_failed_diagrams() {
             .output()
             .unwrap()
     };
-    assert_eq!(run(&[]).status.code(), Some(1));
+    assert_eq!(run(&[]).status.code(), Some(6));
     let ok = run(&["--keep-failed-diagrams"]);
     assert!(ok.status.success(), "{}", String::from_utf8_lossy(&ok.stderr));
 }

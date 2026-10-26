@@ -508,6 +508,11 @@ pub struct DocumentOptions {
     /// Document author for the file's properties. Falls back to `author:` in the front
     /// matter; otherwise "unknown". At most 200 printable characters.
     pub author: Option<String>,
+    /// The "created" and "modified" time written to the file's properties. `None` (the default)
+    /// uses the time of the conversion, so the same input gives different bytes on each run; set
+    /// it (for example from `SOURCE_DATE_EPOCH`) for byte-identical, cacheable output. Must lie
+    /// between 1970 and the year 9999.
+    pub timestamp: Option<std::time::SystemTime>,
 }
 
 impl Default for DocumentOptions {
@@ -528,6 +533,7 @@ impl Default for DocumentOptions {
             table_of_contents: None,
             title: None,
             author: None,
+            timestamp: None,
         }
     }
 }
@@ -535,6 +541,12 @@ impl Default for DocumentOptions {
 impl DocumentOptions {
     /// Check the values; the error text names the offending option.
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if let Some(t) = self.timestamp {
+            let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs());
+            if !secs.is_ok_and(|s| s < 253_402_300_800) {
+                return Err("timestamp must lie between 1970 and the year 9999".into());
+            }
+        }
         if let Some(toc) = &self.table_of_contents {
             if !(1..=6).contains(&toc.max_level) {
                 return Err(format!(
@@ -766,6 +778,13 @@ impl Config {
     /// Replace the limits.
     pub fn with_limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Fix the document's created/modified time, making the output reproducible
+    /// ([`DocumentOptions::timestamp`]).
+    pub fn with_timestamp(mut self, timestamp: std::time::SystemTime) -> Self {
+        self.document.timestamp = Some(timestamp);
         self
     }
 
