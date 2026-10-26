@@ -12,7 +12,7 @@ use common::*;
 const DOC: &str = "# Flow\n\n```mermaid\ngraph TD; A[Start] --> B[End]\n```\n";
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .args(args)
         .env("PATH", "")
         .output()

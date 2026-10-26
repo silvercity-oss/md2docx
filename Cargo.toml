@@ -18,12 +18,12 @@ name = "md2docx"
 path = "src/lib.rs"
 
 [[bin]]
-name = "md2docx"
+name = "md2docx-cli"
 path = "src/main.rs"
 required-features = ["cli"]
 
 [features]
-# The `md2docx` command-line tool. Library users should depend on this crate with
+# The `md2docx-cli` command-line tool. Library users should depend on this crate with
 # `default-features = false` to avoid compiling clap, its completion and man-page generators, and shlex.
 default = ["cli"]
 cli = ["dep:clap", "dep:clap_complete", "dep:clap_mangen", "dep:shlex"]

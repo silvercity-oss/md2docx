@@ -9,7 +9,7 @@ use md2docx::{Config, Highlighting, Theme};
 let cfg = Config::untrusted().with_highlighting(Highlighting::new(Theme::vscode_dark()));
 ```
 
-or, with the CLI, `md2docx --highlight light|dark`.
+or, with the CLI, `md2docx-cli --highlight light|dark`.
 
 With highlighting on, **every** code block takes the theme's background and text
 colour (so a dark theme is consistent); a block whose language no highlighter

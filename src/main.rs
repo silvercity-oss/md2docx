@@ -1,4 +1,4 @@
-//! `md2docx`: command-line front end for the Markdown -> .docx converter.
+//! `md2docx-cli`: command-line front end for the Markdown -> .docx converter.
 
 mod cli;
 

@@ -82,7 +82,7 @@
 //! * **Deterministic identifiers.** Relationship, footnote, picture and bookmark ids restart for
 //!   every conversion, so equal input gives equal parts (the package's created/modified timestamps
 //!   still differ).
-//! * **Features.** `cli` (default) builds the `md2docx` binary. Library users
+//! * **Features.** `cli` (default) builds the `md2docx-cli` binary. Library users
 //!   should depend on the crate with `default-features = false` to avoid
 //!   compiling `clap` and `shlex`. `mermaid` renders Mermaid in-process (Rust 1.95).
 //! * **Syntax highlighting** for code blocks: [`Highlighting`], [`Theme`], [`Highlighter`].

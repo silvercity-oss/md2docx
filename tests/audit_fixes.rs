@@ -341,7 +341,7 @@ fn untrusted_conversion_does_not_need_a_scratch_directory() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("a.md");
     std::fs::write(&input, "# Title\n\n$x^2$\n\n```mermaid\ngraph TD; A-->B\n```\n").unwrap();
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .arg(&input)
         .arg("--untrusted")
         .env("TMPDIR", "/nonexistent/scratch")

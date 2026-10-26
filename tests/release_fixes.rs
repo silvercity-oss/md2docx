@@ -282,7 +282,7 @@ fn the_cli_can_keep_failed_diagrams() {
     let input = dir.path().join("d.md");
     std::fs::write(&input, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
     let run = |extra: &[&str]| {
-        std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        std::process::Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .args(["--mermaid-command", "/nonexistent/tool {input} {output}"])
             .args(extra)

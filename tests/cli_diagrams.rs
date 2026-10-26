@@ -9,10 +9,10 @@ use std::process::{Command, Output};
 use common::*;
 
 fn md2docx(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .args(args)
         .output()
-        .expect("md2docx should start")
+        .expect("md2docx-cli should start")
 }
 
 fn p(path: &Path) -> &str {

@@ -169,6 +169,6 @@ let docx = tokio::task::spawn_blocking(move || convert_reader(body_reader, &cfg)
 and read at most `Limits::max_input_bytes`; `convert_file` / `analyze_file` do the same for a path.
 `Config` is `Send + Sync + Clone`: build it once per policy and share it.
 
-If you would rather not link the library, the `md2docx` binary has a stable, scriptable interface:
+If you would rather not link the library, the `md2docx-cli` binary has a stable, scriptable interface:
 standard input and output, a JSON report and a documented exit status ([cli.md](cli.md),
 [containers.md](containers.md)).

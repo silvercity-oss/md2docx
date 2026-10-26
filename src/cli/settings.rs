@@ -289,7 +289,7 @@ mod tests {
     use super::*;
 
     fn parse(extra: &[&str]) -> Args {
-        let mut v = vec!["md2docx", "in.md"];
+        let mut v = vec!["md2docx-cli", "in.md"];
         v.extend_from_slice(extra);
         Args::try_parse_from(v).unwrap()
     }
@@ -309,11 +309,11 @@ mod tests {
             ["--latex", "xelatex"],
         ] {
             assert!(
-                Args::try_parse_from(["md2docx", "in.md", "--untrusted", extra[0], extra[1]]).is_err(),
+                Args::try_parse_from(["md2docx-cli", "in.md", "--untrusted", extra[0], extra[1]]).is_err(),
                 "{extra:?}"
             );
         }
-        assert!(Args::try_parse_from(["md2docx", "in.md", "--untrusted", "--mermaid-engine", "mmdc"]).is_err());
+        assert!(Args::try_parse_from(["md2docx-cli", "in.md", "--untrusted", "--mermaid-engine", "mmdc"]).is_err());
         // Defaults for the normal mode keep images inside the input's directory.
         let d = parse(&[]);
         assert_eq!(config(&d).unwrap().image_access, LibImageAccess::BaseDir);
@@ -365,7 +365,7 @@ mod tests {
         let c = parse(&["--mermaid-command", "my-mmdc -i {input} -o {output}"]);
         assert_eq!(config(&c).unwrap().graphs.mermaid.program, "my-mmdc");
         assert!(Args::try_parse_from([
-            "md2docx",
+            "md2docx-cli",
             "in.md",
             "--mermaid-engine",
             "mmdc",

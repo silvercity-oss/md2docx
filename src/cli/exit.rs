@@ -1,4 +1,4 @@
-//! The exit-status contract of `md2docx`. See `docs/cli.md`: these values are part of the
+//! The exit-status contract of `md2docx-cli`. See `docs/cli.md`: these values are part of the
 //! public interface and do not change meaning once released.
 
 use md2docx::{CrateError, Diagnostic};

@@ -1,6 +1,6 @@
 # Running md2docx in a container or a worker
 
-`md2docx` bounds the work it does (input, element, image, output and time limits), refuses
+`md2docx-cli` bounds the work it does (input, element, image, output and time limits), refuses
 dangerous content, and cleans up what it starts. It **cannot** bound its own memory, stop a
 kernel-level problem, or isolate itself from the host. That is the container's job. This page is
 the recipe.
@@ -49,7 +49,7 @@ docker build -t silvercity-oss/md2docx:local .
 ```
 
 It is a multi-stage build (`rust` → `gcr.io/distroless/cc`), runs as the unprivileged `nonroot`
-user, and has `md2docx` as its entry point. Rust 1.95 or later is needed for the `mermaid` feature
+user, and has `md2docx-cli` as its entry point. Rust 1.95 or later is needed for the `mermaid` feature
 (merman's own requirement).
 
 ## Your own documents (trusted input)
@@ -66,7 +66,7 @@ For image-mode math, build an image that adds `texlive-latex-base` and `dvipng`.
 ## CI
 
 ```yaml
-- run: md2docx --check --strict --format json docs/*.md 2>docs-report.jsonl
+- run: md2docx-cli --check --strict --format json docs/*.md 2>docs-report.jsonl
 ```
 
 `--check` writes nothing, so it also works on a read-only checkout. Status `5` is "a document

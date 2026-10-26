@@ -1,6 +1,6 @@
 # md2docx
 
-A pure-Rust library (plus the `md2docx` CLI) that converts Markdown into
+A pure-Rust library (plus the `md2docx-cli` command-line tool) that converts Markdown into
 high-fidelity Word `.docx` files, including **LaTeX math** and **Mermaid /
 Dolphin diagrams** that plain Word writers cannot express natively.
 
@@ -15,7 +15,7 @@ std::fs::write("out.docx", docx)?;
 
 ```toml
 [dependencies]
-# default-features = false: skip the `md2docx` binary's dependencies (clap, its completion and man-page generators, shlex).
+# default-features = false: skip the `md2docx-cli` binary's dependencies (clap, its completion and man-page generators, shlex).
 md2docx = { version = "0.1", default-features = false }
 ```
 
@@ -83,7 +83,7 @@ match convert(&markdown, &strict) {
 
 `LossPolicy::Allow` (the default) returns the
 degraded document and still reports the findings through `convert`; the byte-returning
-functions then return success without them, so choose the policy explicitly. `md2docx --strict`
+functions then return success without them, so choose the policy explicitly. `md2docx-cli --strict`
 does the same on the command line, printing `file:line:column: warning[code]: message`.
 
 ### Images from your own storage
@@ -137,7 +137,7 @@ let cfg = Config::untrusted()
   label. Attributes in the document are ignored, so the author can only switch
   styles *you* defined on and off. Names and colours are validated up front.
 * **Syntax highlighting** (`Config::with_highlighting(Highlighting::new(Theme::vscode_dark()))`,
-  `md2docx --highlight light|dark`): built-in lexers for 21 languages and the VS Code
+  `md2docx-cli --highlight light|dark`): built-in lexers for 21 languages and the VS Code
   Light+/Dark+ themes, or your own `Highlighter` (a closure works) for anything else. How
   to plug in `syntect` or `tree-sitter` for better accuracy, with tested code, is in
   [docs/highlighting.md](docs/highlighting.md).
@@ -222,7 +222,7 @@ keep their PNG in memory instead.
 | **`merman`** (default) | [`merman-cli`](https://github.com/Latias94/merman), a headless Rust implementation of Mermaid. `cargo install merman-cli` | Almost always: no browser or JavaScript runtime, ~0.1-1 s per diagram, and it enforces its own layout and raster limits |
 | `mmdc` | The official [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli); drives a headless Chrome. `npm install -g @mermaid-js/mermaid-cli` | You need exact Mermaid.js output, or a diagram type merman does not support yet |
 
-Switch with `md2docx --mermaid-engine mmdc` or, in code,
+Switch with `md2docx-cli --mermaid-engine mmdc` or, in code,
 `config.graphs.use_engine(MermaidEngine::Mmdc)`. `--mermaid-command` /
 `config.graphs.mermaid` replaces the command entirely (any `CommandSpec`
 that writes a PNG).
@@ -259,7 +259,7 @@ engine above. See [docs/embedding.md](docs/embedding.md#diagrams-and-a-one-proce
 
 `Config::untrusted()` leaves diagram fences as code, so it never starts a
 process. If your users need diagrams, `Config::untrusted_with_diagrams()`
-(CLI: `md2docx --untrusted --diagrams`) renders **Mermaid only**, with
+(CLI: `md2docx-cli --untrusted --diagrams`) renders **Mermaid only**, with
 `merman-cli`, under these rules:
 
 * The only accepted command is the stock merman command line (you may change the
@@ -387,13 +387,13 @@ the same HTML; the only differences are `<a>` links and the image policy.
 ## CLI
 
 ```
-md2docx notes.md                                  # -> notes.docx, native equations
-md2docx notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
-md2docx - < notes.md > out.docx                   # standard input to standard output
-md2docx docs/*.md -o build/                       # several files into a directory
-md2docx --check --strict docs/*.md                # CI lint: write nothing, fail on any loss
-md2docx --untrusted --format json - < upload.md > out.docx 2> report.json
-md2docx notes.md --mermaid-engine mmdc            # official Mermaid CLI instead of merman
+md2docx-cli notes.md                                  # -> notes.docx, native equations
+md2docx-cli notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
+md2docx-cli - < notes.md > out.docx                   # standard input to standard output
+md2docx-cli docs/*.md -o build/                       # several files into a directory
+md2docx-cli --check --strict docs/*.md                # CI lint: write nothing, fail on any loss
+md2docx-cli --untrusted --format json - < upload.md > out.docx 2> report.json
+md2docx-cli notes.md --mermaid-engine mmdc            # official Mermaid CLI instead of merman
 ```
 
 The command line is an interface you can script against: **exit status, standard streams, the
@@ -465,7 +465,7 @@ options (`LinkOptions`) and a `LinkResolver` hook. See [docs/links.md](docs/link
 > servers). It converts LaTeX to OMML in-process, never spawns `latex`, and
 > cannot read host files. In library code use `Config::default()` (the same as
 > `Config::untrusted()`); `Config::native_math()` alone does **not** make input safe, it only
-> removes TeX (see "What is not covered"). With the CLI use `md2docx --untrusted`.
+> removes TeX (see "What is not covered"). With the CLI use `md2docx-cli --untrusted`.
 > Image mode is for Markdown you wrote yourself.
 
 Image mode is nevertheless hardened, in layers, so a mistake in one does not
@@ -582,7 +582,7 @@ on Linux, macOS and Windows, an MSRV check (Rust 1.88), and a packaging check.
 * `tests/merman_real.rs`: the default Mermaid engine against a real `merman-cli`
   (skipped when absent; a dedicated CI job installs and requires it).
 * `tests/pipeline.rs`, `tests/pipeline_mock_tools.rs`, `tests/cli.rs`: end-to-end
-  conversion, stand-in `mmdc`/`latex`/`dvipng` scripts, and the `md2docx` binary.
+  conversion, stand-in `mmdc`/`latex`/`dvipng` scripts, and the `md2docx-cli` binary.
 
 Output was also opened and rendered with LibreOffice during development; Word
 itself was not available.

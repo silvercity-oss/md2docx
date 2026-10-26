@@ -1,4 +1,4 @@
-//! `md2docx`: command-line front end for the Markdown -> .docx converter.
+//! `md2docx-cli`: command-line front end for the Markdown -> .docx converter.
 //!
 //! The interface (flags, exit status, the JSON report) is documented in `docs/cli.md`.
 
@@ -48,7 +48,7 @@ pub fn main() -> ExitCode {
                 .map(|s| (*s).to_string())
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "unknown".into());
-            let e = CliError::internal(format!("internal error (this is a bug in md2docx): {what}"));
+            let e = CliError::internal(format!("internal error (this is a bug in md2docx-cli): {what}"));
             ExitCode::from(run::fatal(&args, &e))
         }
     }
@@ -59,7 +59,7 @@ fn print_support_text(args: &Args) -> u8 {
     let mut cmd = Args::command();
     let mut out = std::io::stdout().lock();
     if let Some(shell) = args.completions {
-        clap_complete::generate(shell, &mut cmd, "md2docx", &mut out);
+        clap_complete::generate(shell, &mut cmd, "md2docx-cli", &mut out);
     } else if clap_mangen::Man::new(cmd).render(&mut out).is_err() {
         return Exit::Io.code();
     }

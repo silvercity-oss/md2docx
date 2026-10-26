@@ -113,7 +113,7 @@ const LONG_VERSION: &str = concat!(
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "md2docx",
+    name = "md2docx-cli",
     version,
     long_version = LONG_VERSION,
     about = "High-fidelity Markdown to DOCX compiler with native Math and Graph preprocessing",

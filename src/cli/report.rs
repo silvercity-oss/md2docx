@@ -1,4 +1,4 @@
-//! What `md2docx` tells the caller: human lines, and the JSON report (`--format json`).
+//! What `md2docx-cli` tells the caller: human lines, and the JSON report (`--format json`).
 //!
 //! The JSON is written by hand (the crate has no serde) and is a stable interface: the field
 //! names and meanings below are `"schema": 1`; fields may be *added* within a schema version,

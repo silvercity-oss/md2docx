@@ -19,7 +19,7 @@ First release.
 - LaTeX math in two modes: native, editable OMML equations (no external tool),
   or transparent PNGs via `latex` + `dvipng` or a custom command.
 - Dependency-free LaTeX to OMML converter.
-- `md2docx` command-line tool (`clap`).
+- `md2docx-cli` command-line tool (`clap`).
 - Strict error type (`MissingExternalCli`, `InvalidMarkdown`,
   `DocxGeneration`, `ExternalToolFailed`, `Io`); temp files are removed
   on every path.
@@ -45,12 +45,12 @@ First release.
   front matter; the file's created/modified times are the real time.
 - Code blocks have no gap between lines, a gap around the block and a thin frame
   (`Theme::border`), so consecutive blocks are separate boxes and a white theme is visible.
-- `GraphOptions::on_failure` / `DiagramFailure::KeepAsCode` / `md2docx --keep-failed-diagrams`;
+- `GraphOptions::on_failure` / `DiagramFailure::KeepAsCode` / `md2docx-cli --keep-failed-diagrams`;
   `CrateError::is_input_error()`; `CommandSpec` is `#[non_exhaustive]` (use `CommandSpec::new`).
 
 ### Extension points
 - **Syntax highlighting** (`Config::with_highlighting`, `Highlighting`, `Theme`,
-  `TokenClass`, `Highlighter`, `BuiltinHighlighter`; `md2docx --highlight`): built-in
+  `TokenClass`, `Highlighter`, `BuiltinHighlighter`; `md2docx-cli --highlight`): built-in
   lexers for Rust, Python, JavaScript, TypeScript, Java, C, C++, C#, Go, Kotlin, Swift,
   Ruby, PHP, SQL, Bash, JSON, YAML, TOML, HTML/XML, CSS and diff (linear time, no
   dependencies), VS Code Light+/Dark+ themes, custom themes, and custom highlighters per
@@ -65,8 +65,8 @@ First release.
   Attributes in the document are ignored. Tag names may contain `-`.
 - `DocumentOptions::{code_background, link_color, quote_bar_color}` and
   `DocumentOptions::code_blocks` (`CodeBlockLayout::SingleParagraph`: a code block as
-  one paragraph with line breaks, easy to select and copy; `md2docx --code-blocks single`).
-- `Config::compression_level` / `with_compression_level` / `md2docx --compression-level`
+  one paragraph with line breaks, easy to select and copy; `md2docx-cli --code-blocks single`).
+- `Config::compression_level` / `with_compression_level` / `md2docx-cli --compression-level`
   (0 to 9, default **6**): the XML parts are deflated while the archive is written, in one
   pass (about 10x smaller than uncompressed; pictures stay stored).
 - `Limits::max_output_bytes` (the finished file, enforced exactly while writing:
@@ -75,7 +75,7 @@ First release.
   A small input can expand about 40x into XML.
 
 ### Diagrams for untrusted input
-- `Config::untrusted_with_diagrams()` / `md2docx --untrusted --diagrams`: Mermaid
+- `Config::untrusted_with_diagrams()` / `md2docx-cli --untrusted --diagrams`: Mermaid
   rendered by `merman-cli` (no browser) with a locked-down command (stock merman
   line only, `--input-kind mermaid`), a scrubbed environment, at most 20
   diagrams of 16 KiB, 20 s each and 60 s in total; `dolphin` fences stay code.
@@ -98,11 +98,11 @@ First release.
 - **`Config::default()` is the untrusted-input policy.** `Config::trusted()` is the permissive
   preset; `Limits::default()` is the tight set and `Limits::trusted()` the generous one; `MathMode` defaults to `NativeOmml` and
   `GraphOptions::enabled` to `false`. `Config::native_math()` is documented as a trusted preset.
-  The `md2docx` binary starts from `Config::trusted()`.
+  The `md2docx-cli` binary starts from `Config::trusted()`.
 - **Findings and strict mode.** `convert`, `convert_to_writer`, `convert_file` and `analyze` return
   `Diagnostic`s (23 stable `Code`s, `Severity`, `SourceSpan` in the original text) and `Stats`;
   `Config::loss_policy` (`LossPolicy::Allow` default, `Reject` = `CrateError::LossyContent`);
-  `md2docx --strict`, with `file:line:column` output. See docs/diagnostics.md.
+  `md2docx-cli --strict`, with `file:line:column` output. See docs/diagnostics.md.
 - **Host-supplied images.** `ImageResolver` / `AssetMap` / `Config::with_image_resolver`: exact
   bytes by key, never a path or URL. Every image is decoded in full and re-encoded as a clean
   PNG under new limits (`max_distinct_images`, `max_image_pixels`, `max_image_dimension`,
@@ -111,7 +111,7 @@ First release.
   Alt text, titles, and diagram/formula descriptions go to `wp:docPr`; fence `alt="…"`/`title="…"`.
 - **Host control of temporary files and time.** `Config::scratch_dir`, `sweep_scratch`,
   `CancelToken`, `Limits::max_conversion_time`, `RenderContext` for `FenceRenderer::render_with`,
-  `CrateError::{Cancelled, TimedOut}`; renderer results stay in memory; `md2docx --scratch-dir`,
+  `CrateError::{Cancelled, TimedOut}`; renderer results stay in memory; `md2docx-cli --scratch-dir`,
   `--deadline`.
 - **In-process Mermaid** (`mermaid` feature, Rust 1.95): `Config::with_in_process_mermaid()`,
   merman pinned to 0.9.2.
@@ -127,7 +127,7 @@ First release.
   from a `.docx`; `--reference-doc`). Always on: table columns sized by content, HTML `id=` /
   `<a name>` anchors usable as `#` link targets, `mailto:` links limited to `subject`, `body`,
   `cc` and `bcc`.
-- **A command line for automation.** `md2docx` reads standard input and writes standard output
+- **A command line for automation.** `md2docx-cli` reads standard input and writes standard output
   (`-`), converts several files (`-o DIR`), validates without writing (`--check`), reports one JSON
   object per input (`--format json`, schema 1), and exits with a documented status that says who has
   to act (0 ok, 2 usage, 3 file I/O, 4 document rejected, 5 `--strict` refusal, 6 external tool, 7
@@ -181,7 +181,7 @@ First release.
   from a 2 MiB input); memory while building is now bounded by `Limits::max_elements`
   (60 000 in `Config::untrusted()`; a 2 MiB input used to take up to 7.7 GiB); links in
   footnotes no longer leave a dangling relationship id; a Markdown table inside an
-  HTML table keeps both; `md2docx notes.md` finds images next to a bare file name;
+  HTML table keeps both; `md2docx-cli notes.md` finds images next to a bare file name;
   integer overflow in code-block indents; list start numbers fit 32 bits; HTML
   attribute lookup ignores text inside quoted values; a fence's picture is no
   longer glued to the next line; image paths outside the base directory are refused
@@ -198,7 +198,7 @@ First release.
   500 lines (LibreOffice's layout time grows with the square of a paragraph's lines).
 - Image mode runs a local TeX engine on document content; use native mode for
   untrusted input. See the README.
-- `Config::untrusted()` / `md2docx --untrusted`: native math, diagram fences left
+- `Config::untrusted()` / `md2docx-cli --untrusted`: native math, diagram fences left
   as code, no local files, tight limits, no subprocess.
 - TeX hardening: denylist for file/shell/catcode primitives and `^^`, paranoid
   file-access environment (`openin_any=p`, `openout_any=p`, `shell_escape=f`).

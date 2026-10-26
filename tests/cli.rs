@@ -10,10 +10,10 @@ use std::process::{Command, Output};
 use common::*;
 
 fn md2docx(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .args(args)
         .output()
-        .expect("md2docx should start")
+        .expect("md2docx-cli should start")
 }
 
 fn path_str(p: &Path) -> &str {
@@ -48,7 +48,7 @@ fn help_and_version_describe_the_interface() {
 
     let version = md2docx(&["--version"]);
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("md2docx "));
+    assert!(String::from_utf8_lossy(&version.stdout).starts_with("md2docx-cli "));
 }
 
 #[test]
@@ -294,7 +294,7 @@ fn compression_level_flag() {
     .unwrap();
     let run = |extra: &[&str]| {
         let out = dir.path().join(format!("o{}.docx", extra.join("")));
-        let status = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        let status = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .arg("-o")
             .arg(&out)
@@ -319,7 +319,7 @@ fn code_blocks_flag() {
     std::fs::write(&input, "```\none\ntwo\nthree\n```\n").unwrap();
     let docx_for = |extra: &[&str]| {
         let out = dir.path().join(format!("c{}.docx", extra.join("")));
-        let run = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        let run = std::process::Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .arg("-o")
             .arg(&out)
@@ -348,7 +348,7 @@ fn a_bare_file_name_resolves_images_next_to_it() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("img.png"), png_bytes(30, 20)).unwrap();
     std::fs::write(dir.path().join("notes.md"), "# Notes\n\n![pic](img.png)\n").unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    let out = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .current_dir(dir.path())
         .arg("notes.md")
         .output()
@@ -375,7 +375,7 @@ fn the_input_is_never_overwritten_however_the_output_is_spelled() {
         spellings.push(dir.path().join("hard.docx"));
     }
     for out in spellings {
-        let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        let run = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .arg("-o")
             .arg(&out)
@@ -400,7 +400,7 @@ fn output_is_written_atomically_with_ordinary_permissions() {
     std::fs::write(&out, b"previous output").unwrap();
     // A conversion that fails leaves the existing output alone and no temporary files behind.
     std::fs::write(&input, "bad \0 input").unwrap();
-    let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    let run = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .arg(&input)
         .output()
         .unwrap();
@@ -408,7 +408,7 @@ fn output_is_written_atomically_with_ordinary_permissions() {
     assert_eq!(std::fs::read(&out).unwrap(), b"previous output");
     // A good one replaces it completely.
     std::fs::write(&input, "# ok\n").unwrap();
-    let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    let run = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .arg(&input)
         .output()
         .unwrap();
@@ -433,7 +433,7 @@ fn the_untrusted_diagram_timeout_cannot_be_raised() {
     let input = dir.path().join("a.md");
     std::fs::write(&input, "plain\n").unwrap();
     let run = |secs: &str| {
-        Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .args(["--untrusted", "--diagrams", "--timeout", secs])
             .output()
@@ -451,7 +451,7 @@ fn highlight_flag() {
     std::fs::write(&input, "```rust\nfn main() {}\n```\n").unwrap();
     let doc = |extra: &[&str]| {
         let out = dir.path().join(format!("h{}.docx", extra.join("")));
-        let run = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+        let run = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .arg("-o")
             .arg(&out)
@@ -487,7 +487,7 @@ fn output_permissions_follow_the_umask_and_existing_files() {
         Command::new("sh")
             .arg("-c")
             .arg(format!("umask {umask}; exec \"$0\" \"$1\" -o \"$2\""))
-            .arg(env!("CARGO_BIN_EXE_md2docx"))
+            .arg(env!("CARGO_BIN_EXE_md2docx-cli"))
             .arg(&input)
             .arg(out)
             .output()
@@ -586,7 +586,7 @@ fn a_force_killed_conversion_leaves_only_what_sweep_scratch_can_recover() {
     );
     let input = fx.path("slow.md");
     std::fs::write(&input, "```mermaid\ngraph TD; A-->B\n```\n").unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_md2docx"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"))
         .args([
             "--scratch-dir",
             path_str(root.path()),

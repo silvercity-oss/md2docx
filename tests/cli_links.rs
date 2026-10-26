@@ -11,7 +11,7 @@ use std::process::{Command, Output};
 use common::*;
 
 fn run(args: &[&str]) -> Output {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_md2docx"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"));
     c.args(args);
     for v in [
         "MD2DOCX_UNTRUSTED",

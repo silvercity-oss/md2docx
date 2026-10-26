@@ -8,10 +8,10 @@ ARG RUST_VERSION=1.95
 FROM rust:${RUST_VERSION}-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked --features mermaid --bin md2docx
+RUN cargo build --release --locked --features mermaid --bin md2docx-cli
 
 # Same Debian release as the builder, so the glibc matches.
 FROM gcr.io/distroless/cc-debian12:nonroot
-COPY --from=build /src/target/release/md2docx /md2docx
+COPY --from=build /src/target/release/md2docx-cli /md2docx-cli
 USER nonroot
-ENTRYPOINT ["/md2docx"]
+ENTRYPOINT ["/md2docx-cli"]

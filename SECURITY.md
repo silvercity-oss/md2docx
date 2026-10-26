@@ -22,7 +22,7 @@ In scope: anything that lets a crafted Markdown document
   limits,
 * produce a `.docx` that is corrupt or that contains active links to local or
   handler targets,
-* bypass `Config::untrusted()` / `md2docx --untrusted`.
+* bypass `Config::untrusted()` / `md2docx-cli --untrusted`.
 
 Out of scope: vulnerabilities in the external tools themselves (TeX, Mermaid CLI,
 Chrome) when you chose to run them on untrusted input, and settings you

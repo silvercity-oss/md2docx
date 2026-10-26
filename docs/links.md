@@ -10,17 +10,17 @@ folder, this page describes how to turn those paths into links that work.
 
 ```sh
 # The README, its linked documents, and the files they link to, as a self-contained tree
-md2docx README.md --markdown-links follow --copy-linked -o site/
+md2docx-cli README.md --markdown-links follow --copy-linked -o site/
 
 # One document whose links point at files where they are now
-md2docx README.md --allow-links local
+md2docx-cli README.md --allow-links local
 
 # One document for the web: links become GitHub addresses
-md2docx README.md --allow-links local \
+md2docx-cli README.md --allow-links local \
   --link-base https://github.com/me/repo/blob/v1.0/ --link-tree-base https://github.com/me/repo/tree/v1.0/
 
 # A documentation check: every relative link and every `file.md#heading` must exist
-md2docx --check --strict --allow-links local docs/*.md
+md2docx-cli --check --strict --allow-links local docs/*.md
 ```
 
 ## The model

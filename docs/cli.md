@@ -1,11 +1,11 @@
-# The `md2docx` command line
+# The `md2docx-cli` command line
 
 This page is the specification of the command-line interface. **The exit status, the standard
 streams and the JSON report are interfaces you may script against**; they are tested by number
 (`tests/cli_contract.rs`) and will not change meaning within a major version. Flags may be added.
 
 ```text
-md2docx [OPTIONS] <INPUT>...        # INPUT is a file, or `-` for standard input
+md2docx-cli [OPTIONS] <INPUT>...        # INPUT is a file, or `-` for standard input
 ```
 
 ## Exit status
@@ -15,7 +15,7 @@ The status says **who has to act**, so a wrapper can branch with one `case` on `
 | Status | Name | Meaning | Who acts / retry |
 | ---: | --- | --- | --- |
 | `0` | ok | The document was converted (with `--check`: found convertible). Warnings may have been printed. | |
-| `1` | failure | Anything not listed below, including a bug in `md2docx` and a cancelled conversion. | Operator; report it if it persists. |
+| `1` | failure | Anything not listed below, including a bug in `md2docx-cli` and a cancelled conversion. | Operator; report it if it persists. |
 | `2` | usage | The command line or its configuration is wrong: unknown flag, conflicting options, a limit that `--untrusted` forbids raising, an impossible page size, an unreadable `--reference-doc`, `--deadline 0`, two inputs that would write the same file, writing a `.docx` to a terminal, overwriting the input. Nothing was converted. | The person who wrote the command. Do not retry. |
 | `3` | i/o | A file could not be read or written: the input, the output, the output directory, a standard stream. The document itself was not judged. | Operator. A retry can succeed. |
 | `4` | rejected | The **document** is at fault: malformed (invalid math, not UTF-8), over a limit (`--max-*`, the preset's), or forbidden by the security policy (a path outside `--base-dir`). | Whoever wrote the Markdown. The same input gives the same answer: do not retry unchanged. |
@@ -24,7 +24,7 @@ The status says **who has to act**, so a wrapper can branch with one `case` on `
 | `7` | timeout | `--deadline` passed before the conversion finished. | A retry with more time, or on a quieter machine, may succeed. |
 
 Unix statuses above 128 are the shell's report of a signal (137 = killed, 134 = aborted) and are
-not produced by `md2docx` itself. A process that runs out of memory is killed by the system, not
+not produced by `md2docx-cli` itself. A process that runs out of memory is killed by the system, not
 reported: give the worker a memory limit and treat 137 as "too big for this worker".
 
 * With several inputs every input is tried; the status is that of the **first one that failed**
@@ -41,10 +41,10 @@ reported: give the worker a memory limit and treat 137 as "too big for this work
 | standard output | Only the `.docx` bytes, and only when the output is `-`. (Also `--help`, `--version`, `--completions`, `--man`.) |
 | standard error | Everything else: warnings, the `wrote …` line, errors, or with `--format json` the JSON report. |
 
-* `md2docx doc.md` writes `doc.docx` next to the input and prints `wrote doc.docx`.
-* `md2docx - < doc.md > out.docx` and `-o -` write the document to standard output. If standard
-  output is a terminal, `md2docx` refuses (status 2) instead of printing a ZIP archive at you.
-* `md2docx - -o out.docx` reads standard input and writes a file.
+* `md2docx-cli doc.md` writes `doc.docx` next to the input and prints `wrote doc.docx`.
+* `md2docx-cli - < doc.md > out.docx` and `-o -` write the document to standard output. If standard
+  output is a terminal, `md2docx-cli` refuses (status 2) instead of printing a ZIP archive at you.
+* `md2docx-cli - -o out.docx` reads standard input and writes a file.
 * Input from standard input is read up to `--max-input-bytes` and must be UTF-8. Relative images
   resolve against `--base-dir`, or the current directory.
 * The output file is written to a temporary file and renamed, so a failure never leaves a
@@ -92,20 +92,20 @@ text, status 2). `--quiet` has no effect on it.
 
 ## Validating without producing a file
 
-`md2docx --check doc.md` runs the whole pipeline (same limits, same rendering, same findings) and
+`md2docx-cli --check doc.md` runs the whole pipeline (same limits, same rendering, same findings) and
 writes nothing: use it as a CI lint step. By itself, findings are reported but the status is `0`;
 add `--strict` to make any warning status `5`. Because no file is produced, the output-size
 limit is not exercised.
 
 ```sh
-md2docx --check --strict --format json docs/*.md 2>report.jsonl || echo "docs need fixing"
+md2docx-cli --check --strict --format json docs/*.md 2>report.jsonl || echo "docs need fixing"
 ```
 
 ## Several inputs
 
 ```sh
-md2docx a.md b.md c.md                 # a.docx, b.docx, c.docx next to the inputs
-md2docx docs/*.md -o build/            # build/<name>.docx; the directory must exist
+md2docx-cli a.md b.md c.md                 # a.docx, b.docx, c.docx next to the inputs
+md2docx-cli docs/*.md -o build/            # build/<name>.docx; the directory must exist
 ```
 
 Two inputs that would write the same output file are refused before anything runs (status 2). With `--markdown-links follow` the list grows as links are followed; see [links.md](links.md).
@@ -151,14 +151,14 @@ may only be narrowed. Without `--untrusted` any value is accepted.
 
 ### Reproducible output
 
-`SOURCE_DATE_EPOCH=… md2docx doc.md` (or `--source-date-epoch`) fixes the created and modified
+`SOURCE_DATE_EPOCH=… md2docx-cli doc.md` (or `--source-date-epoch`) fixes the created and modified
 times; with it, the same input and the same version give the same bytes. Without it, the time of
 the conversion is recorded.
 
 ## Flag reference
 
-`md2docx --help` is authoritative; `md2docx --man` prints a manual page and
-`md2docx --completions bash|zsh|fish|powershell|elvish` a completion script.
+`md2docx-cli --help` is authoritative; `md2docx-cli --man` prints a manual page and
+`md2docx-cli --completions bash|zsh|fish|powershell|elvish` a completion script.
 
 | Group | Flags |
 | --- | --- |
@@ -171,5 +171,5 @@ the conversion is recorded.
 | Links to files | `--allow-links none\|local\|all`, `--link-root`, `--link-style rebased\|absolute`, `--link-base`, `--link-tree-base`, `--link-map`, `--no-check-link-anchors`, `--markdown-links keep\|docx\|follow`, `--link-layout mirror\|flat`, `--copy-linked`, `--max-linked-files`, `--max-copy-bytes` (see [links.md](links.md)) |
 
 `--mermaid-engine inprocess` exists only in builds with the `mermaid` feature
-(`cargo install md2docx --features mermaid`; `md2docx --version` says whether it is compiled
+(`cargo install md2docx --features mermaid`; `md2docx-cli --version` says whether it is compiled
 in). There `--untrusted --diagrams` also renders in-process: no child process at all.

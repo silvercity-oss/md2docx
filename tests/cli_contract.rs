@@ -13,7 +13,7 @@ use std::process::{Command, Output, Stdio};
 use common::*;
 
 fn cmd(args: &[&str]) -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_md2docx"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_md2docx-cli"));
     c.args(args);
     // A developer's own settings must not leak into the tests.
     for var in [
@@ -39,7 +39,7 @@ fn cmd(args: &[&str]) -> Command {
 }
 
 fn run(args: &[&str]) -> Output {
-    cmd(args).output().expect("md2docx should start")
+    cmd(args).output().expect("md2docx-cli should start")
 }
 
 fn run_stdin(args: &[&str], input: &[u8]) -> Output {
@@ -463,7 +463,7 @@ fn link_flags_narrow_what_a_link_may_do() {
 fn completions_man_and_version_describe_the_tool() {
     let comp = run(&["--completions", "bash"]);
     assert_eq!(comp.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&comp.stdout).contains("md2docx"));
+    assert!(String::from_utf8_lossy(&comp.stdout).contains("md2docx-cli"));
     let man = run(&["--man"]);
     assert_eq!(man.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&man.stdout).contains(".TH"));
