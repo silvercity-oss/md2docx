@@ -3,14 +3,14 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{convert, AssetMap, Config, LossPolicy};
+use md2docx::{convert, AssetMap, Config, LossPolicy};
 
 fn cfg() -> Config {
     let mut assets = AssetMap::new();
     assets.insert("fig", png_bytes(40, 20));
     Config::default()
         .with_image_resolver(assets)
-        .with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, silvercity_oss::FenceError> {
+        .with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, md2docx::FenceError> {
             Ok(png_bytes(30, 30))
         })
         .with_loss_policy(LossPolicy::Reject)
@@ -31,9 +31,9 @@ fn footnotes_keep_links_pictures_equations_diagrams_and_tables_without_findings(
     assert!(notes.contains("<w:drawing>"));
     assert!(notes.contains("<w:tbl>"));
     assert!(notes.contains("<m:oMath"), "equations in footnotes are native OMML");
-    assert!(!notes.contains("SILVERCITYOMML"), "no placeholder may survive");
+    assert!(!notes.contains("MD2DOCXOMML"), "no placeholder may survive");
     let body = zip_text(&c.docx, "word/document.xml");
-    assert!(!body.contains("SILVERCITYOMML"));
+    assert!(!body.contains("MD2DOCXOMML"));
     assert!(!body.contains("<m:oMath"), "the equations belong to the footnotes");
     assert_eq!((c.stats.footnotes, c.stats.tables), (3, 1));
 }
@@ -94,5 +94,5 @@ fn references_inside_footnotes_are_still_left_as_text() {
     assert!(c
         .diagnostics
         .iter()
-        .any(|d| d.code == silvercity_oss::Code::FootnoteNested));
+        .any(|d| d.code == md2docx::Code::FootnoteNested));
 }

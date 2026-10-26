@@ -5,7 +5,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, CrateError, FenceError, ImageAccess};
+use md2docx::{markdown_to_docx, Config, CrateError, FenceError, ImageAccess};
 
 fn fast(md: &str, cfg: &Config) -> Result<Vec<u8>, CrateError> {
     let started = Instant::now();
@@ -321,15 +321,15 @@ fn image_paths_outside_the_base_get_the_same_answer_whether_or_not_they_exist() 
 
 #[test]
 fn non_xml_characters_are_refused_in_config_and_in_the_public_converter() {
-    let mut doc = silvercity_oss::DocumentOptions::default();
+    let mut doc = md2docx::DocumentOptions::default();
     doc.body_font = "Cali\u{fffe}bri".into();
     assert!(matches!(
         markdown_to_docx("x", &Config::trusted().with_document(doc)),
         Err(CrateError::InvalidConfig(_))
     ));
-    assert!(silvercity_oss::omml::latex_to_omml("a\u{1}b").is_err());
-    assert!(silvercity_oss::omml::latex_to_omml("a\u{fffe}b").is_err());
-    let e = silvercity_oss::omml::latex_to_omml("\\frac{").unwrap_err();
+    assert!(md2docx::omml::latex_to_omml("a\u{1}b").is_err());
+    assert!(md2docx::omml::latex_to_omml("a\u{fffe}b").is_err());
+    let e = md2docx::omml::latex_to_omml("\\frac{").unwrap_err();
     assert!(!e.message().is_empty() && e.to_string() == e.message());
 }
 
@@ -357,7 +357,7 @@ fn a_replaced_fence_keeps_its_container() {
     let cfg = Config::trusted().with_fence_renderer("chart", |_: &str| -> Result<Vec<u8>, FenceError> {
         Ok(png_bytes(40, 20))
     });
-    let pre = |md: &str| silvercity_oss::__internals::preprocess(md, &cfg).unwrap().markdown;
+    let pre = |md: &str| md2docx::__internals::preprocess(md, &cfg).unwrap().markdown;
     for md in [
         "> - a\n>   ```chart\n>   1\n>   ```\n>   NEXT\n> - b\n",
         "> 1. ```chart\n>    1\n>    ```\n>    NEXT\n",

@@ -6,7 +6,7 @@ mod common;
 use std::io::Cursor;
 
 use common::*;
-use silvercity_oss::{
+use md2docx::{
     markdown_file_to_docx, markdown_to_docx, markdown_to_docx_writer, Config, CrateError, DocumentOptions, ImageAccess,
     Limits, MermaidEngine, PageSize,
 };
@@ -178,7 +178,7 @@ fn builder_methods_cover_the_common_settings() {
     let mut limits = Limits::trusted();
     limits.max_input_bytes = 10;
     let cfg = Config::trusted()
-        .with_math_mode(silvercity_oss::MathMode::NativeOmml)
+        .with_math_mode(md2docx::MathMode::NativeOmml)
         .with_image_access(ImageAccess::None)
         .with_html_links(false)
         .with_mermaid_engine(MermaidEngine::Mmdc)
@@ -328,7 +328,7 @@ fn config_is_send_sync_and_errors_are_std_errors() {
 
 #[test]
 fn readers_and_files_are_read_within_the_input_limit() {
-    use silvercity_oss::{analyze_file, analyze_reader, convert_reader};
+    use md2docx::{analyze_file, analyze_reader, convert_reader};
     let cfg = Config::default();
     let ok = convert_reader(std::io::Cursor::new("# Hi\n\n[x](relative.md)\n"), &cfg).unwrap();
     assert!(ok.diagnostics.iter().any(|d| d.code.as_str() == "link.dropped"));

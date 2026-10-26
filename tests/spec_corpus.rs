@@ -17,7 +17,7 @@ mod common;
 
 use common::*;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
-use silvercity_oss::{markdown_to_docx, Config, ImageAccess};
+use md2docx::{markdown_to_docx, Config, ImageAccess};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/commonmark-spec-examples.txt");
 

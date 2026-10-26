@@ -4,7 +4,7 @@
 //! names and meanings below are `"schema": 1`; fields may be *added* within a schema version,
 //! never renamed, removed or re-typed.
 
-use silvercity_oss::{Diagnostic, Severity, Stats};
+use md2docx::{Diagnostic, Severity, Stats};
 
 use super::exit::CliError;
 
@@ -22,7 +22,7 @@ pub struct Success {
     pub diagnostics: Vec<Diagnostic>,
     pub stats: Stats,
     /// Files and directories the document links to (not part of the JSON report).
-    pub local_links: Vec<silvercity_oss::LocalLink>,
+    pub local_links: Vec<md2docx::LocalLink>,
 }
 
 fn quote(out: &mut String, s: &str) {

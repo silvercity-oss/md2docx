@@ -81,7 +81,7 @@ impl Span {
 /// Turns source text into spans.
 ///
 /// ```
-/// use silvercity_oss::{markdown_to_docx, Config, FenceError, Highlighting, Highlighter, Span, Theme, TokenClass};
+/// use md2docx::{markdown_to_docx, Config, FenceError, Highlighting, Highlighter, Span, Theme, TokenClass};
 ///
 /// /// Colours every `TODO` in any language.
 /// struct Todo;
@@ -308,7 +308,7 @@ impl Theme {
 /// consistent; blocks in a language no highlighter handles are drawn plain.
 ///
 /// ```
-/// use silvercity_oss::{Config, Highlighting, Theme};
+/// use md2docx::{Config, Highlighting, Theme};
 ///
 /// let cfg = Config::untrusted().with_highlighting(Highlighting::new(Theme::vscode_light()));
 /// assert!(cfg.highlighting.is_some());

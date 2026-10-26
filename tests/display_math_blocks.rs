@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config};
+use md2docx::{markdown_to_docx, Config};
 
 fn body(md: &str) -> String {
     zip_text(

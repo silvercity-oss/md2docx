@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, ImageAccess, Limits, MathMode};
+use md2docx::{markdown_to_docx, Config, ImageAccess, Limits, MathMode};
 
 #[test]
 fn default_is_the_untrusted_policy() {

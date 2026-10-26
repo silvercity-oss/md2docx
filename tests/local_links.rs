@@ -6,7 +6,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::*;
-use silvercity_oss::{convert, Config, DocumentLayout, LinkDecision, LinkOptions, LinkRequest, LinkStyle, LocalLinks};
+use md2docx::{convert, Config, DocumentLayout, LinkDecision, LinkOptions, LinkRequest, LinkStyle, LocalLinks};
 
 /// A source tree:
 /// ```text
@@ -51,7 +51,7 @@ fn rels(docx: &[u8]) -> String {
     zip_text(docx, "word/_rels/document.xml.rels")
 }
 
-fn codes(c: &silvercity_oss::Conversion) -> Vec<&str> {
+fn codes(c: &md2docx::Conversion) -> Vec<&str> {
     c.diagnostics.iter().map(|d| d.code.as_str()).collect()
 }
 

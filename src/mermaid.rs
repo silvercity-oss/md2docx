@@ -9,7 +9,7 @@
 //!
 //! ```
 //! # #[cfg(feature = "mermaid")] {
-//! use silvercity_oss::{markdown_to_docx, Config};
+//! use md2docx::{markdown_to_docx, Config};
 //!
 //! let cfg = Config::default().with_in_process_mermaid();
 //! let docx = markdown_to_docx("```mermaid\nflowchart LR\n  A --> B\n```\n", &cfg).unwrap();

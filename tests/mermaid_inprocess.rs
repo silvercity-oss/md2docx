@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::mermaid::{InProcessMermaid, MermaidProfile};
-use silvercity_oss::{
+use md2docx::mermaid::{InProcessMermaid, MermaidProfile};
+use md2docx::{
     convert, markdown_to_docx, CancelToken, Code, CommandSpec, Config, CrateError, DiagramFailure, FenceError,
     FenceRenderer, LossPolicy, RenderContext,
 };

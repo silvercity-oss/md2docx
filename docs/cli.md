@@ -171,5 +171,5 @@ the conversion is recorded.
 | Links to files | `--allow-links none\|local\|all`, `--link-root`, `--link-style rebased\|absolute`, `--link-base`, `--link-tree-base`, `--link-map`, `--no-check-link-anchors`, `--markdown-links keep\|docx\|follow`, `--link-layout mirror\|flat`, `--copy-linked`, `--max-linked-files`, `--max-copy-bytes` (see [links.md](links.md)) |
 
 `--mermaid-engine inprocess` exists only in builds with the `mermaid` feature
-(`cargo install silvercity-oss --features mermaid`; `md2docx --version` says whether it is compiled
+(`cargo install md2docx --features mermaid`; `md2docx --version` says whether it is compiled
 in). There `--untrusted --diagrams` also renders in-process: no child process at all.

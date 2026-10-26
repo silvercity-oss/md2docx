@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{
+use md2docx::{
     markdown_to_docx, BuiltinHighlighter, CodeBlockLayout, Config, CrateError, DocumentOptions, FenceError,
     Highlighter, Highlighting, ImageAccess, Span, Theme, TokenClass, TokenStyle,
 };

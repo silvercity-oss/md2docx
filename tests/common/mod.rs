@@ -79,14 +79,14 @@ pub fn assert_well_formed(xml: &str) {
 }
 
 /// Convert with the given config and return the unzipped `word/document.xml`.
-pub fn body_with(md: &str, cfg: &silvercity_oss::Config) -> String {
-    let docx = silvercity_oss::markdown_to_docx(md, cfg).expect("conversion should succeed");
+pub fn body_with(md: &str, cfg: &md2docx::Config) -> String {
+    let docx = md2docx::markdown_to_docx(md, cfg).expect("conversion should succeed");
     zip_text(&docx, "word/document.xml")
 }
 
 /// Native-math conversion; `document.xml` must also be well-formed.
 pub fn body(md: &str) -> String {
-    let b = body_with(md, &silvercity_oss::Config::native_math());
+    let b = body_with(md, &md2docx::Config::native_math());
     assert_well_formed(&b);
     b
 }

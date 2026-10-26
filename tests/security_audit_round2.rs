@@ -5,7 +5,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, CrateError, Limits};
+use md2docx::{markdown_to_docx, Config, CrateError, Limits};
 
 fn timed<T>(limit: Duration, f: impl FnOnce() -> T) -> T {
     let started = Instant::now();

@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, CodeBlockLayout, Config, DocumentOptions, ImageAccess};
+use md2docx::{markdown_to_docx, CodeBlockLayout, Config, DocumentOptions, ImageAccess};
 
 fn cfg(layout: CodeBlockLayout) -> Config {
     let mut doc = DocumentOptions::default();
@@ -197,7 +197,7 @@ fn a_huge_single_paragraph_block_is_fine() {
     // Every line is a run, so a block this long is over the untrusted element budget...
     assert!(matches!(
         markdown_to_docx(&fenced(code), &u),
-        Err(silvercity_oss::CrateError::LimitExceeded(m)) if m.contains("max_elements")
+        Err(md2docx::CrateError::LimitExceeded(m)) if m.contains("max_elements")
     ));
     // ...while a still very long one fits.
     let fits = "let x = 1;\n".repeat(25_000);
@@ -205,6 +205,6 @@ fn a_huge_single_paragraph_block_is_fine() {
     let more = "a\n".repeat(1_000_000);
     assert!(matches!(
         markdown_to_docx(&fenced(&more), &u),
-        Err(silvercity_oss::CrateError::LimitExceeded(m)) if m.contains("max_elements")
+        Err(md2docx::CrateError::LimitExceeded(m)) if m.contains("max_elements")
     ));
 }

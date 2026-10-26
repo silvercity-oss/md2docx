@@ -6,14 +6,14 @@
 //! ```
 //!
 //! The sources are `tests/fixtures/*.md`; images are generated in code and supplied through an
-//! [`AssetMap`](silvercity_oss::AssetMap), the diagram is drawn (or rendered by merman with the
+//! [`AssetMap`](md2docx::AssetMap), the diagram is drawn (or rendered by merman with the
 //! `mermaid` feature). The last fixture deliberately cannot be carried over faithfully: it is
 //! written with the permissive policy, and its findings are printed.
 
 #[path = "../tests/common/fixtures.rs"]
 mod fixtures;
 
-use silvercity_oss::{convert, LossPolicy};
+use md2docx::{convert, LossPolicy};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).unwrap_or_else(|| "target/fixtures".into());

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, BlockStyle, Config, CrateError, DocumentOptions, FenceError, TagStyle};
+use md2docx::{markdown_to_docx, BlockStyle, Config, CrateError, DocumentOptions, FenceError, TagStyle};
 
 fn png() -> Vec<u8> {
     png_bytes(120, 60)

@@ -1,4 +1,4 @@
-# Embedding silvercity-oss in a service
+# Embedding md2docx in a service
 
 This guide is for programs that convert Markdown written by *other people* (uploads, form fields, a
 content store) and want to deliver a `.docx`. It says what to configure, what the library enforces
@@ -21,7 +21,7 @@ text (the diagram source, the image key): look keys up, never open them as paths
 
 ```rust
 use std::time::Duration;
-use silvercity_oss::{convert, AssetMap, CancelToken, Config, CrateError, LossPolicy};
+use md2docx::{convert, AssetMap, CancelToken, Config, CrateError, LossPolicy};
 
 fn config(job_dir: &std::path::Path, images: AssetMap, cancel: CancelToken) -> Config {
     let mut cfg = Config::default()          // 1. the untrusted-input policy
@@ -83,7 +83,7 @@ explicitly.
 
 ## Scratch storage, cancellation, deadlines
 
-* `Config::scratch_dir` is the *root*; each conversion that needs files makes one `silvercity-…`
+* `Config::scratch_dir` is the *root*; each conversion that needs files makes one `md2docx-…`
   subdirectory (mode 0700 on Unix) in it, containing tool inputs, tool outputs and tool logs, and
   removes it on every normal return and on unwinding. No environment variable is changed.
   Renderer results from a `FenceRenderer` (including the in-process Mermaid renderer) and bytes from
@@ -107,7 +107,7 @@ supervisor that cannot reliably terminate children that start their own process 
 in-process renderer instead:
 
 ```toml
-silvercity-oss = { version = "0.1", default-features = false, features = ["mermaid"] }
+md2docx = { version = "0.1", default-features = false, features = ["mermaid"] }
 ```
 
 ```rust
@@ -118,7 +118,7 @@ It is a `FenceRenderer`, so it starts nothing and writes nothing, shares the con
 and `CancelToken`, and is bounded by merman's resource policy (`MermaidProfile`) plus this crate's
 image limits (a too-large raster is scaled down, not refused). The feature needs **Rust 1.95**
 (merman's MSRV); the crate without it still builds on 1.88. merman is pinned to exactly the tested
-version (`silvercity_oss::mermaid::MERMAN_VERSION`) with PNG export and eleven common diagram
+version (`md2docx::mermaid::MERMAN_VERSION`) with PNG export and eleven common diagram
 families (flowchart, sequence, class, state, ER, pie, Gantt, journey, mindmap, timeline, git
 graph); `mermaid-all-diagrams` adds the rest. It is distinct from anything parser-only: only this
 renderer draws pictures. Text is measured with merman's deterministic metrics (no system fonts).

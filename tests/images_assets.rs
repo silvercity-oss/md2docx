@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, AssetMap, Config, CrateError, FenceError, ImageAccess, Limits};
+use md2docx::{markdown_to_docx, AssetMap, Config, CrateError, FenceError, ImageAccess, Limits};
 
 fn solid(w: u32, h: u32, seed: u8) -> Vec<u8> {
     let img = image::RgbaImage::from_pixel(w, h, image::Rgba([seed, 255 - seed, seed / 2, 255]));

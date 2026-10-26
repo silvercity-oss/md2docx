@@ -5,7 +5,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config};
+use md2docx::{markdown_to_docx, Config};
 
 /// `(name, markdown, must contain in document.xml, visible text must contain, must NOT appear in visible text)`
 type Case = (
@@ -717,7 +717,7 @@ fn large_but_legitimate_documents_are_fast() {
     let table: String = (0..1500).map(|i| format!("| {i} | cell {i} | **b** |\n")).collect();
     md.push_str(&format!("| n | text | f |\n|---|------|---|\n{table}"));
     let started = std::time::Instant::now();
-    let mut limits = silvercity_oss::Limits::trusted();
+    let mut limits = md2docx::Limits::trusted();
     limits.max_rendered_blocks = 10_000;
     let cfg = Config::native_math().with_limits(limits);
     let docx = markdown_to_docx(&md, &cfg).unwrap();
@@ -796,9 +796,9 @@ fn unsafe_html_is_stripped_but_its_text_is_kept() {
     for (name, cfg) in [
         (
             "default, images off",
-            silvercity_oss::Config::native_math().with_image_access(silvercity_oss::ImageAccess::None),
+            md2docx::Config::native_math().with_image_access(md2docx::ImageAccess::None),
         ),
-        ("untrusted", silvercity_oss::Config::untrusted()),
+        ("untrusted", md2docx::Config::untrusted()),
     ] {
         let docx = markdown_to_docx(md, &cfg).unwrap_or_else(|e| panic!("{name}: {e}"));
         let b = zip_text(&docx, "word/document.xml");
@@ -858,15 +858,15 @@ fn unsafe_html_is_stripped_but_its_text_is_kept() {
 
 // ---- raw HTML the way people write it in READMEs (default mode; --untrusted differs only in links)
 
-fn html_docx(md: &str, cfg: &silvercity_oss::Config) -> (Vec<u8>, String) {
+fn html_docx(md: &str, cfg: &md2docx::Config) -> (Vec<u8>, String) {
     let docx = markdown_to_docx(md, cfg).expect("conversion");
     let b = zip_text(&docx, "word/document.xml");
     assert_well_formed(&b);
     (docx, b)
 }
 
-fn no_images() -> silvercity_oss::Config {
-    silvercity_oss::Config::native_math().with_image_access(silvercity_oss::ImageAccess::None)
+fn no_images() -> md2docx::Config {
+    md2docx::Config::native_math().with_image_access(md2docx::ImageAccess::None)
 }
 
 #[test]
@@ -893,7 +893,7 @@ fn html_links_become_hyperlinks_unless_untrusted() {
     }
 
     // The strict preset keeps the text and drops every link.
-    let (docx, b) = html_docx(md, &silvercity_oss::Config::untrusted());
+    let (docx, b) = html_docx(md, &md2docx::Config::untrusted());
     assert_eq!(b.matches("<w:hyperlink").count(), 0);
     assert!(!zip_text(&docx, "word/_rels/document.xml.rels").contains("example.com"));
     assert!(visible_text(&b).contains("the docs"));
@@ -921,7 +921,7 @@ fn html_alignment_is_applied_in_every_mode() {
     let md = "<p align=\"center\">centred</p>\n\n<div align=\"right\">right</div>\n\n\
               <h2 style=\"text-align: center\">styled heading</h2>\n\n<center>old school</center>\n\n\
               <div align=\"left\">left</div>\n\nplain after\n";
-    for cfg in [no_images(), silvercity_oss::Config::untrusted()] {
+    for cfg in [no_images(), md2docx::Config::untrusted()] {
         let (_, b) = html_docx(md, &cfg);
         assert_eq!(b.matches("w:jc w:val=\"center\"").count(), 3, "p, h2, center: {b}");
         assert_eq!(b.matches("w:jc w:val=\"right\"").count(), 1);
@@ -974,7 +974,7 @@ fn html_pre_keeps_whitespace_and_blockquote_is_a_quote() {
 #[test]
 fn html_tables_become_word_tables() {
     let md = "<table>\n<tr><th>Name</th><th>Qty</th></tr>\n<tr><td>apples</td><td>3</td></tr>\n<tr><td>pears</td><td><b>12</b></td></tr>\n</table>\n\nafter\n";
-    for cfg in [no_images(), silvercity_oss::Config::untrusted()] {
+    for cfg in [no_images(), md2docx::Config::untrusted()] {
         let (_, b) = html_docx(md, &cfg);
         assert_eq!(b.matches("<w:tbl>").count(), 1);
         assert_eq!(b.matches("<w:tr>").count() + b.matches("<w:tr ").count(), 3);
@@ -1008,7 +1008,7 @@ fn html_tables_become_word_tables() {
 #[test]
 fn html_img_width_sets_the_picture_size() {
     let fx = Fixture::new(); // fixture.png is 600x300 px
-    let cfg = silvercity_oss::Config::native_math().with_base_dir(fx.dir.path());
+    let cfg = md2docx::Config::native_math().with_base_dir(fx.dir.path());
     let extent = |md: &str| -> (u64, u64) {
         let (_, b) = html_docx(md, &cfg);
         let tag = &b[b.find("<wp:extent").expect("a picture")..];
@@ -1103,7 +1103,7 @@ fn code_in_every_container_converts() {
 #[test]
 fn nested_image_alt_text_is_kept() {
     // Found by the CommonMark corpus: the outer alt text was lost.
-    let cfg = Config::native_math().with_image_access(silvercity_oss::ImageAccess::None);
+    let cfg = Config::native_math().with_image_access(md2docx::ImageAccess::None);
     let b = body_with("![foo ![bar](/url)](/url2)\n", &cfg);
     assert!(visible_text(&b).contains("[foo bar]"), "{}", visible_text(&b));
 }

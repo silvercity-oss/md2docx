@@ -1,10 +1,10 @@
 # Syntax highlighting
 
-`silvercity-oss` can colour the code in fenced, indented and `<pre>` code blocks.
+`md2docx` can colour the code in fenced, indented and `<pre>` code blocks.
 It is off by default; switch it on with a theme:
 
 ```rust
-use silvercity_oss::{Config, Highlighting, Theme};
+use md2docx::{Config, Highlighting, Theme};
 
 let cfg = Config::untrusted().with_highlighting(Highlighting::new(Theme::vscode_dark()));
 ```
@@ -74,7 +74,7 @@ syntect = { version = "5", default-features = false, features = ["default-syntax
 ```
 
 ```rust
-use silvercity_oss::{FenceError, Highlighter, Span, TokenClass};
+use md2docx::{FenceError, Highlighter, Span, TokenClass};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
@@ -174,7 +174,7 @@ tree-sitter-rust = "0.23"      # one crate per language
 ```
 
 ```rust
-use silvercity_oss::{FenceError, Highlighter, Span, TokenClass};
+use md2docx::{FenceError, Highlighter, Span, TokenClass};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter as TsHighlighter};
 
 /// The capture names we ask tree-sitter to report, and the class each one becomes.

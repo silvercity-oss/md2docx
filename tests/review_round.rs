@@ -5,7 +5,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{convert, markdown_to_docx, Config, LossPolicy};
+use md2docx::{convert, markdown_to_docx, Config, LossPolicy};
 
 fn codes(md: &str, cfg: &Config) -> Vec<String> {
     convert(md, cfg)
@@ -149,7 +149,7 @@ fn a_heading_that_is_only_an_equation_keeps_its_bookmark() {
     let docx = markdown_to_docx(
         md,
         &Config::default().with_document({
-            let mut d = silvercity_oss::DocumentOptions::default();
+            let mut d = md2docx::DocumentOptions::default();
             d.table_of_contents = Some(Default::default());
             d
         }),

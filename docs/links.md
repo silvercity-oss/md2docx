@@ -107,7 +107,7 @@ Markdown; they are converted only when a document links to them directly.
 ## 4. Your own rule (`LinkResolver`, library)
 
 ```rust
-use silvercity_oss::{Config, LinkDecision, LinkRequest};
+use md2docx::{Config, LinkDecision, LinkRequest};
 
 let cfg = Config::default().with_link_resolver(|req: &LinkRequest<'_>| match req.target {
     t if t.starts_with("wiki:") => LinkDecision::Url(format!("https://wiki.example.com/{}", &t[5..])),

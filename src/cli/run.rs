@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
-use silvercity_oss::{
+use md2docx::{
     analyze_file, analyze_reader, convert_file, convert_reader, Config, CrateError, Diagnostic, DocumentLayout,
     LocalLink, Severity,
 };

@@ -4,8 +4,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::__internals::preprocess;
-use silvercity_oss::{markdown_to_docx, Config, CrateError, ImageAccess, Limits};
+use md2docx::__internals::preprocess;
+use md2docx::{markdown_to_docx, Config, CrateError, ImageAccess, Limits};
 
 fn err(md: &str, cfg: &Config) -> CrateError {
     markdown_to_docx(md, cfg).expect_err("should have been rejected")
@@ -161,11 +161,11 @@ fn text_with_markup_characters_is_escaped_not_interpreted() {
 #[test]
 fn a_hostile_document_cannot_forge_equation_placeholders() {
     // Placeholders are derived from the document's own hash, so text can't name one.
-    let md = "SILVERCITYOMML0000000000000000X0X and $x$ and SILVERCITYOMMLffffffffffffffffX0X\n";
+    let md = "MD2DOCXOMML0000000000000000X0X and $x$ and MD2DOCXOMMLffffffffffffffffX0X\n";
     let b = body(md);
     assert!(b.contains("<m:oMath>"));
     assert!(
-        visible_text(&b).contains("SILVERCITYOMML0000000000000000X0X"),
+        visible_text(&b).contains("MD2DOCXOMML0000000000000000X0X"),
         "literal text must survive"
     );
 }
@@ -322,7 +322,7 @@ fn huge_claimed_image_dimensions_are_rejected_cheaply() {
 fn tex_that_touches_the_host_is_refused_before_latex_runs() {
     // `latex` points at a program that does not exist: reaching it would be MissingExternalCli.
     let mut cfg = Config::trusted();
-    cfg.math.engine = silvercity_oss::MathImageEngine::LatexDvipng {
+    cfg.math.engine = md2docx::MathImageEngine::LatexDvipng {
         latex: "latex-that-must-never-run".into(),
         dvipng: "dvipng-that-must-never-run".into(),
     };
@@ -575,6 +575,6 @@ fn randomised_latex_body() {
     for _ in 0..5000 {
         let n = 1 + (rng.next() % 40) as usize;
         let latex: String = (0..n).map(|_| rng.pick(&pieces)).collect();
-        let _ = silvercity_oss::omml::latex_to_omml(&latex);
+        let _ = md2docx::omml::latex_to_omml(&latex);
     }
 }

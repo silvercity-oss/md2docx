@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use silvercity_oss::{markdown_to_docx, Config, DocumentOptions};
+use md2docx::{markdown_to_docx, Config, DocumentOptions};
 
 const ORDERS: &[(&str, &[&str])] = &[
     (

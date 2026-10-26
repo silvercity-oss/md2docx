@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config};
+use md2docx::{markdown_to_docx, Config};
 
 fn body_with(md: &str, cfg: &Config) -> String {
     let b = zip_text(&markdown_to_docx(md, cfg).unwrap(), "word/document.xml");
@@ -85,9 +85,9 @@ fn html_anchors_are_link_targets() {
         "the id of any element is a target: {b}"
     );
     assert!(!b.contains("md_a2"));
-    let diags = silvercity_oss::convert(md, &Config::default()).unwrap().diagnostics;
+    let diags = md2docx::convert(md, &Config::default()).unwrap().diagnostics;
     assert!(
-        diags.iter().any(|d| d.code == silvercity_oss::Code::LinkAnchorMissing),
+        diags.iter().any(|d| d.code == md2docx::Code::LinkAnchorMissing),
         "{diags:?}"
     );
 }
@@ -108,7 +108,7 @@ fn mailto_links_lose_everything_but_the_prefill_fields() {
 
 // ---- table of contents and heading numbers
 
-use silvercity_oss::{DocumentOptions, TableOfContents};
+use md2docx::{DocumentOptions, TableOfContents};
 
 fn with_doc(f: impl FnOnce(&mut DocumentOptions)) -> Config {
     let mut d = DocumentOptions::default();
@@ -148,7 +148,7 @@ fn contents_options_are_validated_and_can_drop_the_title() {
     let bad = with_doc(|d| d.table_of_contents = Some(TableOfContents::new().max_level(7)));
     assert!(matches!(
         markdown_to_docx("# x", &bad),
-        Err(silvercity_oss::CrateError::InvalidConfig(_))
+        Err(md2docx::CrateError::InvalidConfig(_))
     ));
 }
 

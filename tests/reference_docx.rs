@@ -5,7 +5,7 @@ mod common;
 use std::io::{Cursor, Write};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, CrateError, ReferenceDocx};
+use md2docx::{markdown_to_docx, Config, CrateError, ReferenceDocx};
 
 /// A reference document: a converted one whose styles and theme we rewrite.
 fn reference(styles: impl Fn(&str) -> String, theme: Option<&str>) -> Vec<u8> {

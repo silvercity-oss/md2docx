@@ -7,7 +7,7 @@
 
 use std::io::Cursor;
 
-use silvercity_oss::{AssetMap, Config};
+use md2docx::{AssetMap, Config};
 
 /// (file stem, Markdown source, whether the strict policy must accept it).
 pub const SOURCES: &[(&str, &str, bool)] = &[
@@ -54,9 +54,9 @@ pub fn config_for(stem: &str) -> Config {
     if stem != "07-contents" {
         return cfg;
     }
-    let mut doc = silvercity_oss::DocumentOptions::default();
+    let mut doc = md2docx::DocumentOptions::default();
     doc.number_headings = true;
-    doc.table_of_contents = Some(silvercity_oss::TableOfContents::new());
+    doc.table_of_contents = Some(md2docx::TableOfContents::new());
     cfg.with_document(doc)
         .with_autolink_bare_urls(true)
         .with_superscript_subscript(true)
@@ -72,7 +72,7 @@ pub fn config() -> Config {
     }
     #[cfg(not(feature = "mermaid"))]
     {
-        cfg.with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, silvercity_oss::FenceError> {
+        cfg.with_fence_renderer("mermaid", |_: &str| -> Result<Vec<u8>, md2docx::FenceError> {
             Ok(png(400, 160, 200))
         })
     }

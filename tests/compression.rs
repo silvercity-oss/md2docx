@@ -5,7 +5,7 @@ mod common;
 use std::io::{Cursor, Read};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, markdown_to_docx_writer, Config, CrateError, ImageAccess};
+use md2docx::{markdown_to_docx, markdown_to_docx_writer, Config, CrateError, ImageAccess};
 
 fn repetitive_markdown() -> String {
     "```\n".to_string() + &"line of code that repeats\n".repeat(3000) + "```\n\n" + &"Some **bold** prose. ".repeat(300)

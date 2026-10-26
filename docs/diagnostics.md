@@ -1,7 +1,7 @@
 # Diagnostics
 
 
-Every finding the converter reports ([`Diagnostic`](https://docs.rs/silvercity-oss/latest/silvercity_oss/struct.Diagnostic.html)) has a **stable code**, a **severity** and, where it belongs to a place, a **span** in the Markdown you passed in (byte offsets, 1-based line and column). The codes below never change meaning once released; new ones may be added, so match on them with a fallback.
+Every finding the converter reports ([`Diagnostic`](https://docs.rs/md2docx/latest/md2docx/struct.Diagnostic.html)) has a **stable code**, a **severity** and, where it belongs to a place, a **span** in the Markdown you passed in (byte offsets, 1-based line and column). The codes below never change meaning once released; new ones may be added, so match on them with a fallback.
 
 * **Warning**: something was dropped, degraded or left unconverted. `LossPolicy::Reject` refuses a document that has any, and `CrateError::LossyContent` carries the whole list.
 * **Info**: nothing was lost. Never rejected.

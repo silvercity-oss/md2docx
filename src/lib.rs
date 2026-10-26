@@ -9,9 +9,9 @@
 //! # Quick start
 //!
 //! ```
-//! use silvercity_oss::{markdown_to_docx, Config};
+//! use md2docx::{markdown_to_docx, Config};
 //!
-//! # fn main() -> Result<(), silvercity_oss::CrateError> {
+//! # fn main() -> Result<(), md2docx::CrateError> {
 //! let docx: Vec<u8> = markdown_to_docx("# Hello\n\nEuler: $e^{i\\pi} + 1 = 0$", &Config::default())?;
 //! assert_eq!(&docx[..2], b"PK"); // a zip archive, i.e. a .docx file
 //! # Ok(()) }
@@ -26,7 +26,7 @@
 //! what needs process isolation around it.)
 //!
 //! ```
-//! use silvercity_oss::{markdown_to_docx, Config, CrateError};
+//! use md2docx::{markdown_to_docx, Config, CrateError};
 //!
 //! let hostile = "[x](javascript:alert(1)) <script>bad()</script> ![secret](/etc/passwd)";
 //! let docx = markdown_to_docx(hostile, &Config::default()).expect("safe by construction");
@@ -44,7 +44,7 @@
 //! [`LossPolicy::Reject`] turns any warning into [`CrateError::LossyContent`].
 //!
 //! ```
-//! use silvercity_oss::{convert, Code, Config, CrateError, LossPolicy};
+//! use md2docx::{convert, Code, Config, CrateError, LossPolicy};
 //!
 //! let md = "See [the spec](docs/spec.md).";
 //! let done = convert(md, &Config::default()).unwrap();
@@ -57,9 +57,9 @@
 //! # Page, fonts and writers
 //!
 //! ```
-//! use silvercity_oss::{markdown_to_docx_writer, Config, DocumentOptions, PageSize};
+//! use md2docx::{markdown_to_docx_writer, Config, DocumentOptions, PageSize};
 //!
-//! # fn main() -> Result<(), silvercity_oss::CrateError> {
+//! # fn main() -> Result<(), md2docx::CrateError> {
 //! let mut document = DocumentOptions::default();
 //! document.page = PageSize::Letter;
 //! document.body_font = "Georgia".into();

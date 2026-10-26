@@ -19,7 +19,7 @@ pub type FenceError = Box<dyn std::error::Error + Send + Sync>;
 /// [`Config::with_fence_renderer`](crate::Config::with_fence_renderer):
 ///
 /// ```
-/// use silvercity_oss::{markdown_to_docx, Config};
+/// use md2docx::{markdown_to_docx, Config};
 ///
 /// # fn draw(_: &str) -> Vec<u8> { let mut p = Vec::new(); image::RgbaImage::new(40, 20)
 /// #     .write_to(&mut std::io::Cursor::new(&mut p), image::ImageFormat::Png).unwrap(); p }
@@ -169,7 +169,7 @@ where
 /// common case of a fixed set.
 ///
 /// ```
-/// use silvercity_oss::{markdown_to_docx, AssetMap, Config};
+/// use md2docx::{markdown_to_docx, AssetMap, Config};
 ///
 /// # fn png() -> Vec<u8> { let mut p = Vec::new(); image::RgbaImage::new(40, 20)
 /// #     .write_to(&mut std::io::Cursor::new(&mut p), image::ImageFormat::Png).unwrap(); p }
@@ -329,7 +329,7 @@ impl BlockStyle {
 /// [`Config::with_html_tag`](crate::Config::with_html_tag):
 ///
 /// ```
-/// use silvercity_oss::{markdown_to_docx, BlockStyle, Config, TagStyle};
+/// use md2docx::{markdown_to_docx, BlockStyle, Config, TagStyle};
 ///
 /// let cfg = Config::untrusted()
 ///     .with_html_tag("mark", TagStyle::new().highlight("FFFF00"))

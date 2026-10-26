@@ -6,7 +6,7 @@ mod common;
 use std::sync::Arc;
 
 use common::*;
-use silvercity_oss::{
+use md2docx::{
     analyze, convert, markdown_to_docx, AssetMap, Code, Config, CrateError, Diagnostic, FenceError, LossPolicy,
     Severity,
 };
@@ -132,8 +132,8 @@ fn diagrams_and_equations_that_are_not_what_the_author_wrote_are_reported_with_o
 #[test]
 fn a_failed_renderer_with_keep_as_code_is_a_finding_not_a_silent_success() {
     let mut cfg = Config::trusted();
-    cfg.graphs.mermaid = silvercity_oss::CommandSpec::new("definitely-not-installed-tool", ["{input}", "{output}"]);
-    cfg.graphs.on_failure = silvercity_oss::DiagramFailure::KeepAsCode;
+    cfg.graphs.mermaid = md2docx::CommandSpec::new("definitely-not-installed-tool", ["{input}", "{output}"]);
+    cfg.graphs.on_failure = md2docx::DiagramFailure::KeepAsCode;
     let md = "before\n\n```mermaid\ngraph TD; A-->B\n```\n\nafter\n";
     let d = convert(md, &cfg).unwrap().diagnostics;
     assert_eq!(

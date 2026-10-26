@@ -1,8 +1,11 @@
 [package]
-name = "silvercity-oss"
+name = "md2docx"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
+authors = ["silvercity-oss contributors"]
+repository = "https://github.com/silvercity-oss/md2docx"
+homepage = "https://github.com/silvercity-oss/md2docx"
 description = "Convert Markdown (with LaTeX math and Mermaid/Dolphin graphs) into high-fidelity Word .docx files"
 license = "MIT"
 readme = "README.md"
@@ -11,7 +14,7 @@ categories = ["text-processing", "command-line-utilities"]
 exclude = [".github/", ".gitattributes", ".cargo/", "tests/data/", "Dockerfile", ".dockerignore"]
 
 [lib]
-name = "silvercity_oss"
+name = "md2docx"
 path = "src/lib.rs"
 
 [[bin]]

@@ -6,8 +6,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::__internals::preprocess;
-use silvercity_oss::{markdown_to_docx, Config, CrateError};
+use md2docx::__internals::preprocess;
+use md2docx::{markdown_to_docx, Config, CrateError};
 
 const MERMAID: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
@@ -160,7 +160,7 @@ fn hardened_tool_runs_with_a_scrubbed_environment() {
     );
     let home = &env.iter().find(|(k, _)| k == "HOME").expect("HOME is set").1;
     assert!(
-        home.contains("silvercity-"),
+        home.contains("md2docx-"),
         "HOME should be the scratch directory, got {home}"
     );
     assert_eq!(env.iter().find(|(k, _)| k == "TMPDIR").map(|(_, v)| v), Some(home));

@@ -12,7 +12,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, CrateError, ImageAccess};
+use md2docx::{markdown_to_docx, Config, CrateError, ImageAccess};
 
 /// Generous for an unoptimised build on a busy CI runner; a quadratic blow-up
 /// on these sizes takes minutes.

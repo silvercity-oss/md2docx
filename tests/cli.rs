@@ -609,11 +609,11 @@ fn a_force_killed_conversion_leaves_only_what_sweep_scratch_can_recover() {
 
     let leftovers: Vec<_> = std::fs::read_dir(root.path()).unwrap().flatten().collect();
     assert_eq!(leftovers.len(), 1, "the job directory is what recovery has to find");
-    assert!(leftovers[0].file_name().to_string_lossy().starts_with("silvercity-"));
+    assert!(leftovers[0].file_name().to_string_lossy().starts_with("md2docx-"));
 
     // Recovery by the host, then reaping what the killed worker left running (a real host does
     // both: the scratch directory is its own, and a cgroup or job object ends the processes).
-    assert_eq!(silvercity_oss::sweep_scratch(root.path(), Duration::ZERO).unwrap(), 1);
+    assert_eq!(md2docx::sweep_scratch(root.path(), Duration::ZERO).unwrap(), 1);
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_string();
     let _ = Command::new("kill").args(["-9", &pid]).status();

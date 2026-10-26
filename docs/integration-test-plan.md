@@ -60,7 +60,7 @@ Not run by this repository. Run them against your real worker and storage.
    packaging step; measure time to return. Separately SIGKILL the worker mid-conversion and confirm
    your reaper removes the job directory (or `sweep_scratch` does) and any child process.
 4. **Cleanup.** After 1,000 mixed successes and failures, the scratch root must be empty and no
-   `silvercity-*` entry may remain.
+   `md2docx-*` entry may remain.
 5. **Accessibility.** Open each fixture in Word and run **Review → Check Accessibility**: pictures must
    show alt text, none should be flagged "missing alt text" unless the Markdown had none. Read
    `03-images` and `05-diagram` with a screen reader (Narrator/NVDA).

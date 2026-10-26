@@ -2,7 +2,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use silvercity_oss::{
+use md2docx::{
     CodeBlockLayout, Config, DiagramFailure, Highlighting, ImageAccess as LibImageAccess, LossPolicy, MathImageEngine,
     MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, PageSize, TableOfContents, Theme,
 };
@@ -242,13 +242,13 @@ fn links(args: &Args, cfg: &mut Config) -> Result<(), CliError> {
         ));
     }
     let local = match args.allow_links {
-        AllowLinks::Local => silvercity_oss::LocalLinks::Local,
-        AllowLinks::All => silvercity_oss::LocalLinks::All,
+        AllowLinks::Local => md2docx::LocalLinks::Local,
+        AllowLinks::All => md2docx::LocalLinks::All,
         // Converting linked documents is a decision to follow local links.
-        AllowLinks::None if follows => silvercity_oss::LocalLinks::Local,
-        AllowLinks::None => silvercity_oss::LocalLinks::Off,
+        AllowLinks::None if follows => md2docx::LocalLinks::Local,
+        AllowLinks::None => md2docx::LocalLinks::Off,
     };
-    if wants && local == silvercity_oss::LocalLinks::Off {
+    if wants && local == md2docx::LocalLinks::Off {
         return Err(CliError::usage("the link options need --allow-links local or all"));
     }
     if args.copy_linked && !follows {
@@ -258,8 +258,8 @@ fn links(args: &Args, cfg: &mut Config) -> Result<(), CliError> {
     o.local = local;
     o.root = args.link_root.clone();
     o.style = match args.link_style {
-        LinkStyle::Rebased => silvercity_oss::LinkStyle::Rebased,
-        LinkStyle::Absolute => silvercity_oss::LinkStyle::Absolute,
+        LinkStyle::Rebased => md2docx::LinkStyle::Rebased,
+        LinkStyle::Absolute => md2docx::LinkStyle::Absolute,
     };
     o.base_url = args.link_base.clone();
     o.dir_base_url = args.link_tree_base.clone();
@@ -284,7 +284,7 @@ fn diagrams_untrusted() -> Config {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
-    use silvercity_oss::{ImageAccess as LibImageAccess, MathMode as LibMathMode};
+    use md2docx::{ImageAccess as LibImageAccess, MathMode as LibMathMode};
 
     use super::*;
 

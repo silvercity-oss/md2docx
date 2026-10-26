@@ -1,11 +1,11 @@
-# silvercity-oss
+# md2docx
 
 A pure-Rust library (plus the `md2docx` CLI) that converts Markdown into
 high-fidelity Word `.docx` files, including **LaTeX math** and **Mermaid /
 Dolphin diagrams** that plain Word writers cannot express natively.
 
 ```rust
-use silvercity_oss::{markdown_to_docx, Config};
+use md2docx::{markdown_to_docx, Config};
 
 let docx: Vec<u8> = markdown_to_docx("# Hi\n\n$$E = mc^2$$", &Config::default())?;
 std::fs::write("out.docx", docx)?;
@@ -16,11 +16,11 @@ std::fs::write("out.docx", docx)?;
 ```toml
 [dependencies]
 # default-features = false: skip the `md2docx` binary's dependencies (clap, its completion and man-page generators, shlex).
-silvercity-oss = { version = "0.1", default-features = false }
+md2docx = { version = "0.1", default-features = false }
 ```
 
 ```rust
-use silvercity_oss::{markdown_to_docx, Config, CrateError};
+use md2docx::{markdown_to_docx, Config, CrateError};
 
 // `Config::default()` is the untrusted-input policy: native math, no TeX or diagram process,
 // no local files, no raw-HTML links, tight limits. TeX, external renderers and local files
@@ -71,7 +71,7 @@ as `Diagnostic`s: `image.remote`, `link.dropped`, `footnote.unreferenced`, `list
 Each has a severity and a span that indexes the string you passed in.
 
 ```rust
-use silvercity_oss::{convert, Config, CrateError, LossPolicy};
+use md2docx::{convert, Config, CrateError, LossPolicy};
 
 let strict = Config::default().with_loss_policy(LossPolicy::Reject);
 match convert(&markdown, &strict) {
@@ -110,7 +110,7 @@ Both extension points are set on the `Config` by *you*, never by the Markdown
 author, so they are safe with `Config::untrusted()` and the other presets.
 
 ```rust
-use silvercity_oss::{markdown_to_docx, BlockStyle, Config, FenceError, TagStyle};
+use md2docx::{markdown_to_docx, BlockStyle, Config, FenceError, TagStyle};
 
 let cfg = Config::untrusted()
     // ```chart fences become pictures from your own code (a closure or a `FenceRenderer`).

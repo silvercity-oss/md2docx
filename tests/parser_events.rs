@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 
 use common::*;
 use pulldown_cmark::{Event, Options, Parser, Tag};
-use silvercity_oss::{markdown_to_docx, Config, ImageAccess};
+use md2docx::{markdown_to_docx, Config, ImageAccess};
 
 fn options() -> Options {
     Options::ENABLE_TABLES

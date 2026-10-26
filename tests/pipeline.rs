@@ -5,8 +5,8 @@
 mod common;
 
 use common::*;
-use silvercity_oss::__internals::preprocess;
-use silvercity_oss::{markdown_to_docx, CommandSpec, Config, CrateError, MathImageEngine};
+use md2docx::__internals::preprocess;
+use md2docx::{markdown_to_docx, CommandSpec, Config, CrateError, MathImageEngine};
 
 #[test]
 fn native_omml_mode_injects_editable_equations_without_external_tools() {
@@ -30,7 +30,7 @@ fn native_omml_mode_injects_editable_equations_without_external_tools() {
     assert!(body.contains("<m:sSubSup>"));
     assert!(body.contains("α") && body.contains("≤"));
     // Placeholders are gone and surrounding text survives.
-    assert!(!body.contains("SILVERCITYOMML"));
+    assert!(!body.contains("MD2DOCXOMML"));
     assert!(body.contains("Inline ") && body.contains(" here.") && body.contains("Tail."));
     // The two forms: exactly one display paragraph, two equations in total.
     assert_eq!(body.matches("<m:oMathPara>").count(), 1);
@@ -54,7 +54,7 @@ fn omml_equation_inside_table_list_and_heading_survives() {
     let docx = markdown_to_docx(md, &cfg).unwrap();
     let body = zip_text(&docx, "word/document.xml");
     assert_well_formed(&body);
-    assert!(!body.contains("SILVERCITYOMML"));
+    assert!(!body.contains("MD2DOCXOMML"));
     assert_eq!(body.matches("<m:oMathPara>").count(), 1, "solo display cell paragraph");
     assert_eq!(
         body.matches("<m:oMath>").count(),
@@ -176,7 +176,7 @@ fn local_images_are_embedded_relative_to_base_dir() {
     assert!(zip_text(&docx, "word/document.xml").contains("[remote]"));
 
     // A missing file costs one picture, not the document, and the finding names no host path.
-    let r = silvercity_oss::convert("![x](missing.png)", &cfg).unwrap();
+    let r = md2docx::convert("![x](missing.png)", &cfg).unwrap();
     assert!(r.diagnostics.iter().any(|d| d.code.as_str() == "image.unreadable"));
     assert!(r
         .diagnostics

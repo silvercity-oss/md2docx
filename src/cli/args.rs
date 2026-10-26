@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use silvercity_oss::{CommandSpec, PageSize};
+use md2docx::{CommandSpec, PageSize};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MathMode {

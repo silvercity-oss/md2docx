@@ -16,8 +16,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use common::*;
-use silvercity_oss::__internals::{preprocess, AssetKind};
-use silvercity_oss::{markdown_to_docx, CommandSpec, Config, CrateError, MathImageEngine};
+use md2docx::__internals::{preprocess, AssetKind};
+use md2docx::{markdown_to_docx, CommandSpec, Config, CrateError, MathImageEngine};
 
 trait MockTools {
     fn script(&self, name: &str, body: &str) -> String;
@@ -130,7 +130,7 @@ fn preprocessor_rewrites_fences_into_image_syntax() {
         .assets
         .values()
         .map(|a| match &a.source {
-            silvercity_oss::__internals::AssetSource::Png(p) => p.clone(),
+            md2docx::__internals::AssetSource::Png(p) => p.clone(),
             other => panic!("expected PNG, got {other:?}"),
         })
         .collect();

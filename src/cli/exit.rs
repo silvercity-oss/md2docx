@@ -1,7 +1,7 @@
 //! The exit-status contract of `md2docx`. See `docs/cli.md`: these values are part of the
 //! public interface and do not change meaning once released.
 
-use silvercity_oss::{CrateError, Diagnostic};
+use md2docx::{CrateError, Diagnostic};
 
 /// What a script is told. Chosen by *who has to act*, not by which internal stage failed, so a
 /// wrapper can decide between "tell the author", "page the operator" and "retry" with a `case`

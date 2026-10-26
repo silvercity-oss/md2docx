@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use common::fixtures;
 use common::*;
-use silvercity_oss::{convert, LossPolicy};
+use md2docx::{convert, LossPolicy};
 
 fn soffice() -> Option<PathBuf> {
     ["soffice", "libreoffice"].iter().find(|n| have(n)).map(PathBuf::from)

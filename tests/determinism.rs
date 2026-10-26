@@ -3,7 +3,7 @@
 mod common;
 
 use common::{zip_entries, zip_text};
-use silvercity_oss::{markdown_to_docx, Config};
+use md2docx::{markdown_to_docx, Config};
 
 const DOC: &str = "# Title\n\nA [link](https://example.com/a) and [another](https://example.com/b)\nwith a note.[^1]\n\n[^1]: The note.\n";
 
@@ -66,6 +66,6 @@ fn an_impossible_timestamp_is_a_configuration_error() {
     let far = UNIX_EPOCH + Duration::from_secs(300_000_000_000);
     assert!(matches!(
         markdown_to_docx(DOC, &Config::native_math().with_timestamp(far)),
-        Err(silvercity_oss::CrateError::InvalidConfig(_))
+        Err(md2docx::CrateError::InvalidConfig(_))
     ));
 }

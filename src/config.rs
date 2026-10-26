@@ -107,7 +107,7 @@ impl Default for MathOptions {
 /// (a struct literal with `..Limits::default()` does not compile outside this crate):
 ///
 /// ```
-/// use silvercity_oss::Config;
+/// use md2docx::Config;
 ///
 /// let mut cfg = Config::untrusted();
 /// cfg.limits.max_input_bytes = 512 * 1024;

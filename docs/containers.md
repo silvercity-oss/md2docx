@@ -26,7 +26,7 @@ docker run --rm -i --init --network none --read-only \
   -e MD2DOCX_UNTRUSTED=1 -e MD2DOCX_STRICT=1 -e MD2DOCX_FORMAT=json \
   -e MD2DOCX_DEADLINE=30 -e MD2DOCX_MAX_INPUT_BYTES=1M -e MD2DOCX_SCRATCH_DIR=/scratch \
   -e SOURCE_DATE_EPOCH=0 \
-  silvercity/md2docx:local - < upload.md > result.docx 2> report.json
+  silvercity-oss/md2docx:local - < upload.md > result.docx 2> report.json
 echo "status $?"
 ```
 
@@ -45,7 +45,7 @@ The repository's `Dockerfile` builds a static-ish image with the in-process Merm
 nothing else:
 
 ```sh
-docker build -t silvercity/md2docx:local .
+docker build -t silvercity-oss/md2docx:local .
 ```
 
 It is a multi-stage build (`rust` → `gcr.io/distroless/cc`), runs as the unprivileged `nonroot`
@@ -56,7 +56,7 @@ user, and has `md2docx` as its entry point. Rust 1.95 or later is needed for the
 
 ```sh
 docker run --rm --network none --user "$(id -u)" -v "$PWD:/work" -w /work \
-  silvercity/md2docx:local docs/*.md -o build/
+  silvercity-oss/md2docx:local docs/*.md -o build/
 ```
 
 The default image has no TeX or `merman-cli`/`mmdc`, so `--math-mode image` and the external

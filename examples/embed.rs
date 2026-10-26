@@ -17,7 +17,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use silvercity_oss::{
+use md2docx::{
     analyze, convert, sweep_scratch, AssetMap, CancelToken, Config, CrateError, Diagnostic, LossPolicy, Severity,
 };
 

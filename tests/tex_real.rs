@@ -8,8 +8,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::*;
-use silvercity_oss::__internals::{run_tool, ToolGuard, TEX_ENV};
-use silvercity_oss::{markdown_to_docx, Config, CrateError};
+use md2docx::__internals::{run_tool, ToolGuard, TEX_ENV};
+use md2docx::{markdown_to_docx, Config, CrateError};
 
 fn tex_available() -> bool {
     let ok = have("latex") && have("dvipng");

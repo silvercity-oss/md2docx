@@ -834,7 +834,7 @@ fn xml_text(s: &str) -> String {
 }
 
 fn marker(nonce: &str, slot: usize) -> String {
-    format!("SILVERCITYOMML{nonce}X{slot}X")
+    format!("MD2DOCXOMML{nonce}X{slot}X")
 }
 
 /// Display size in EMU for a `w` x `h` pixel image at `dpi`, shrunk

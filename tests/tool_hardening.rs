@@ -7,7 +7,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, CommandSpec, Config, CrateError};
+use md2docx::{markdown_to_docx, CommandSpec, Config, CrateError};
 
 const GRAPH: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
@@ -336,7 +336,7 @@ fn cancelling_stops_a_running_tool_and_its_helpers() {
         "long-runner",
         &format!("sleep 300 &\necho $! > '{}'\nwait", pidfile.display()),
     );
-    let token = silvercity_oss::CancelToken::new();
+    let token = md2docx::CancelToken::new();
     let mut cfg = config_with(tool).with_cancel_token(token.clone());
     cfg.tool_timeout = Duration::from_secs(120);
     let canceller = {
@@ -360,7 +360,7 @@ fn cancelling_stops_a_running_tool_and_its_helpers() {
 
 #[test]
 fn a_token_cancelled_before_the_start_does_no_work() {
-    let token = silvercity_oss::CancelToken::new();
+    let token = md2docx::CancelToken::new();
     token.cancel();
     let cfg = Config::native_math().with_cancel_token(token);
     assert!(matches!(
@@ -419,7 +419,7 @@ fn every_temporary_artifact_lives_under_the_host_scratch_root() {
         root_real,
         "tool ran outside the scratch root: {log}"
     );
-    assert!(cwd.file_name().unwrap().to_string_lossy().starts_with("silvercity-"));
+    assert!(cwd.file_name().unwrap().to_string_lossy().starts_with("md2docx-"));
     for path in [lines.next().unwrap(), lines.next().unwrap()] {
         let canonical_dir = std::fs::canonicalize(std::path::Path::new(path).parent().unwrap_or(&cwd)).ok();
         assert!(
@@ -456,33 +456,33 @@ fn a_missing_scratch_root_is_an_error_not_a_fallback_to_the_system_temp_dir() {
 #[test]
 fn sweep_scratch_recovers_leftovers_of_a_killed_worker_and_nothing_else() {
     let root = tempfile::tempdir().unwrap();
-    let ours = root.path().join("silvercity-abc123");
+    let ours = root.path().join("md2docx-abc123");
     std::fs::create_dir(&ours).unwrap();
-    std::fs::write(ours.join(".silvercity-scratch"), b"").unwrap();
+    std::fs::write(ours.join(".md2docx-scratch"), b"").unwrap();
     std::fs::write(ours.join("graph_1.png"), b"leftover").unwrap();
     // Look alike, but not made by this crate: no marker.
-    let foreign = root.path().join("silvercity-not-ours");
+    let foreign = root.path().join("md2docx-not-ours");
     std::fs::create_dir(&foreign).unwrap();
     std::fs::write(foreign.join("keep.txt"), b"keep").unwrap();
     let other = root.path().join("unrelated");
     std::fs::create_dir(&other).unwrap();
     // A symlink with the right name pointing at a directory that must survive.
     let precious = tempfile::tempdir().unwrap();
-    std::fs::write(precious.path().join(".silvercity-scratch"), b"").unwrap();
-    std::os::unix::fs::symlink(precious.path(), root.path().join("silvercity-link")).unwrap();
+    std::fs::write(precious.path().join(".md2docx-scratch"), b"").unwrap();
+    std::os::unix::fs::symlink(precious.path(), root.path().join("md2docx-link")).unwrap();
 
     // Too young to touch.
     assert_eq!(
-        silvercity_oss::sweep_scratch(root.path(), Duration::from_secs(3600)).unwrap(),
+        md2docx::sweep_scratch(root.path(), Duration::from_secs(3600)).unwrap(),
         0
     );
     assert!(ours.exists());
     // Old enough.
-    assert_eq!(silvercity_oss::sweep_scratch(root.path(), Duration::ZERO).unwrap(), 1);
+    assert_eq!(md2docx::sweep_scratch(root.path(), Duration::ZERO).unwrap(), 1);
     assert!(!ours.exists());
     assert!(foreign.join("keep.txt").exists() && other.exists());
     assert!(
-        precious.path().join(".silvercity-scratch").exists(),
+        precious.path().join(".md2docx-scratch").exists(),
         "a symlink must not be followed"
     );
 }

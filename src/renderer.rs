@@ -44,10 +44,10 @@ impl GraphKind {
 }
 
 /// Name prefix of every scratch directory this crate creates.
-pub(crate) const SCRATCH_PREFIX: &str = "silvercity-";
+pub(crate) const SCRATCH_PREFIX: &str = "md2docx-";
 /// File created inside each scratch directory so [`sweep_scratch`] only ever removes directories
 /// this crate made.
-pub(crate) const SCRATCH_MARKER: &str = ".silvercity-scratch";
+pub(crate) const SCRATCH_MARKER: &str = ".md2docx-scratch";
 
 /// RAII scratch directory. Dropping it deletes every rendered asset.
 #[derive(Debug)]
@@ -103,7 +103,7 @@ impl Workspace {
 /// [`Config::scratch_dir`]): the leftovers of a worker that was killed from outside, whose
 /// destructors never ran. Returns how many were removed.
 ///
-/// Only directories this crate created are touched: the name starts with `silvercity-`, it holds
+/// Only directories this crate created are touched: the name starts with `md2docx-`, it holds
 /// the crate's marker file, it is a real directory (never a symbolic link), and it was last
 /// modified more than `older_than` ago. Pick `older_than` comfortably longer than
 /// [`Limits::max_conversion_time`](crate::Limits) so a conversion still running is not disturbed,

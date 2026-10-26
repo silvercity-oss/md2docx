@@ -9,7 +9,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
 use common::*;
-use silvercity_oss::{markdown_to_docx, Config, CrateError};
+use md2docx::{markdown_to_docx, Config, CrateError};
 
 fn merman_available() -> bool {
     let ok = have("merman-cli");

@@ -1,7 +1,7 @@
 # md2docx with the in-process Mermaid renderer, as a small unprivileged image.
-# Build:  docker build -t silvercity/md2docx:local .
+# Build:  docker build -t silvercity-oss/md2docx:local .
 # Run:    docker run --rm -i --network none --read-only --init -e MD2DOCX_UNTRUSTED=1 \
-#           silvercity/md2docx:local - < in.md > out.docx
+#           silvercity-oss/md2docx:local - < in.md > out.docx
 # See docs/containers.md.
 ARG RUST_VERSION=1.95
 

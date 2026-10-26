@@ -478,7 +478,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                             Ok((dest.clone(), AssetSource::Bytes(Arc::clone(bytes))))
                         } else {
                             render_custom(ctl, lang, &source, cfg).map(|bytes| {
-                                let dest = format!("silvercity-asset{nonce}:{byte_assets}");
+                                let dest = format!("md2docx-asset{nonce}:{byte_assets}");
                                 byte_assets += 1;
                                 let bytes: Arc<[u8]> = bytes.into();
                                 rendered_once.insert(key, (dest.clone(), Arc::clone(&bytes)));
@@ -559,7 +559,7 @@ pub(crate) fn preprocess_with(markdown: &str, cfg: &Config, ctl: &Ctl) -> Result
                                 Loc::Prepared(range.clone()),
                             );
                         }
-                        let dest = format!("silvercity-omml{nonce}:{omml_count}");
+                        let dest = format!("md2docx-omml{nonce}:{omml_count}");
                         omml_count += 1;
                         (
                             dest,
@@ -680,8 +680,8 @@ mod tests {
     #[test]
     fn escaped_destinations_round_trip_through_the_parser() {
         for path in [
-            r"/tmp/silvercity-abc/graph_1.png",
-            r"C:\Users\me\AppData\Local\Temp\silvercity-.x\graph_1.png",
+            r"/tmp/md2docx-abc/graph_1.png",
+            r"C:\Users\me\AppData\Local\Temp\md2docx-.x\graph_1.png",
             r"C:\temp\.hidden\_under\(paren)\graph.png",
             "/tmp/with space/graph.png",
         ] {
