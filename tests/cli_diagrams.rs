@@ -65,7 +65,8 @@ fn untrusted_with_diagrams_renders_mermaid_or_says_how_to_install_merman() {
     let input = fx.path("d.md");
     std::fs::write(&input, DOC).unwrap();
     let out = md2docx(&[p(&input), "--untrusted", "--diagrams"]);
-    if have("merman-cli") {
+    // A build with the `mermaid` feature renders in-process whether or not merman-cli exists.
+    if cfg!(feature = "mermaid") || have("merman-cli") {
         assert!(out.status.success(), "{}", stderr(&out));
         let docx = std::fs::read(fx.path("d.docx")).unwrap();
         assert_eq!(media_count(&docx), 1, "the diagram");
