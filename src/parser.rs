@@ -783,6 +783,9 @@ fn add_footnote_marks(xml: Vec<u8>) -> Vec<u8> {
             let open_end = p + note[p..].find('>')? + 1;
             let after_props = if note[open_end..].starts_with("<w:pPr>") {
                 open_end + note[open_end..].find("</w:pPr>")? + "</w:pPr>".len()
+            } else if note[open_end..].starts_with("<w:pPr />") {
+                // An empty property set is written as a self-closing element.
+                open_end + "<w:pPr />".len()
             } else {
                 open_end
             };

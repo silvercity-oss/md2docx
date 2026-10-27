@@ -1,5 +1,4 @@
 use crate::docx::documents::BuildXML;
-use crate::docx::types::*;
 use crate::docx::xml_builder::*;
 use std::io::Write;
 
@@ -21,7 +20,7 @@ impl BuildXML for TableGrid {
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         XMLBuilder::from(stream)
             .open_table_grid()?
-            .apply_each(&self.grid, |g, b| b.grid_column(*g as i32, WidthType::Dxa))?
+            .apply_each(&self.grid, |g, b| b.grid_column(*g as i32))?
             .close()?
             .into_inner()
     }

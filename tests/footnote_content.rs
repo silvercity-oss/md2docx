@@ -91,8 +91,5 @@ fn footnote_images_obey_the_same_limits_as_body_images() {
 #[test]
 fn references_inside_footnotes_are_still_left_as_text() {
     let c = convert("a[^1]\n\n[^1]: see [^2]\n\n[^2]: other\n", &Config::default()).unwrap();
-    assert!(c
-        .diagnostics
-        .iter()
-        .any(|d| d.code == md2docx::Code::FootnoteNested));
+    assert!(c.diagnostics.iter().any(|d| d.code == md2docx::Code::FootnoteNested));
 }

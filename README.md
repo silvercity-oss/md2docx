@@ -37,9 +37,8 @@ let docx = markdown_to_docx(&user_markdown, &Config::default())?;
 | `convert_to_writer`, `convert_file` | The same for a writer or a file |
 | `analyze(&str, &Config) -> Result<Report>` | The findings and statistics without building the archive: validate or preview before converting |
 | `sweep_scratch(&Path, Duration)` | Remove scratch directories left by a worker that was killed from outside |
-| `omml::latex_to_omml(&str)` | The LaTeX to OMML converter on its own |
 
-Guides: [embedding it in a service](docs/embedding.md) (trust model, recipe, what needs host
+Guides: [stability and support policy](docs/stability.md), [embedding it in a service](docs/embedding.md) (trust model, recipe, what needs host
 isolation), [diagnostics reference](docs/diagnostics.md), [integration test plan](docs/integration-test-plan.md),
 and the runnable `examples/embed.rs`.
 
@@ -249,7 +248,7 @@ Puppeteer config (`-p puppeteer.json` with `--no-sandbox`); add it to `args`.
 
 With the `mermaid` cargo feature (Rust 1.95), `Config::with_in_process_mermaid()` renders Mermaid
 inside the process through the pure-Rust [`merman`](https://crates.io/crates/merman) crate
-(pinned to the tested version, PNG export and eleven common diagram families only). It is a
+(any compatible `0.9.x`; `Cargo.lock` pins the version CI tests; PNG export and eleven common diagram families only). It is a
 `FenceRenderer`, so it spawns nothing, writes nothing to disk, and shares the conversion's
 deadline and `CancelToken`; it suits workers that are allowed exactly one process. It measures
 text with merman's deterministic metrics, so labels can differ slightly from the `merman-cli`
@@ -512,9 +511,11 @@ fences left as code (no browser), no local files, smaller limits.
   a library it links. Run hostile input in a worker with a memory limit, no network and an
   external supervisor ([docs/embedding.md](docs/embedding.md)).
 * **Pictures are re-encoded as PNG.** Every embedded image is decoded and written again, which
-  keeps the file clean and the budgets honest but makes photographs several times larger, and a
-  camera's EXIF rotation is not applied. Equations that Word's linear format cannot hold
-  (`\begin{CD}` and other unsupported environments) are an error, not a degraded formula.
+  keeps the file clean and the budgets honest but makes photographs several times larger. This is
+  deliberate: passing a JPEG through would embed bytes the converter did not inspect. A camera's
+  EXIF orientation *is* applied, so a portrait photograph is stored upright. Equations that
+  Word's linear format cannot hold (`\begin{CD}` and other unsupported environments) are an
+  error naming the line, in every loss policy, not a degraded formula.
 * **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB
   input to a few hundred MB while building; set `Limits::max_elements` lower, and
   run conversions in a memory-limited worker, if that matters for your service.
@@ -528,8 +529,10 @@ fences left as code (no browser), no local files, smaller limits.
   for what was verified about merman and what that does and does not promise.
   For stronger isolation run the converter in a container with no network and no
   sensitive files.
-* On **Windows** a timed-out tool is killed but its descendants are not (Unix
-  uses process groups; a Job Object is not implemented).
+* On **Windows** a tool runs in a Job Object that is closed with the conversion, which ends its
+  descendants too. The job is assigned just after the tool starts, so a helper forked in that
+  first instant is not contained (the Unix process group has no such window), and a host that
+  already confines the worker in a job without nesting support leaves the tool uncontained.
 * Local-image checks resolve the path and then open it; a hostile process that
   swaps the file between the two steps is outside this threat model.
 * Command templates (`--dolphin-command`, ...) and `Config` values are trusted

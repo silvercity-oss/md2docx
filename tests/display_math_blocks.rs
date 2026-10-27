@@ -35,7 +35,8 @@ fn a_display_equation_in_a_block_quote_keeps_its_indent() {
 #[test]
 fn a_top_level_display_equation_is_unchanged() {
     let b = body("Text\n\n$$x$$\n");
-    assert!(b.contains("</w:pPr><m:oMathPara><m:oMath>"), "{b}");
+    // A paragraph with nothing to keep has no `pPr` at all.
+    assert!(b.contains("<w:p><m:oMathPara><m:oMath>"), "{b}");
     assert!(!b.contains("<w:numPr>") && !b.contains("<w:ind "), "{b}");
 }
 

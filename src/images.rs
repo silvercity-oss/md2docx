@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use image::{DynamicImage, ImageFormat, ImageReader};
+use image::metadata::Orientation;
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use sha2::{Digest, Sha256};
 
 use crate::config::Limits;
@@ -158,9 +159,21 @@ impl ImagePipeline {
         decode_limits.max_image_width = Some(limits.max_image_dimension);
         decode_limits.max_image_height = Some(limits.max_image_dimension);
         reader.limits(decode_limits);
-        let Ok(img) = reader.decode() else {
+        // Not `reader.decode()`: the decoder is needed first to read the camera's EXIF orientation,
+        // so the picture is stored the way it is displayed. The allocation ceiling `decode` would
+        // reserve up front is checked here instead.
+        let Ok(mut decoder) = reader.into_decoder() else {
             return Ok(Outcome::Unsupported(Unsupported::Corrupt));
         };
+        if decoder.total_bytes() > limits.max_decode_alloc_bytes {
+            return Ok(Outcome::Unsupported(Unsupported::Corrupt));
+        }
+        let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+        let Ok(mut img) = DynamicImage::from_decoder(decoder) else {
+            return Ok(Outcome::Unsupported(Unsupported::Corrupt));
+        };
+        img.apply_orientation(orientation);
+        let (w, h) = (img.width(), img.height());
         ctl.check()?;
 
         // One plain 8-bit form per colour model: gray, RGB or RGBA.
@@ -303,6 +316,41 @@ mod tests {
         let mut p = ImagePipeline::new();
         let r = p.normalize(&l, &Ctl::none(), &png(64, 64, 3), "noisy");
         assert!(matches!(r, Err(CrateError::LimitExceeded(m)) if m.contains("normalised")));
+    }
+
+    /// `jpeg` with an EXIF APP1 segment that says "rotate 90 degrees clockwise to display" (6).
+    fn jpeg_with_orientation(w: u32, h: u32, orientation: u8) -> Vec<u8> {
+        let plain = jpeg(w, h);
+        let mut exif = b"Exif\0\0MM\0*\0\0\0\x08".to_vec();
+        exif.extend_from_slice(&[0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, orientation, 0, 0, 0, 0, 0, 0]);
+        let mut out = plain[..2].to_vec();
+        out.extend_from_slice(&[0xFF, 0xE1]);
+        out.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        out.extend_from_slice(&exif);
+        out.extend_from_slice(&plain[2..]);
+        out
+    }
+
+    #[test]
+    fn exif_orientation_is_applied_so_the_picture_is_stored_as_displayed() {
+        let mut p = ImagePipeline::new();
+        let l = Limits::trusted();
+        let Outcome::Picture(upright) = p
+            .normalize(&l, &Ctl::none(), &jpeg_with_orientation(8, 4, 1), "a")
+            .unwrap()
+        else {
+            panic!("orientation 1")
+        };
+        assert_eq!((upright.width, upright.height), (8, 4));
+        let Outcome::Picture(turned) = p
+            .normalize(&l, &Ctl::none(), &jpeg_with_orientation(8, 4, 6), "b")
+            .unwrap()
+        else {
+            panic!("orientation 6")
+        };
+        assert_eq!((turned.width, turned.height), (4, 8), "a quarter turn swaps the sides");
+        let decoded = image::load_from_memory(&turned.png).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (4, 8));
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub struct OmmlError(String);
 
 impl OmmlError {
     /// What went wrong, as shown by `Display`.
+    #[cfg_attr(not(feature = "internals"), allow(dead_code))]
     pub fn message(&self) -> &str {
         &self.0
     }
@@ -162,6 +163,7 @@ pub(crate) fn ensure_math_namespace_in(xml: &str, root: &str) -> std::result::Re
 }
 
 /// Convert LaTeX math (without `$` delimiters) to the inner XML of `<m:oMath>`.
+#[cfg_attr(not(feature = "internals"), allow(dead_code))]
 pub fn latex_to_omml(latex: &str) -> std::result::Result<String, OmmlError> {
     latex_to_omml_checked(latex).map(|(xml, _)| xml)
 }

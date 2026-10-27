@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # Workflow actions are pinned by tag; this keeps them (and their security fixes) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        update-types: [minor, patch]
+    # `merman` is bumped by hand: its output and its confinement are tested per version.
+    ignore:
+      - dependency-name: merman
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: monthly

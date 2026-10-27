@@ -1,0 +1,45 @@
+# cargo-deny policy (CI job `cargo deny`). https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences only, plus MPL-2.0: file-level copyleft that applies to the MPL-licensed
+# crates themselves (cssparser, selectors, ...: unmodified, pulled in through the HTML rewriter),
+# not to this crate. Anything else (GPL, AGPL, LGPL-only, SSPL) fails the build.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "0BSD",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Two versions of one crate are tolerated (the dependency tree has several), but a wildcard
+# requirement is not.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true  # the dev-dependency on this crate itself
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[advisories]
+# The RustSec database; `cargo audit` runs next to it in CI with the documented exceptions.
+version = 2
+# Both are "unmaintained" notices, not vulnerabilities, and both arrive only through the optional
+# `mermaid` feature (merman -> resvg/usvg). Re-check them when merman moves to a maintained shaper.
+ignore = [
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained; optional `mermaid` feature only (via merman/resvg)" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained; optional `mermaid` feature only (via merman/resvg)" },
+]

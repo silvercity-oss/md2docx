@@ -13,8 +13,8 @@ mod common;
 use std::collections::BTreeSet;
 
 use common::*;
-use pulldown_cmark::{Event, Options, Parser, Tag};
 use md2docx::{markdown_to_docx, Config, ImageAccess};
+use pulldown_cmark::{Event, Options, Parser, Tag};
 
 fn options() -> Options {
     Options::ENABLE_TABLES

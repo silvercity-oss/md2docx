@@ -4,9 +4,9 @@
 mod common;
 
 use common::*;
+use md2docx::{markdown_to_docx, Config, DocumentOptions};
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use md2docx::{markdown_to_docx, Config, DocumentOptions};
 
 const ORDERS: &[(&str, &[&str])] = &[
     (

@@ -44,8 +44,9 @@ impl BuildXML for Settings {
         XMLBuilder::from(stream)
             .declaration(Some(true))?
             .open_settings()?
-            .add_child(&self.default_tab_stop)?
+            // `CT_Settings` order: zoom comes before defaultTabStop.
             .add_child(&self.zoom)?
+            .add_child(&self.default_tab_stop)?
             .open_compat()?
             .space_for_ul()?
             .balance_single_byte_double_byte_width()?

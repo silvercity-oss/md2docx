@@ -143,7 +143,11 @@ impl BuildXML for ParagraphProperty {
             .add_optional_child(&self.alignment)?
             .add_optional_child(&self.text_alignment)?
             .add_optional_child(&self.outline_lvl)?
-            .add_child(&self.run_property)?
+            // The paragraph mark's run properties are only valid in a paragraph's own `pPr`, and
+            // only worth writing when they say something (style and numbering `pPr` forbid them).
+            .apply_if(self.run_property != RunProperty::default(), |b| {
+                b.add_child(&self.run_property)
+            })?
             .add_optional_child(&self.section_property)?
             .add_optional_child(&self.paragraph_property_change)?
             .close()?

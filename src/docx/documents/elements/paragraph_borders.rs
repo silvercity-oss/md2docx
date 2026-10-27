@@ -156,10 +156,11 @@ impl BuildXML for ParagraphBorders {
     ) -> crate::docx::xml::writer::Result<crate::docx::xml::writer::EventWriter<W>> {
         XMLBuilder::from(stream)
             .open_paragraph_borders()?
-            .add_optional_child(&self.left)?
-            .add_optional_child(&self.right)?
+            // `CT_PBdr` order: top, left, bottom, right, between, bar.
             .add_optional_child(&self.top)?
+            .add_optional_child(&self.left)?
             .add_optional_child(&self.bottom)?
+            .add_optional_child(&self.right)?
             .add_optional_child(&self.between)?
             .add_optional_child(&self.bar)?
             .close()?

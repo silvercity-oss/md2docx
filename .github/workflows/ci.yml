@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request replaces the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   # The CommonMark corpus is in the repo (not the published crate): never skip it in CI.
@@ -99,7 +104,7 @@ jobs:
       - run: cargo check --all-targets --locked
       - run: cargo check --no-default-features --locked
 
-  # The in-process Mermaid renderer (`mermaid` feature, merman pinned exactly). It needs Rust 1.95,
+  # The in-process Mermaid renderer (`mermaid` feature; Cargo.lock pins the merman that is tested). It needs Rust 1.95,
   # so the minimum is tested explicitly; stable is tested on Windows too (no process is spawned,
   # which is the point of the feature).
   mermaid:
@@ -166,9 +171,76 @@ jobs:
       - run: cargo doc --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo doc --no-deps --features mermaid --locked
+      - run: cargo doc --no-deps --all-features --locked
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # Word is stricter than LibreOffice, so the output is also validated against the Office Open XML
+  # schemas with Microsoft's Open XML SDK (tools/ooxml-validate): the fixtures, and this
+  # repository's own Markdown converted with a spread of options.
+  ooxml:
+    name: OOXML schema validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: tools/validate-output.sh
+
+  # Licences and sources of every dependency, duplicate versions and advisories (deny.toml).
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deny --locked
+      - run: cargo deny --all-features check
+
+  # The public API must stay source compatible with the latest release (RELEASING.md). Until the
+  # first tag exists there is nothing to compare against, and the job says so.
+  semver:
+    name: API compatibility (cargo-semver-checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Compare with the latest tag
+        run: |
+          tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          if [ -z "$tag" ]; then echo "::notice::no release tag yet; nothing to compare the API with"; exit 0; fi
+          cargo install cargo-semver-checks --locked
+          cargo semver-checks --baseline-rev "$tag"
+
+  # Coverage-guided fuzzing (fuzz/). Thirty seconds per target on every push is a smoke test; the
+  # weekly run is ten minutes each. A crash uploads its input as an artifact.
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [markdown_to_docx, latex_to_omml, analyze_html]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 600 || 30 }} -rss_limit_mb=2048
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
 
   # The default Mermaid engine, against the real renderer. Separate job because
   # building merman-cli takes minutes; the binary is cached by version.

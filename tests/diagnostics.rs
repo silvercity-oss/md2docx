@@ -252,3 +252,19 @@ fn the_diagnostics_reference_documents_every_code() {
         );
     }
 }
+
+/// The contract for equations the native converter cannot express: the conversion fails with an
+/// error that names the line and the construct, in every loss policy, rather than a degraded
+/// formula in the document (see "What is not covered" in the README).
+#[test]
+fn an_unsupported_equation_environment_is_an_error_with_its_line_never_a_degraded_formula() {
+    let md = "intro\n\n$$\\begin{CD} A @>>> B \\end{CD}$$\n";
+    for policy in [LossPolicy::Allow, LossPolicy::Reject] {
+        let err = convert(md, &Config::default().with_loss_policy(policy)).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("line 3") && text.contains("unsupported environment `CD`"),
+            "{text}"
+        );
+    }
+}

@@ -232,11 +232,17 @@ fn dir_size(dir: &Path) -> u64 {
 /// only make the order of events deterministic; they are not what the safety rests on.
 struct ProcessGuard {
     child: Option<std::process::Child>,
+    #[cfg(windows)]
+    job: Option<win32job::Job>,
 }
 
 impl ProcessGuard {
     fn new(child: std::process::Child) -> Self {
-        ProcessGuard { child: Some(child) }
+        ProcessGuard {
+            #[cfg(windows)]
+            job: contain_in_job(&child),
+            child: Some(child),
+        }
     }
 
     fn child(&mut self) -> &mut std::process::Child {
@@ -253,9 +259,27 @@ impl ProcessGuard {
             // any member is alive; if none is, the signal finds no target.
             let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
         }
+        // Closing the job ends every process still in it (`KILL_ON_JOB_CLOSE`), descendants included.
+        #[cfg(windows)]
+        drop(self.job.take());
         let _ = child.kill();
         let _ = child.wait();
     }
+}
+
+/// Put the freshly spawned tool in a Job Object that kills its members when it is closed. This is
+/// best effort: the tool has already started, so a descendant it forks before this call returns
+/// is not contained (the Unix process group has no such window), and a host that already runs us
+/// in a job without nesting support leaves the tool uncontained, as before.
+#[cfg(windows)]
+fn contain_in_job(child: &std::process::Child) -> Option<win32job::Job> {
+    use std::os::windows::io::AsRawHandle;
+    let job = win32job::Job::create().ok()?;
+    let mut info = job.query_extended_limit_info().ok()?;
+    info.limit_kill_on_job_close();
+    job.set_extended_limit_info(&info).ok()?;
+    job.assign_process(child.as_raw_handle() as isize).ok()?;
+    Some(job)
 }
 
 impl Drop for ProcessGuard {

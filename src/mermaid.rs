@@ -31,7 +31,7 @@
 //! * Text is measured with merman's deterministic metrics (no system fonts), so output does not
 //!   depend on the machine. Labels are slightly less precise than the `merman-cli` engine's
 //!   native-font measurement.
-//! * This is the *tested* merman version only ([`MERMAN_VERSION`]); it is pinned exactly.
+//! * This is the *tested* merman version only ([`MERMAN_VERSION`]); the dependency allows any compatible `0.9.x` (Cargo.lock pins the one CI tests); `merman` types never appear in this crate's API.
 
 use crate::config::Config;
 use crate::extend::{FenceError, FenceRenderer, RenderContext};
@@ -44,7 +44,7 @@ use merman::{
     SvgRequest,
 };
 
-/// The merman version this build was tested with.
+/// The merman version this crate's tests ran against (a newer compatible `0.9.x` may be resolved).
 pub const MERMAN_VERSION: &str = "0.9.2";
 
 /// How much work merman may spend on one diagram.

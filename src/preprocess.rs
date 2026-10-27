@@ -278,6 +278,7 @@ fn lone_cr_to_newline(text: std::borrow::Cow<'_, str>) -> std::borrow::Cow<'_, s
 }
 
 /// Run Stage 1 over `markdown`.
+#[cfg_attr(not(feature = "internals"), allow(dead_code))]
 pub fn preprocess(markdown: &str, cfg: &Config) -> Result<Preprocessed> {
     preprocess_with(markdown, cfg, &Ctl::new(cfg))
 }

@@ -575,6 +575,6 @@ fn randomised_latex_body() {
     for _ in 0..5000 {
         let n = 1 + (rng.next() % 40) as usize;
         let latex: String = (0..n).map(|_| rng.pick(&pieces)).collect();
-        let _ = md2docx::omml::latex_to_omml(&latex);
+        let _ = md2docx::__internals::latex_to_omml(&latex);
     }
 }

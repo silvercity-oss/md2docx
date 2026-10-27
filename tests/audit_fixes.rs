@@ -327,9 +327,9 @@ fn non_xml_characters_are_refused_in_config_and_in_the_public_converter() {
         markdown_to_docx("x", &Config::trusted().with_document(doc)),
         Err(CrateError::InvalidConfig(_))
     ));
-    assert!(md2docx::omml::latex_to_omml("a\u{1}b").is_err());
-    assert!(md2docx::omml::latex_to_omml("a\u{fffe}b").is_err());
-    let e = md2docx::omml::latex_to_omml("\\frac{").unwrap_err();
+    assert!(md2docx::__internals::latex_to_omml("a\u{1}b").is_err());
+    assert!(md2docx::__internals::latex_to_omml("a\u{fffe}b").is_err());
+    let e = md2docx::__internals::latex_to_omml("\\frac{").unwrap_err();
     assert!(!e.message().is_empty() && e.to_string() == e.message());
 }
 

@@ -212,6 +212,22 @@ First release.
   `\sqrt[...]` and stack overflow on deeply nested input).
 - Control characters stripped so output is always valid XML.
 
+### Release hardening
+- API: `md2docx::omml` is no longer public; `md2docx::__internals` is behind the unstable
+  `internals` cargo feature, used by this repository's tests and fuzz targets only.
+- `merman` is a compatible-range dependency (`0.9.2`, any `0.9.x`) instead of an exact pin;
+  `Cargo.lock` still pins the tested version. See docs/stability.md for what is promised.
+- Windows: a tool and everything it starts run in a Job Object that dies with the conversion.
+- A camera's EXIF orientation is applied to embedded JPEGs.
+- The `.docx` output now validates against the Office Open XML schemas (Open XML SDK): style,
+  numbering and default `pPr` no longer carry an empty `rPr`, `settings.xml` lists `zoom` before
+  `defaultTabStop`, `w:gridCol` has no `w:type`, and paragraph borders are written in schema
+  order (top, left, bottom, right).
+- Unsupported equation environments are documented and tested as an error with the line number.
+- Added: `docs/stability.md`, `RELEASING.md`, `deny.toml`, `fuzz/` targets, `tools/ooxml-validate`,
+  a release workflow, and CI jobs for `cargo deny`, `cargo semver-checks`, fuzzing and schema
+  validation.
+
 ### Fixed
 - Content between the tags of an HTML `<table>` (an indented block or text outside
   any cell) was silently dropped; it now appears in front of the table, as browsers do.

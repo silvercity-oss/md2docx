@@ -111,7 +111,7 @@ mod lexers;
 mod links;
 #[cfg(feature = "mermaid")]
 pub mod mermaid;
-pub mod omml;
+mod omml;
 mod pack;
 mod parser;
 mod preprocess;
@@ -119,11 +119,14 @@ mod renderer;
 mod safety;
 mod template;
 
-/// Not part of the public API: internals that the crate's own integration tests
-/// reach into. No stability promise of any kind; use [`markdown_to_docx`] and the
-/// other documented functions.
+/// Not part of the public API: internals that this crate's own integration tests and fuzz
+/// targets reach into (cargo feature `internals`, off by default). No stability promise of any
+/// kind, and it may change in any release; use [`markdown_to_docx`] and the other documented
+/// functions.
+#[cfg(feature = "internals")]
 #[doc(hidden)]
 pub mod __internals {
+    pub use crate::omml::{latex_to_omml, latex_to_omml_checked, OmmlError};
     pub use crate::preprocess::{preprocess, Asset, AssetKind, AssetSource, Preprocessed};
     pub use crate::renderer::{run_tool, ToolGuard, TEX_ENV};
 }

@@ -6,9 +6,11 @@
   maintained in this repository and no longer a dependency.
 
 * **merman** (optional `mermaid` feature only, not compiled by default). The in-process Mermaid
-  renderer depends on `merman` 0.9.2 (MIT OR Apache-2.0, <https://github.com/Latias94/merman>)
+  renderer depends on `merman` 0.9.x (tested with 0.9.2; MIT OR Apache-2.0, <https://github.com/Latias94/merman>)
   with the ELK layout and math features turned off; its transitive dependencies (resvg, usvg,
-  tiny-skia, ...) carry their own permissive licences, listed in its `THIRD_PARTY_NOTICES.md`.
+  tiny-skia, ...) carry their own licences, listed in its `THIRD_PARTY_NOTICES.md` (all permissive, apart from
+  a few MPL-2.0 crates such as `cssparser` and `selectors`, which are used unmodified; `deny.toml`
+  allows exactly that set).
 
 * **Theme colours.** `Theme::vscode_light()` and `Theme::vscode_dark()` use the token colours
   of Visual Studio Code's default *Light+* and *Dark+* themes

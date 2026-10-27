@@ -386,7 +386,11 @@ impl<W: Write> XMLBuilder<W> {
     closed_with_str!(table_style, "w:tblStyle");
     closed_w_with_type_el!(table_width, "w:tblW");
     closed_w_with_type_el!(table_indent, "w:tblInd");
-    closed_w_with_type_el!(grid_column, "w:gridCol");
+    /// `<w:gridCol w:w="…"/>`: unlike the cell widths, a grid column has no `w:type` attribute.
+    pub(crate) fn grid_column(self, w: i32) -> crate::docx::xml::writer::Result<Self> {
+        self.write(XmlEvent::start_element("w:gridCol").attr_display("w:w", w))?
+            .close()
+    }
     closed_w_with_type_el!(table_cell_width, "w:tcW");
 
     closed!(table_row_height, "w:trHeight", "w:val", "w:hRule");

@@ -117,8 +117,8 @@ let cfg = Config::default().with_in_process_mermaid();
 It is a `FenceRenderer`, so it starts nothing and writes nothing, shares the conversion's deadline
 and `CancelToken`, and is bounded by merman's resource policy (`MermaidProfile`) plus this crate's
 image limits (a too-large raster is scaled down, not refused). The feature needs **Rust 1.95**
-(merman's MSRV); the crate without it still builds on 1.88. merman is pinned to exactly the tested
-version (`md2docx::mermaid::MERMAN_VERSION`) with PNG export and eleven common diagram
+(merman's MSRV); the crate without it still builds on 1.88. merman may resolve to any compatible `0.9.x`; the tested
+version is `md2docx::mermaid::MERMAN_VERSION` (pin it in your `Cargo.lock`), with PNG export and eleven common diagram
 families (flowchart, sequence, class, state, ER, pie, Gantt, journey, mindmap, timeline, git
 graph); `mermaid-all-diagrams` adds the rest. It is distinct from anything parser-only: only this
 renderer draws pictures. Text is measured with merman's deterministic metrics (no system fonts).

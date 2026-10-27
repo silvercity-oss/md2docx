@@ -1,0 +1,36 @@
+[package]
+name = "md2docx-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+md2docx = { path = "..", features = ["internals"] }
+
+# Not part of the root package or any workspace: cargo-fuzz needs nightly, the crate does not.
+[workspace]
+
+[[bin]]
+name = "markdown_to_docx"
+path = "fuzz_targets/markdown_to_docx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "latex_to_omml"
+path = "fuzz_targets/latex_to_omml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "analyze_html"
+path = "fuzz_targets/analyze_html.rs"
+test = false
+doc = false
+bench = false
