@@ -1,7 +1,10 @@
 name: CI
 
 on:
+  # Dependabot branches run through their pull request only; running both doubled the load and
+  # queued every other run behind a pile of dependency bumps.
   push:
+    branches-ignore: ["dependabot/**"]
   pull_request:
   workflow_dispatch:
   # Weekly: re-run the merman confinement tests against the *latest* merman-cli,

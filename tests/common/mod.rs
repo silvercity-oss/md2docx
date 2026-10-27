@@ -31,6 +31,19 @@ pub fn png_bytes(w: u32, h: u32) -> Vec<u8> {
     png.into_inner()
 }
 
+/// `file:///…` for an absolute path, the way the library writes it: forward slashes, and on
+/// Windows the drive after three slashes with any `\\?\` verbatim prefix dropped.
+#[allow(dead_code)]
+pub fn file_url(path: &std::path::Path) -> String {
+    let shown = path.display().to_string();
+    let shown = shown.strip_prefix(r"\\?\").unwrap_or(&shown).replace('\\', "/");
+    if shown.starts_with('/') {
+        format!("file://{shown}")
+    } else {
+        format!("file:///{shown}")
+    }
+}
+
 pub fn zip_entries(docx: &[u8]) -> Vec<String> {
     let z = zip::ZipArchive::new(Cursor::new(docx)).expect("output must be a zip archive");
     z.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect()

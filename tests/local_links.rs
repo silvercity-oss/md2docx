@@ -111,7 +111,7 @@ fn absolute_style_writes_file_addresses() {
     options(&mut cfg).style = LinkStyle::Absolute;
     let c = convert("[a](docs/cli.md) [d](tests/)", &cfg).unwrap();
     let r = rels(&c.docx);
-    let base = format!("file://{}", t.root.display());
+    let base = file_url(&t.root);
     assert!(r.contains(&format!("Target=\"{base}/docs/cli.md\"")), "{r}");
     assert!(r.contains(&format!("Target=\"{base}/tests/\"")), "{r}");
 }
@@ -159,7 +159,7 @@ fn all_mode_links_missing_outside_and_program_targets_but_never_network_paths() 
 #[test]
 fn file_addresses_work_in_all_mode_only() {
     let t = Tree::new();
-    let md = format!("[l](file://{}/LICENSE)", t.root.display());
+    let md = format!("[l]({}/LICENSE)", file_url(&t.root));
     let all = convert(&md, &t.cfg(LocalLinks::All)).unwrap();
     assert!(rels(&all.docx).contains("LICENSE"));
     let local = convert(&md, &t.cfg(LocalLinks::Local)).unwrap();

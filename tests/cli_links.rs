@@ -93,10 +93,7 @@ fn allow_links_local_rebases_to_the_output_directory() {
         "-",
     ]);
     let r = zip_text(&abs.stdout, "word/_rels/document.xml.rels");
-    assert!(
-        r.contains(&format!("Target=\"file://{}/LICENSE\"", root.display())),
-        "{r}"
-    );
+    assert!(r.contains(&format!("Target=\"{}/LICENSE\"", file_url(&root))), "{r}");
 }
 
 #[test]
