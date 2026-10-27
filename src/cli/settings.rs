@@ -200,12 +200,19 @@ pub fn config(args: &Args) -> Result<Config, CliError> {
                 .unwrap_or(SystemTime::UNIX_EPOCH),
         );
     }
-    if let Some(path) = &args.reference_doc {
+    if let Some(path) = args.reference_doc.as_ref().or(args.extract_reference.as_ref()) {
         let bytes = std::fs::read(path)
             .map_err(|e| CliError::usage(format!("cannot read --reference-doc {}: {e}", path.display())))?;
         cfg = cfg
             .with_reference_docx(&bytes)
             .map_err(|e| CliError::usage(format!("--reference-doc {}: {e}", path.display())))?;
+    }
+    if let Some(path) = &args.reference_style {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| CliError::usage(format!("cannot read --reference-style {}: {e}", path.display())))?;
+        cfg = cfg
+            .with_reference_style(&json)
+            .map_err(|e| CliError::usage(format!("--reference-style {}: {e}", path.display())))?;
     }
     if args.strict {
         cfg.loss_policy = LossPolicy::Reject;

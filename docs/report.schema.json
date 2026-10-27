@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/silvercity-oss/md2docx/blob/main/docs/report.schema.json",
+  "title": "md2docx-cli --format json report (schema 1)",
+  "description": "One JSON object per input on standard error, one per line. Fields may be added within schema 1; none is renamed, removed or re-typed.",
+  "type": "object",
+  "required": ["schema", "input", "output", "origin", "status", "exit_code", "error", "diagnostics", "stats"],
+  "properties": {
+    "schema": { "const": 1 },
+    "input": { "type": ["string", "null"], "description": "The input path, \"-\" for standard input, null when the failure came before any input was looked at." },
+    "output": { "type": ["string", "null"], "description": "The file written, \"-\" for standard output, null with --check or when nothing was written." },
+    "origin": { "enum": ["input", "link"], "description": "\"link\" for a Markdown file converted because a document linked to it (--markdown-links follow)." },
+    "status": { "enum": ["ok", "error"] },
+    "exit_code": { "type": "integer", "minimum": 0, "maximum": 7 },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["kind", "message"],
+          "properties": { "kind": { "type": "string" }, "message": { "type": "string" } }
+        }
+      ]
+    },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "stats": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["headings", "tables", "pictures", "equations", "footnotes", "hyperlinks", "code_blocks"],
+          "properties": {
+            "headings": { "type": "integer" },
+            "tables": { "type": "integer" },
+            "pictures": { "type": "integer" },
+            "equations": { "type": "integer" },
+            "footnotes": { "type": "integer" },
+            "hyperlinks": { "type": "integer" },
+            "code_blocks": { "type": "integer" }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "message", "span"],
+      "properties": {
+        "code": { "type": "string", "description": "A stable code from --list-codes, such as link.dropped." },
+        "severity": { "enum": ["info", "warning"] },
+        "message": { "type": "string", "description": "For people; not stable. Match on code." },
+        "span": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["start", "end", "line", "column", "end_line", "end_column"],
+              "properties": {
+                "start": { "type": "integer", "description": "First byte in the input." },
+                "end": { "type": "integer", "description": "One past the last byte." },
+                "line": { "type": "integer", "minimum": 1 },
+                "column": { "type": "integer", "minimum": 1 },
+                "end_line": { "type": "integer", "minimum": 1 },
+                "end_column": { "type": "integer", "minimum": 1 }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -65,7 +65,7 @@ pub enum ImageEncoding {
 pub enum Format {
     /// Human-readable lines on standard error (default).
     Text,
-    /// One JSON object per input on standard error, nothing else (see docs/cli.md).
+    /// One JSON object per input on standard error, nothing else (see CLI.md).
     Json,
 }
 
@@ -129,14 +129,15 @@ const LONG_VERSION: &str = concat!(
                   Example: --dolphin-command 'dolphin -i {input} -o {output}'\n\n\
                   EXIT STATUS: 0 converted | 1 other failure | 2 usage | 3 file I/O | 4 document rejected \
                   (malformed, over a limit, unsafe) | 5 --strict refusal | 6 external tool | 7 deadline. \
-                  See docs/cli.md.\n\n\
+                  See CLI.md.\n\n\
                   SECURITY: `--math-mode image` runs a local TeX engine on document content, and diagram \
                   rendering runs external tools. Use `--untrusted` for input you do not control."
 )]
 pub struct Args {
     #[arg(
         value_name = "INPUT",
-        required_unless_present_any = ["completions", "man"],
+        required_unless_present_any = ["completions", "man", "extract_reference", "capabilities", "list_codes", "print_config"],
+        conflicts_with_all = ["extract_reference", "capabilities", "list_codes"],
         help = "Markdown file(s) to convert; `-` reads standard input"
     )]
     pub inputs: Vec<PathBuf>,
@@ -281,6 +282,22 @@ pub struct Args {
         help = "Take the styles and theme (fonts, sizes, colours, heading looks) from this .docx; styles it lacks are added"
     )]
     pub reference_doc: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "FILE.json",
+        conflicts_with_all = ["reference_doc", "extract_reference"],
+        help = "Take the styles and theme from a JSON snapshot written by --extract-reference (editable, no Word needed); styles it lacks are added"
+    )]
+    pub reference_style: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "FILE.docx",
+        conflicts_with_all = ["reference_doc", "reference_style", "check", "completions", "man", "capabilities", "list_codes", "print_config"],
+        help = "Write the styles a conversion would use with this .docx as --reference-doc to a JSON file (-o PATH, default: the .docx's name with .json; `-o -` for standard output) for --reference-style, then exit"
+    )]
+    pub extract_reference: Option<PathBuf>,
 
     #[arg(long, help = "Number headings 1, 1.1, 1.1.1 ...")]
     pub number_headings: bool,
@@ -491,7 +508,7 @@ pub struct Args {
         value_name = "BYTES",
         value_parser = parse_size,
         env = "MD2DOCX_MAX_OUTPUT_BYTES",
-        help = "Largest .docx produced [default: 1G; 50M with --untrusted]"
+        help = "Largest .docx produced [default: 256M; 50M with --untrusted]"
     )]
     pub max_output_bytes: Option<u64>,
 
@@ -508,7 +525,7 @@ pub struct Args {
         long,
         value_name = "COUNT",
         env = "MD2DOCX_MAX_ELEMENTS",
-        help = "Most paragraphs, runs, cells and list instances; bounds memory while building [default: 1000000; 60000 with --untrusted]"
+        help = "Most paragraphs, runs, cells and list instances; bounds memory while building [default: 500000; 60000 with --untrusted]"
     )]
     pub max_elements: Option<usize>,
 
@@ -517,7 +534,7 @@ pub struct Args {
         value_name = "BYTES",
         value_parser = parse_size,
         env = "MD2DOCX_MAX_IMAGE_BYTES",
-        help = "Largest single image file or rendered diagram"
+        help = "Largest single image file or rendered diagram [default: 25M; 5M with --untrusted]"
     )]
     pub max_image_bytes: Option<u64>,
 
@@ -525,7 +542,7 @@ pub struct Args {
         long,
         value_name = "COUNT",
         env = "MD2DOCX_MAX_IMAGES",
-        help = "Most distinct images in the document"
+        help = "Most distinct images in the document [default: 1000; 100 with --untrusted]"
     )]
     pub max_images: Option<usize>,
 
@@ -550,6 +567,27 @@ pub struct Args {
         help = "Syntax-highlight code blocks with the built-in lexers (Rust, Python, JS/TS, Java, C/C++, C#, Go, Kotlin, Swift, Ruby, PHP, SQL, Bash, JSON, YAML, TOML, HTML/XML, CSS, diff)"
     )]
     pub highlight: Highlight,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["completions", "man", "list_codes", "print_config", "extract_reference"],
+        help = "Print what this build can do as JSON (version, compiled features, exit codes, option values, preset limits, which external tools are installed) and exit"
+    )]
+    pub capabilities: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["completions", "man", "capabilities", "print_config", "extract_reference"],
+        help = "Print every diagnostic code (code, severity, summary) as JSON and exit"
+    )]
+    pub list_codes: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["completions", "man", "capabilities", "list_codes", "extract_reference"],
+        help = "Print the settings these options resolve to (limits, trust switches, document look, link rules) as JSON and exit; nothing is converted"
+    )]
+    pub print_config: bool,
 
     #[arg(
         long,

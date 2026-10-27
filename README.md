@@ -36,6 +36,8 @@ let docx = markdown_to_docx(&user_markdown, &Config::default())?;
 | `convert(&str, &Config) -> Result<Conversion>` | The document **and** what could not be carried over: `diagnostics` (stable code, severity, span in your text) and `stats` |
 | `convert_to_writer`, `convert_file` | The same for a writer or a file |
 | `analyze(&str, &Config) -> Result<Report>` | The findings and statistics without building the archive: validate or preview before converting |
+| `StyleSnapshot::{from_docx, from_config, from_json, to_json}`, `Config::with_reference_style(&str)` | The styles a conversion would use as an editable JSON document, and reading it back (the CLI's `--extract-reference` / `--reference-style`) |
+| `Report::to_json()`, `Code::catalog_json()`, `Config::settings_json()` | Machine-readable findings, the list of diagnostic codes and what a configuration will do: for programs and AI agents |
 | `sweep_scratch(&Path, Duration)` | Remove scratch directories left by a worker that was killed from outside |
 
 Guides: [stability and support policy](docs/stability.md), [embedding it in a service](docs/embedding.md) (trust model, recipe, what needs host
@@ -385,68 +387,31 @@ the same HTML; the only differences are `<a>` links and the image policy.
 
 ## CLI
 
-```
-md2docx-cli notes.md                                  # -> notes.docx, native equations
-md2docx-cli notes.md -o out.docx --math-mode image    # PNG formulas via latex + dvipng
+`md2docx-cli` is the command-line front end. **[CLI.md](CLI.md) documents every option with examples**,
+how to build and install it, the exit statuses, the JSON report and recipes for CI, services and AI agents.
+
+```sh
+md2docx-cli notes.md                                  # -> notes.docx, native (editable) equations
+md2docx-cli notes.md -o out.docx --page-size letter --toc --highlight dark
 md2docx-cli - < notes.md > out.docx                   # standard input to standard output
-md2docx-cli docs/*.md -o build/                       # several files into a directory
 md2docx-cli --check --strict docs/*.md                # CI lint: write nothing, fail on any loss
 md2docx-cli --untrusted --format json - < upload.md > out.docx 2> report.json
-md2docx-cli notes.md --mermaid-engine mmdc            # official Mermaid CLI instead of merman
+md2docx-cli notes.md --reference-style brand.json     # styles from JSON (see --extract-reference)
+md2docx-cli --capabilities                            # what this build can do, as JSON
 ```
 
-The command line is an interface you can script against: **exit status, standard streams, the
-JSON report and the environment variables are specified in [docs/cli.md](docs/cli.md)** and tested
-by number. In short:
+Things worth knowing before you use it on anything you did not write:
 
-| Status | Meaning |
-| ---: | --- |
-| `0` | converted (warnings may have been printed) |
-| `1` | other failure (a bug, a cancelled conversion) |
-| `2` | usage: the command line or its configuration is wrong |
-| `3` | file I/O: the input could not be read, or the output written |
-| `4` | the **document** is rejected: malformed, over a limit, or forbidden by the security policy |
-| `5` | `--strict`: valid, but it would lose something; nothing was written |
-| `6` | an external tool is missing or failed |
-| `7` | `--deadline` passed |
-
-| Flag | Meaning |
-| --- | --- |
-| `<input>…` | Markdown files (relative image paths resolve against each file's directory), or `-` for standard input |
-| `-o, --output` | Output file; a directory for several inputs; `-` for standard output (default: `<input>.docx`; refuses to overwrite the input) |
-| `--check` | Convert and report, write nothing |
-| `--format text\|json`, `-q` | One JSON object per input on standard error; or quiet text |
-| `--strict` | Refuse a document that could not be converted faithfully; lists every problem with line and column |
-| `--untrusted` | **Use this for input you do not control.** Native math, diagram fences stay code, no local images, tighter limits; starts no subprocess. Cannot be combined with switches that would loosen it; limit flags may only lower its limits |
-| `--diagrams` | Only with `--untrusted`: also render Mermaid diagrams (in-process in builds with the `mermaid` feature, else with `merman-cli`; see "Diagrams from untrusted input") |
-| `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
-| `--image-access none\|base-dir\|any`, `--base-dir` | Default `base-dir`: only images inside the input file's directory (or `--base-dir`) |
-| `--image-encoding png\|original` | Default `png`: every picture is re-encoded as a clean PNG. `original` embeds PNG, JPEG and GIF files 1:1 (see "Pictures" below); not with `--untrusted` |
-| `--mermaid-engine merman\|mmdc\|inprocess` | Mermaid renderer; default `merman` (Rust, no browser); `inprocess` needs the `mermaid` feature |
-| `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
-| `--latex`, `--dvipng`, `--timeout`, `--scratch-dir`, `--keep-failed-diagrams` | External renderer settings |
-| `--deadline`, `--max-input-bytes`, `--max-output-bytes`, `--max-uncompressed-bytes`, `--max-elements`, `--max-image-bytes`, `--max-images` | Limits (sizes accept `K`, `M`, `G`) |
-| `--link-schemes`, `--no-html-links` | Which links become hyperlinks |
-| `--title`, `--author`, `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`, `--page-numbers`, `--reference-doc`, `--number-headings`, `--toc`, `--code-blocks`, `--highlight`, `--compression-level`, `--autolink`, `--sup-sub` | Document look and Markdown extras |
-| `--source-date-epoch` (or `SOURCE_DATE_EPOCH`) | Fix the created/modified time for byte-identical output |
-| `--completions SHELL`, `--man` | Shell completions and the manual page |
-
-The CLI converts files you point it at, so it starts from `Config::trusted()` (with
-`native` math unless you pass `--math-mode image`); `--untrusted` switches to the safe
-preset. On Windows,
-npm-installed tools are `.cmd` shims, so pass `mmdc.cmd` explicitly
-through `--mermaid-command`. Running it in a container or a hardened worker:
-[docs/containers.md](docs/containers.md).
-
-### Links to files and folders
-
-Relative links (`docs/cli.md`, `LICENSE`, `tests/`) are shown as text by default. For documents you
-trust, `--allow-links local|all` turns them into working links, relative to where the `.docx` is
-saved or as `file:///` addresses; `--link-base` makes them web addresses;
-`--markdown-links follow --copy-linked -o site/` converts every Markdown file the README links to
-(opening `file.docx` at the right heading) and copies the other linked files, giving a
-self-contained tree; and `--check --strict` reports broken links. The library has the same
-options (`LinkOptions`) and a `LinkResolver` hook. See [docs/links.md](docs/links.md).
+* **`--untrusted`** is the preset for hostile Markdown: native math, diagram fences stay code, no local
+  images, tight limits, no subprocess. Use it for uploads and generated text.
+* **`--strict`** refuses a document that could not be converted faithfully (a dropped image or link, an
+  unknown LaTeX command) instead of writing a lossy one.
+* The exit status says who has to act (0 ok, 2 usage, 3 i/o, 4 document rejected, 5 `--strict`, 6 tool, 7
+  deadline), and `--format json` gives one machine-readable line per input
+  ([schema](docs/report.schema.json)).
+* The CLI converts files you point it at, so it starts from `Config::trusted()`; `--untrusted` switches to the safe
+  preset. Links to files and folders: [docs/links.md](docs/links.md). Running in a container or a hardened worker:
+  [docs/containers.md](docs/containers.md).
 
 ## Security
 

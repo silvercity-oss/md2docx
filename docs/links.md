@@ -1,7 +1,7 @@
 # Links to files, folders and other documents
 
 By default a link must be an absolute address with an allowed scheme (`https:`, `mailto:`). A
-relative path such as `docs/cli.md` is shown as text and reported (`link.dropped`): a `.docx` has no
+relative path such as `docs/guide.md` is shown as text and reported (`link.dropped`): a `.docx` has no
 idea where it will be opened, and a link that points at the reader's disk is not something to
 create from text you do not trust.
 
@@ -54,8 +54,8 @@ switch off with `--no-check-link-anchors`).
 
 ### Where the link points: `--link-style rebased|absolute`
 
-* `rebased` (default): a path relative to the **output directory**. `docs/cli.md` linked from
-  `README.md` and saved to `build/README.docx` becomes `../docs/cli.md`. Moving the whole tree keeps
+* `rebased` (default): a path relative to the **output directory**. `docs/guide.md` linked from
+  `README.md` and saved to `build/README.docx` becomes `../docs/guide.md`. Moving the whole tree keeps
   the links working; moving the `.docx` on its own breaks them.
 * `absolute`: a `file:///…` address. Moving the `.docx` anywhere on this machine keeps the links;
   another machine breaks them.
@@ -68,7 +68,7 @@ program that opens it would not honour it, and Word could mistake it for part of
 When the Markdown also lives on the web, point the links there instead:
 
 ```sh
---link-base      https://github.com/me/repo/blob/v1.0/   # files:        docs/cli.md  -> …/blob/v1.0/docs/cli.md#frag
+--link-base      https://github.com/me/repo/blob/v1.0/   # files:        docs/guide.md  -> …/blob/v1.0/docs/guide.md#frag
 --link-tree-base https://github.com/me/repo/tree/v1.0/   # directories:  tests/       -> …/tree/v1.0/tests/
 --link-map       docs/=https://docs.example.com/          # first match wins, before the bases
 ```
@@ -81,8 +81,8 @@ the scheme list (`https` by default).
 
 * `keep` (default): a link to a Markdown file points at that file, which opens in whatever program
   your system associates with `.md`.
-* `docx`: the link points at the `.docx` that file becomes. `docs/cli.md#exit-status` opens
-  `cli.docx` **at that heading**. You convert those files too: list them on the command line.
+* `docx`: the link points at the `.docx` that file becomes. `docs/guide.md#exit-status` opens
+  `guide.docx` **at that heading**. You convert those files too: list them on the command line.
 * `follow`: as `docx`, and every Markdown file reached through a link is converted as well,
   transitively, once each (cycles are fine). They appear in the report with `"origin":"link"`.
 
@@ -132,5 +132,5 @@ files a document linked to.
 * The behaviour of relative targets, directory links and `file.docx#bookmark` is Word's. Relative
   targets are resolved against the folder the document is opened from; if Word asks before
   following a link, that prompt is Word's own.
-* The path handling is written for Windows as well (drive letters, `\\?\` paths) but is exercised
-  by the automated tests on Linux only. Try your own tree on Windows once.
+* The path handling covers Windows as well (drive letters, `\\?\` paths) and the automated tests run
+  on Windows, macOS and Linux. Try your own tree once anyway: Word decides what a link does.

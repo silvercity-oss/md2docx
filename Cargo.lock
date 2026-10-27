@@ -855,6 +855,7 @@ dependencies = [
  "pulldown-cmark",
  "quick-xml",
  "rustix",
+ "serde_json",
  "sha2",
  "shlex",
  "smallvec",

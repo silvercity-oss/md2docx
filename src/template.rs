@@ -43,7 +43,7 @@ impl std::fmt::Debug for ReferenceDocx {
     }
 }
 
-fn bad(why: impl std::fmt::Display) -> CrateError {
+pub(crate) fn bad(why: impl std::fmt::Display) -> CrateError {
     CrateError::InvalidConfig(format!("reference document: {why}"))
 }
 
@@ -99,11 +99,16 @@ impl ReferenceDocx {
         }
         let styles = read_entry(&mut archive, "word/styles.xml")?.ok_or_else(|| bad("it has no word/styles.xml"))?;
         let styles = String::from_utf8(styles).map_err(|_| bad("word/styles.xml is not UTF-8"))?;
+        let theme = read_entry(&mut archive, "word/theme/theme1.xml")?;
+        Self::from_parts(styles, theme)
+    }
+
+    /// Check `styles` (a whole `styles.xml`) and `theme` and keep them.
+    pub(crate) fn from_parts(styles: String, theme: Option<Vec<u8>>) -> Result<Self> {
         well_formed(&styles, "word/styles.xml")?;
         if !styles.contains("<w:styles") {
             return Err(bad("word/styles.xml has no <w:styles> root"));
         }
-        let theme = read_entry(&mut archive, "word/theme/theme1.xml")?;
         if let Some(t) = &theme {
             let text = std::str::from_utf8(t).map_err(|_| bad("the theme is not UTF-8"))?;
             well_formed(text, "word/theme/theme1.xml")?;
@@ -115,7 +120,7 @@ impl ReferenceDocx {
 }
 
 /// `(styleId, whole <w:style>...</w:style> text)` for every style in `xml`.
-fn style_blocks(xml: &str) -> Result<Vec<(String, &str)>> {
+pub(crate) fn style_blocks(xml: &str) -> Result<Vec<(String, &str)>> {
     let mut out = Vec::new();
     let mut from = 0;
     while let Some(rel) = xml[from..].find("<w:style ") {

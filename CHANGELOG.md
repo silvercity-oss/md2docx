@@ -131,7 +131,7 @@ First release.
   (`-`), converts several files (`-o DIR`), validates without writing (`--check`), reports one JSON
   object per input (`--format json`, schema 1), and exits with a documented status that says who has
   to act (0 ok, 2 usage, 3 file I/O, 4 document rejected, 5 `--strict` refusal, 6 external tool, 7
-  deadline; docs/cli.md). New flags: `--quiet`, `--base-dir`, the `--max-*` limits (which can only
+  deadline; CLI.md). New flags: `--quiet`, `--base-dir`, the `--max-*` limits (which can only
   be lowered under `--untrusted`), `--link-schemes`, `--no-html-links`, `--title`, `--author`,
   `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`,
   `--page-numbers`, `--mermaid-engine inprocess` (with the `mermaid` feature),
@@ -219,6 +219,14 @@ First release.
   `Cargo.lock` still pins the tested version. See docs/stability.md for what is promised.
 - Windows: a tool and everything it starts run in a Job Object that dies with the conversion.
 - A camera's EXIF orientation is applied to embedded JPEGs.
+- `--extract-reference FILE.docx` writes the styles a conversion would use as an editable JSON file;
+  `--reference-style FILE.json` (`Config::with_reference_style`, `StyleSnapshot`) reads it back.
+- For programs and AI agents: `--capabilities`, `--list-codes` and `--print-config` (JSON on standard
+  output), `Report::to_json`, `Code::catalog_json`, `Config::settings_json`, and a JSON Schema for the
+  `--format json` report (`docs/report.schema.json`).
+- `CLI.md`: every option documented with examples, how to build and install; replaces `docs/cli.md`.
+- Fixed the documented defaults of `--max-output-bytes` (256M) and `--max-elements` (500000), which the
+  help text had wrong.
 - `ImageEncoding::Original` / `Config::with_image_encoding` / `--image-encoding original`: embed
   PNG, JPEG and GIF pictures 1:1 instead of re-encoding them as PNG (opt-in; the default is
   unchanged). Media parts take their extension from the file's signature.

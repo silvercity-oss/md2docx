@@ -1,6 +1,6 @@
 //! `md2docx-cli`: command-line front end for the Markdown -> .docx converter.
 //!
-//! The interface (flags, exit status, the JSON report) is documented in `docs/cli.md`.
+//! The interface (flags, exit status, the JSON report) is documented in `CLI.md`.
 
 /// Write a line to standard error, ignoring failure: a closed or full stderr must not turn a
 /// finished conversion into a panic (`eprintln!` panics when it cannot write).
@@ -16,6 +16,7 @@ mod exit;
 mod report;
 mod run;
 mod settings;
+mod tools;
 
 use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -30,6 +31,9 @@ pub fn main() -> ExitCode {
     let args = Args::parse();
     if args.completions.is_some() || args.man {
         return ExitCode::from(print_support_text(&args));
+    }
+    if let Some(code) = tools::dispatch(&args) {
+        return ExitCode::from(code);
     }
     let json = args.format == Format::Json;
     if json {

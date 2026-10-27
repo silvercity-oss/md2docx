@@ -31,7 +31,7 @@ echo "status $?"
 ```
 
 * The document goes in on standard input and out on standard output; nothing is mounted.
-* `report.json` is one line of JSON (see [cli.md](cli.md)). Branch on the status: `0` deliver,
+* `report.json` is one line of JSON (see [CLI.md](../CLI.md)). Branch on the status: `0` deliver,
   `4` and `5` tell the author (their document), `6`/`3`/`1` page an operator, `7` retry or give
   up, `137` too big.
 * `MD2DOCX_UNTRUSTED=1` means no TeX, no diagram process, no local files, tight limits. Limits can

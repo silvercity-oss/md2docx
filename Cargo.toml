@@ -48,6 +48,10 @@ quick-xml = { version = "0.42", default-features = false }
 pulldown-cmark = { version = "0.13.5", default-features = false }
 sha2 = "0.11"
 tempfile = "3"
+# JSON for the style snapshot (--extract-reference / --reference-style) and the machine-readable
+# descriptions (--capabilities, --list-codes, --print-config). `preserve_order` keeps the keys in
+# the order the documents list them.
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
 clap = { version = "4", features = ["derive", "env"], optional = true }

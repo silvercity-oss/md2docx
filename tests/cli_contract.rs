@@ -1,5 +1,5 @@
 //! The command-line contract: exit status, standard streams, the JSON report, environment
-//! variables, batch and check modes. `docs/cli.md` is the specification; these tests are what
+//! variables, batch and check modes. `CLI.md` is the specification; these tests are what
 //! keeps it true. Exit statuses are part of the interface and are asserted by number on purpose.
 
 #![cfg(feature = "cli")]

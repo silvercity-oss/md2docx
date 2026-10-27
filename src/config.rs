@@ -865,6 +865,14 @@ impl Config {
         Ok(self)
     }
 
+    /// Style the document from a JSON snapshot written by [`crate::StyleSnapshot::to_json`] (the CLI's
+    /// `--extract-reference`), possibly edited. Like [`Config::with_reference_docx`] it is read and
+    /// checked now.
+    pub fn with_reference_style(mut self, json: &str) -> crate::error::Result<Self> {
+        self.reference_docx = Some(Arc::new(crate::StyleSnapshot::from_json(json)?.into_reference()));
+        Ok(self)
+    }
+
     /// Read `^x^` as superscript and `~x~` as subscript (see [`Config::superscript_subscript`]).
     pub fn with_superscript_subscript(mut self, on: bool) -> Self {
         self.superscript_subscript = on;

@@ -100,6 +100,7 @@
 
 mod config;
 mod control;
+mod describe;
 mod diagnostics;
 mod docx;
 mod error;
@@ -117,6 +118,7 @@ mod parser;
 mod preprocess;
 mod renderer;
 mod safety;
+mod style_snapshot;
 mod template;
 
 /// Not part of the public API: internals that this crate's own integration tests and fuzz
@@ -149,6 +151,7 @@ pub use links::{
     DocumentLayout, LinkDecision, LinkOptions, LinkRequest, LinkResolver, LinkStyle, LocalLink, LocalLinks,
 };
 pub use renderer::sweep_scratch;
+pub use style_snapshot::{StyleSnapshot, STYLE_SCHEMA};
 pub use template::ReferenceDocx;
 
 /// A finished document with what the conversion found.

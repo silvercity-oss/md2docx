@@ -155,6 +155,30 @@ documents converted together to each other; for documents you do not control, gi
 `LinkResolver` that maps the links you accept to addresses you choose, without it ever touching the
 file system. See [links.md](links.md).
 
+## Machine-readable facts, for programs and AI agents
+
+Everything a caller needs to decide and to report is available as data, with no text to scrape:
+
+```rust
+use md2docx::{analyze, Code, Config, StyleSnapshot};
+
+let config = Config::untrusted();
+let settings = config.settings_json();      // what this configuration will do: limits, trust switches, look
+let codes = Code::catalog_json();           // every diagnostic code with severity and meaning
+let report = analyze("# Hi\n\n[x](javascript:1)", &config)?;
+let findings = report.to_json();            // {"diagnostics": [...], "stats": {...}}, as the CLI reports them
+
+// Styles as data: write the look a reference .docx gives as JSON, edit it, use it.
+let snapshot = StyleSnapshot::from_docx(&std::fs::read("brand.docx")?)?;
+let json = snapshot.to_json();
+let styled = Config::default().with_reference_style(&json)?;
+# Ok::<(), md2docx::CrateError>(())
+```
+
+The command line exposes the same through `--capabilities`, `--list-codes`, `--print-config`,
+`--extract-reference` and `--reference-style` ([CLI.md](../CLI.md)); the JSON report has a published
+[schema](report.schema.json).
+
 ## Streams, async and blocking
 
 The conversion is synchronous and CPU-bound. In an async service run it where blocking is
@@ -170,5 +194,5 @@ and read at most `Limits::max_input_bytes`; `convert_file` / `analyze_file` do t
 `Config` is `Send + Sync + Clone`: build it once per policy and share it.
 
 If you would rather not link the library, the `md2docx-cli` binary has a stable, scriptable interface:
-standard input and output, a JSON report and a documented exit status ([cli.md](cli.md),
+standard input and output, a JSON report and a documented exit status ([CLI.md](../CLI.md),
 [containers.md](containers.md)).
