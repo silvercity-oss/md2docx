@@ -203,8 +203,9 @@ const ORDERS: &[(&str, &[&str])] = &[
     ),
 ];
 
-fn local(name: &[u8]) -> String {
-    let s = String::from_utf8_lossy(name);
+/// quick-xml 0.41 hands out `&[u8]` names and 0.42 `&str`; both are `AsRef<[u8]>`.
+fn local(name: impl AsRef<[u8]>) -> String {
+    let s = String::from_utf8_lossy(name.as_ref());
     s.rsplit(':').next().unwrap_or("").to_string()
 }
 

@@ -1,10 +1,11 @@
 version: 2
 updates:
-  # Workflow actions are pinned by tag; this keeps them (and their security fixes) current.
+  # Workflow actions are pinned to commit SHAs; this proposes the bumps (and security fixes).
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     groups:
       actions:
         patterns: ["*"]
@@ -13,6 +14,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
     groups:
       cargo:
         update-types: [minor, patch]
@@ -25,3 +27,4 @@ updates:
     directory: /fuzz
     schedule:
       interval: monthly
+    open-pull-requests-limit: 1
