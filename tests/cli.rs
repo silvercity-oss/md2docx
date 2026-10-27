@@ -209,6 +209,7 @@ fn untrusted_flag_converts_hostile_input_without_side_effects() {
     for extra in [
         ["--math-mode", "image"],
         ["--image-access", "any"],
+        ["--image-encoding", "original"],
         ["--latex", "xelatex"],
     ] {
         let o = md2docx(&[path_str(&input), "--untrusted", extra[0], extra[1]]);

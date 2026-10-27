@@ -219,6 +219,9 @@ First release.
   `Cargo.lock` still pins the tested version. See docs/stability.md for what is promised.
 - Windows: a tool and everything it starts run in a Job Object that dies with the conversion.
 - A camera's EXIF orientation is applied to embedded JPEGs.
+- `ImageEncoding::Original` / `Config::with_image_encoding` / `--image-encoding original`: embed
+  PNG, JPEG and GIF pictures 1:1 instead of re-encoding them as PNG (opt-in; the default is
+  unchanged). Media parts take their extension from the file's signature.
 - The `.docx` output now validates against the Office Open XML schemas (Open XML SDK): style,
   numbering and default `pPr` no longer carry an empty `rPr`, `settings.xml` lists `zoom` before
   `defaultTabStop`, `w:gridCol` has no `w:type`, and paragraph borders are written in schema

@@ -88,8 +88,11 @@ where
     if !xml.media.is_empty() {
         zip.add_directory("word/media/", directory_options)?;
         for m in xml.media {
-            // For now only png supported
-            zip.start_file(format!("word/media/{}.png", m.0), stored)?;
+            // PNG, JPEG or GIF, named by signature to match the relationship target.
+            zip.start_file(
+                format!("word/media/{}.{}", m.0, crate::docx::documents::media_extension(&m.1)),
+                stored,
+            )?;
             zip.write_all(&m.1)?;
         }
     }

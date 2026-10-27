@@ -421,6 +421,7 @@ by number. In short:
 | `--diagrams` | Only with `--untrusted`: also render Mermaid diagrams (in-process in builds with the `mermaid` feature, else with `merman-cli`; see "Diagrams from untrusted input") |
 | `--math-mode native\|image` | Default **`native`** (editable OMML, no subprocess). `image` needs a TeX install |
 | `--image-access none\|base-dir\|any`, `--base-dir` | Default `base-dir`: only images inside the input file's directory (or `--base-dir`) |
+| `--image-encoding png\|original` | Default `png`: every picture is re-encoded as a clean PNG. `original` embeds PNG, JPEG and GIF files 1:1 (see "Pictures" below); not with `--untrusted` |
 | `--mermaid-engine merman\|mmdc\|inprocess` | Mermaid renderer; default `merman` (Rust, no browser); `inprocess` needs the `mermaid` feature |
 | `--dolphin-command`, `--mermaid-command` | Command templates, split with shell quoting rules; must contain `{input}` and `{output}` (`{dpi}` optional) |
 | `--latex`, `--dvipng`, `--timeout`, `--scratch-dir`, `--keep-failed-diagrams` | External renderer settings |
@@ -510,10 +511,16 @@ fences left as code (no browser), no local files, smaller limits.
   that does not return, reap processes after the worker is SIGKILLed, or stop a vulnerability in
   a library it links. Run hostile input in a worker with a memory limit, no network and an
   external supervisor ([docs/embedding.md](docs/embedding.md)).
-* **Pictures are re-encoded as PNG.** Every embedded image is decoded and written again, which
-  keeps the file clean and the budgets honest but makes photographs several times larger. This is
-  deliberate: passing a JPEG through would embed bytes the converter did not inspect. A camera's
-  EXIF orientation *is* applied, so a portrait photograph is stored upright. Equations that
+* **Pictures are re-encoded as PNG by default.** Every embedded image is decoded and written
+  again, which keeps the file clean and the budgets honest but makes photographs several times
+  larger. This is deliberate: passing a JPEG through would embed bytes the converter did not
+  inspect. A camera's EXIF orientation *is* applied, so a portrait photograph is stored upright.
+  **To embed pictures 1:1 instead**, use `Config::with_image_encoding(ImageEncoding::Original)`
+  (CLI: `--image-encoding original`). PNG, JPEG and GIF files then keep their exact bytes, size
+  and quality. They are still fully decoded first, so corrupt files and every image limit behave
+  as before, but whatever a decoder ignores (appended data, EXIF including GPS, comments) goes
+  into the document, and the EXIF orientation is not applied. Use it for images you trust;
+  `Config::untrusted()` and the CLI's `--untrusted` keep the default. Equations that
   Word's linear format cannot hold (`\begin{CD}` and other unsupported environments) are an
   error naming the line, in every loss policy, not a degraded formula.
 * **Peak memory is bounded, not small.** The element limit keeps a hostile 2 MiB

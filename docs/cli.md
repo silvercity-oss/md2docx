@@ -115,7 +115,7 @@ Two inputs that would write the same output file are refused before anything run
 
 Flags are the interface. For containers, the operational ones can also come from the environment;
 **a flag on the command line wins**. Settings that *loosen* the security policy (`--math-mode`,
-`--image-access`, `--mermaid-*`, `--dolphin-command`, `--latex`, `--dvipng`, `--reference-doc`) have no environment
+`--image-access`, `--image-encoding`, `--mermaid-*`, `--dolphin-command`, `--latex`, `--dvipng`, `--reference-doc`) have no environment
 variable on purpose, so the ambient environment cannot quietly widen what a document may do.
 
 | Environment variable | Flag |
@@ -163,7 +163,7 @@ the conversion is recorded.
 | Group | Flags |
 | --- | --- |
 | Input / output | `INPUT…`, `-o/--output`, `--check`, `--format text\|json`, `-q/--quiet`, `--strict` |
-| Policy | `--untrusted`, `--diagrams`, `--image-access`, `--base-dir`, `--link-schemes`, `--no-html-links`, `--math-mode`, `--keep-failed-diagrams` |
+| Policy | `--untrusted`, `--diagrams`, `--image-access`, `--image-encoding`, `--base-dir`, `--link-schemes`, `--no-html-links`, `--math-mode`, `--keep-failed-diagrams` |
 | Renderers | `--mermaid-engine merman\|mmdc\|inprocess`, `--mermaid-command`, `--dolphin-command`, `--latex`, `--dvipng`, `--timeout`, `--scratch-dir` |
 | Limits | `--deadline`, `--max-input-bytes`, `--max-output-bytes`, `--max-uncompressed-bytes`, `--max-elements`, `--max-image-bytes`, `--max-images` |
 | Document | `--title`, `--author`, `--page-size`, `--landscape`, `--margin`, `--body-font`, `--body-size`, `--code-font`, `--page-numbers`, `--reference-doc`, `--number-headings`, `--toc`, `--code-blocks`, `--highlight`, `--compression-level`, `--source-date-epoch` |

@@ -54,6 +54,14 @@ pub enum ImageAccess {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageEncoding {
+    /// Re-encode every picture as a clean PNG: metadata and appended data are dropped (default).
+    Png,
+    /// Embed pictures unchanged (PNG, JPEG, GIF): original size, quality and metadata. Trusted images only.
+    Original,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     /// Human-readable lines on standard error (default).
     Text,
@@ -200,7 +208,7 @@ pub struct Args {
         long,
         env = "MD2DOCX_UNTRUSTED",
         value_parser = clap::builder::BoolishValueParser::new(),
-        conflicts_with_all = ["math_mode", "dolphin_command", "mermaid_command", "mermaid_engine", "latex", "dvipng", "image_access"],
+        conflicts_with_all = ["math_mode", "dolphin_command", "mermaid_command", "mermaid_engine", "latex", "dvipng", "image_access", "image_encoding"],
         help = "Strictest preset for untrusted Markdown: native math, diagram fences stay code, no local images, tight size limits. Starts no subprocess"
     )]
     pub untrusted: bool,
@@ -219,6 +227,14 @@ pub struct Args {
         help = "Which local images may be embedded"
     )]
     pub image_access: ImageAccess,
+
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ImageEncoding::Png,
+        help = "How pictures are stored: `png` re-encodes each one as a clean PNG; `original` embeds the file as it is (1:1)"
+    )]
+    pub image_encoding: ImageEncoding,
 
     #[arg(
         long,

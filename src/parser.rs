@@ -22,7 +22,7 @@ use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
 };
 
-use crate::config::{CodeBlockLayout, Config, DiagramFailure, ImageAccess, MathMode};
+use crate::config::{CodeBlockLayout, Config, DiagramFailure, ImageAccess, ImageEncoding, MathMode};
 use crate::diagnostics::{Code, Collector, Loc, Report, Stats};
 use crate::error::{CrateError, Result};
 use crate::extend::TagStyle;
@@ -941,7 +941,7 @@ fn place_picture(
     };
     let (we, he) =
         sized.ok_or_else(|| CrateError::LimitExceeded(format!("image {origin} ({w}x{h} px) is out of range")))?;
-    Ok(Pic::new_with_dimensions(Arc::clone(&pic.png), w, h)
+    Ok(Pic::new_with_dimensions(Arc::clone(&pic.bytes), w, h)
         .size(we, he)
         .alt(sanitize_xml_chars(alt))
         .title(sanitize_xml_chars(title)))
@@ -963,7 +963,7 @@ impl<'a> Builder<'a> {
             stats: Stats::default(),
             in_footnote: false,
             footnote_bytes: 0,
-            images: ImagePipeline::new(),
+            images: ImagePipeline::new().keeping_original(cfg.image_encoding == ImageEncoding::Original),
             resolved: HashMap::new(),
             html: None,
             html_pre: false,

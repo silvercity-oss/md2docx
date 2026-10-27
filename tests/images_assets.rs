@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::*;
-use md2docx::{markdown_to_docx, AssetMap, Config, CrateError, FenceError, ImageAccess, Limits};
+use md2docx::{markdown_to_docx, AssetMap, Config, CrateError, FenceError, ImageAccess, ImageEncoding, Limits};
 
 fn solid(w: u32, h: u32, seed: u8) -> Vec<u8> {
     let img = image::RgbaImage::from_pixel(w, h, image::Rgba([seed, 255 - seed, seed / 2, 255]));
@@ -190,6 +190,99 @@ fn every_format_is_decoded_and_embedded_as_a_clean_png() {
         assert!(raw.starts_with(&[0x89, b'P', b'N', b'G']), "{name} is not a PNG");
         assert!(!raw.windows(8).any(|w| w == b"APPENDED"), "{name} kept trailing data");
     }
+}
+
+#[test]
+fn original_encoding_embeds_each_file_unchanged_with_its_own_extension() {
+    let mut padded = solid(12, 12, 9);
+    padded.extend_from_slice(b"APPENDED-PAYLOAD");
+    let mut jpeg = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(20, 10, image::Rgb([9, 99, 199])))
+        .write_to(&mut jpeg, image::ImageFormat::Jpeg)
+        .unwrap();
+    let (jpeg, plain_png) = (jpeg.into_inner(), solid(7, 7, 3));
+    let mut gif = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(8, 8, image::Rgba([1, 2, 3, 255])))
+        .write_to(&mut gif, image::ImageFormat::Gif)
+        .unwrap();
+    let gif = gif.into_inner();
+
+    let mut assets = AssetMap::new();
+    assets.insert("padded", padded.clone());
+    assets.insert("jpeg", jpeg.clone());
+    assets.insert("gif", gif.clone());
+    assets.insert("plain", plain_png.clone());
+    let cfg = Config::default()
+        .with_image_resolver(assets)
+        .with_image_encoding(ImageEncoding::Original);
+    let docx = doc("![](padded) ![](jpeg) ![](gif) ![](plain)", &cfg);
+
+    let media: Vec<String> = zip_entries(&docx)
+        .into_iter()
+        .filter(|n| n.starts_with("word/media/") && !n.ends_with('/'))
+        .collect();
+    assert_eq!(media.len(), 4, "{media:?}");
+    let by_ext = |ext: &str| -> Vec<Vec<u8>> {
+        media
+            .iter()
+            .filter(|n| n.ends_with(ext))
+            .map(|n| zip_bytes(&docx, n))
+            .collect()
+    };
+    assert_eq!(by_ext(".jpeg"), vec![jpeg], "the JPEG is byte for byte the source");
+    assert_eq!(by_ext(".gif"), vec![gif]);
+    let pngs = by_ext(".png");
+    assert!(
+        pngs.contains(&padded) && pngs.contains(&plain_png),
+        "PNGs are unchanged, trailing bytes included"
+    );
+
+    // The relationship targets and the content types agree with the part names.
+    let rels = zip_text(&docx, "word/_rels/document.xml.rels");
+    for m in &media {
+        assert!(
+            rels.contains(m.trim_start_matches("word/")),
+            "no relationship for {m}: {rels}"
+        );
+    }
+    let types = zip_text(&docx, "[Content_Types].xml");
+    assert!(
+        types.contains("Extension=\"jpeg\"") && types.contains("Extension=\"gif\""),
+        "{types}"
+    );
+}
+
+#[test]
+fn original_encoding_still_rejects_what_cannot_be_decoded_and_keeps_the_limits() {
+    let mut assets = AssetMap::new();
+    let mut truncated = solid(40, 40, 1);
+    truncated.truncate(60);
+    assets.insert("broken", truncated);
+    assets.insert("big", solid(64, 64, 7));
+    let mut cfg = Config::default()
+        .with_image_resolver(assets)
+        .with_image_encoding(ImageEncoding::Original);
+    let docx = doc("![gone](broken)", &cfg);
+    assert_eq!(
+        media_count(&docx),
+        0,
+        "a corrupt file is not embedded just because it is kept as is"
+    );
+    assert!(visible_text(&body_of(&docx)).contains("[gone]"));
+
+    // The per-image pixel limit is the header's claim, as in the default mode.
+    cfg.limits.max_image_pixels = 100;
+    assert!(matches!(
+        markdown_to_docx("![](big)", &cfg),
+        Err(CrateError::LimitExceeded(m)) if m.contains("pixels")
+    ));
+}
+
+#[test]
+fn the_default_stays_a_clean_png() {
+    assert_eq!(Config::default().image_encoding, ImageEncoding::Png);
+    assert_eq!(Config::trusted().image_encoding, ImageEncoding::Png);
+    assert_eq!(Config::untrusted().image_encoding, ImageEncoding::Png);
 }
 
 /// The limits an application with a strict profile might set; nothing here is a crate default.

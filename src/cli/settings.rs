@@ -3,12 +3,14 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use md2docx::{
-    CodeBlockLayout, Config, DiagramFailure, Highlighting, ImageAccess as LibImageAccess, LossPolicy, MathImageEngine,
-    MathMode as LibMathMode, MermaidEngine as LibMermaidEngine, PageSize, TableOfContents, Theme,
+    CodeBlockLayout, Config, DiagramFailure, Highlighting, ImageAccess as LibImageAccess,
+    ImageEncoding as LibImageEncoding, LossPolicy, MathImageEngine, MathMode as LibMathMode,
+    MermaidEngine as LibMermaidEngine, PageSize, TableOfContents, Theme,
 };
 
 use super::args::{
-    AllowLinks, Args, CodeBlocks, Highlight, ImageAccess, LinkStyle, MarkdownLinks, MathMode, MermaidEngine,
+    AllowLinks, Args, CodeBlocks, Highlight, ImageAccess, ImageEncoding, LinkStyle, MarkdownLinks, MathMode,
+    MermaidEngine,
 };
 use super::exit::CliError;
 
@@ -63,6 +65,10 @@ pub fn config(args: &Args) -> Result<Config, CliError> {
             ImageAccess::None => LibImageAccess::None,
             ImageAccess::BaseDir => LibImageAccess::BaseDir,
             ImageAccess::Any => LibImageAccess::Any,
+        };
+        cfg.image_encoding = match args.image_encoding {
+            ImageEncoding::Png => LibImageEncoding::Png,
+            ImageEncoding::Original => LibImageEncoding::Original,
         };
         match args.mermaid_engine {
             MermaidEngine::Merman => cfg.graphs.use_engine(LibMermaidEngine::Merman),

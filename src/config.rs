@@ -251,6 +251,25 @@ pub enum ImageAccess {
     Any,
 }
 
+/// How pictures are stored in the `.docx`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ImageEncoding {
+    /// Decode every picture and write it again as a clean PNG. Appended data, metadata (EXIF,
+    /// GPS, ICC profiles, comments) and anything a decoder ignores do not reach the document, and
+    /// a camera's EXIF orientation is applied. Photographs get several times larger. The default.
+    #[default]
+    Png,
+    /// Embed the file's own bytes, **1:1**: a PNG, JPEG or GIF is neither re-encoded nor stripped,
+    /// so a photograph keeps its size, quality and metadata. The picture is still fully decoded
+    /// first, so a truncated or corrupt file, and every image limit, are judged as before; but what
+    /// the decoder ignores (appended data, EXIF with a location, comment segments) is carried into
+    /// the document, and the EXIF orientation is **not** applied (whether Word honours it is up
+    /// to Word). Use it for Markdown and images you trust, or when you strip them elsewhere.
+    /// [`Limits::max_total_normalized_bytes`] then budgets the original bytes.
+    Original,
+}
+
 /// Which program renders ```` ```mermaid ```` blocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -636,6 +655,8 @@ pub struct Config {
     pub limits: Limits,
     /// Which local images may be embedded.
     pub image_access: ImageAccess,
+    /// Whether pictures are re-encoded as clean PNGs (the default) or embedded unchanged.
+    pub image_encoding: ImageEncoding,
     /// URL schemes a hyperlink may use (lower case, no colon). Links with any
     /// other scheme, or none (relative paths, `#anchors`, UNC paths), are
     /// written as plain text.
@@ -779,6 +800,12 @@ impl Config {
     /// Choose which local images may be embedded.
     pub fn with_image_access(mut self, access: ImageAccess) -> Self {
         self.image_access = access;
+        self
+    }
+
+    /// Choose whether pictures are re-encoded as PNG or embedded 1:1 (see [`ImageEncoding`]).
+    pub fn with_image_encoding(mut self, encoding: ImageEncoding) -> Self {
+        self.image_encoding = encoding;
         self
     }
 
@@ -984,6 +1011,7 @@ impl Config {
             tool_timeout: Duration::from_secs(60),
             limits: Limits::trusted(),
             image_access: ImageAccess::BaseDir,
+            image_encoding: ImageEncoding::Png,
             allowed_link_schemes: ["http", "https", "mailto"].map(String::from).to_vec(),
             html_links: true,
             compression_level: 6,

@@ -102,6 +102,18 @@ pub struct Image(pub Vec<u8>);
 #[derive(Debug, Clone)]
 pub struct Png(pub Vec<u8>);
 
+/// The file extension a package part for these image bytes needs, from the file's signature.
+/// Everything the writer embeds is a PNG, JPEG or GIF; anything else is named `png`, as before.
+pub(crate) fn media_extension(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "jpeg"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else {
+        "png"
+    }
+}
+
 pub type ImageIdAndPath = (String, String);
 pub type ImageIdAndBuf = (String, std::sync::Arc<[u8]>);
 

@@ -20,7 +20,8 @@ use crate::error::{CrateError, Result};
 /// A decoded and re-encoded picture: what is embedded in the `.docx`.
 #[derive(Debug)]
 pub(crate) struct Picture {
-    pub png: Arc<[u8]>,
+    /// A PNG, or with `ImageEncoding::Original` the source file's own bytes (PNG, JPEG or GIF).
+    pub bytes: Arc<[u8]>,
     pub width: u32,
     pub height: u32,
 }
@@ -62,6 +63,8 @@ pub(crate) struct ImagePipeline {
     source_bytes: u64,
     decoded_pixels: u64,
     normalized_bytes: u64,
+    /// `ImageEncoding::Original`: embed the validated source bytes instead of a re-encoding.
+    keep_original: bool,
 }
 
 fn limit(what: String) -> CrateError {
@@ -71,6 +74,12 @@ fn limit(what: String) -> CrateError {
 impl ImagePipeline {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// Embed the source bytes unchanged once they have decoded cleanly.
+    pub(crate) fn keeping_original(mut self, keep: bool) -> Self {
+        self.keep_original = keep;
+        self
     }
 
     /// Measure, decode and re-encode `bytes`, enforcing every image limit. `origin` names the
@@ -169,12 +178,33 @@ impl ImagePipeline {
             return Ok(Outcome::Unsupported(Unsupported::Corrupt));
         }
         let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+        let stored = (w, h);
         let Ok(mut img) = DynamicImage::from_decoder(decoder) else {
             return Ok(Outcome::Unsupported(Unsupported::Corrupt));
         };
         img.apply_orientation(orientation);
-        let (w, h) = (img.width(), img.height());
+        let (w, h) = if self.keep_original {
+            stored // not rotated: the bytes are embedded as they are
+        } else {
+            (img.width(), img.height())
+        };
         ctl.check()?;
+
+        if self.keep_original {
+            // Decoded above, so the file is well formed and within every limit; embedded as is.
+            self.normalized_bytes = self.normalized_bytes.saturating_add(bytes.len() as u64);
+            if self.normalized_bytes > limits.max_total_normalized_bytes {
+                return Err(limit(format!(
+                    "embedded images exceed {} bytes in total (while reading {origin})",
+                    limits.max_total_normalized_bytes
+                )));
+            }
+            return Ok(Outcome::Picture(Arc::new(Picture {
+                bytes: Arc::from(bytes),
+                width: w,
+                height: h,
+            })));
+        }
 
         // One plain 8-bit form per colour model: gray, RGB or RGBA.
         let img = if img.color().has_alpha() {
@@ -197,7 +227,7 @@ impl ImagePipeline {
             )));
         }
         Ok(Outcome::Picture(Arc::new(Picture {
-            png: png.into(),
+            bytes: png.into(),
             width: w,
             height: h,
         })))
@@ -349,7 +379,7 @@ mod tests {
             panic!("orientation 6")
         };
         assert_eq!((turned.width, turned.height), (4, 8), "a quarter turn swaps the sides");
-        let decoded = image::load_from_memory(&turned.png).unwrap();
+        let decoded = image::load_from_memory(&turned.bytes).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (4, 8));
     }
 
@@ -368,7 +398,7 @@ mod tests {
         let Outcome::Picture(clean) = p.normalize(&l, &Ctl::none(), &padded, "padded").unwrap() else {
             panic!("padded")
         };
-        assert!(!clean.png.windows(8).any(|w| w == b"TRAILING"));
+        assert!(!clean.bytes.windows(8).any(|w| w == b"TRAILING"));
         assert!(matches!(
             p.normalize(&l, &Ctl::none(), &jpeg(9, 9), "jpeg").unwrap(),
             Outcome::Picture(_)

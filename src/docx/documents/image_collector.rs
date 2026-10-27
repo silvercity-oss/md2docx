@@ -55,6 +55,10 @@ impl MediaRegistry {
         index
     }
 
+    fn media_bytes(&self, index: usize) -> &[u8] {
+        &self.media[index].1
+    }
+
     /// Returns the package-visible ID assigned to registered media.
     fn media_id(&self, index: usize) -> &str {
         &self.media[index].0
@@ -184,7 +188,11 @@ impl DocumentTreeVisitor for PackagePartCollector<'_> {
         }
 
         let relationship_id = self.unique_relationship_id(&preferred_relationship_id);
-        let target = format!("media/{}.png", self.registry.media_id(media_index));
+        let target = format!(
+            "media/{}.{}",
+            self.registry.media_id(media_index),
+            super::media_extension(self.registry.media_bytes(media_index))
+        );
         let relationship_index = self.relationships.len();
         self.relationship_ids.insert(relationship_id.clone());
         self.relationships_by_media.insert(media_index, relationship_index);
