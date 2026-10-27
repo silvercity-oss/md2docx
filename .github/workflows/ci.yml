@@ -1,14 +1,14 @@
 name: CI
 
 on:
-  # Dependabot branches run through their pull request only; running both doubled the load and
-  # queued every other run behind a pile of dependency bumps.
-  push:
-    branches-ignore: ["dependabot/**"]
+  # Pull requests only: `main` takes changes through a pull request, whose run is the one that
+  # counts, so a push run would repeat it. (Hosted minutes are limited; macOS bills at 10x and
+  # Windows at 2x.)
   pull_request:
   workflow_dispatch:
-  # Weekly: re-run the merman confinement tests against the *latest* merman-cli,
-  # so a release that starts fetching files or URLs is noticed (see `merman-latest`).
+  # Weekly: only what can change without a commit: the advisory databases, the newest merman-cli
+  # (so a release that starts fetching files or URLs is noticed, see `merman-latest`) and a longer
+  # fuzz run. The build and test jobs below are skipped on a schedule.
   schedule:
     - cron: "17 5 * * 1"
 
@@ -28,6 +28,7 @@ env:
 jobs:
   test:
     name: ${{ matrix.os }}
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -102,6 +103,7 @@ jobs:
   # The optional `mermaid` feature needs a newer one (merman's own MSRV): see the `mermaid` job.
   msrv:
     name: MSRV 1.88
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,6 +119,7 @@ jobs:
   # which is the point of the feature).
   mermaid:
     name: in-process Mermaid (${{ matrix.toolchain }}, ${{ matrix.os }})
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -140,6 +143,7 @@ jobs:
   # through the hostile-input settings with no network, a read-only filesystem and no mounts.
   container:
     name: container image
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,6 +174,7 @@ jobs:
   # What `cargo publish` would upload must build on its own, and the docs must be warning-free.
   package:
     name: package + docs
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -190,6 +195,7 @@ jobs:
   # repository's own Markdown converted with a spread of options.
   ooxml:
     name: OOXML schema validation
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -219,6 +225,7 @@ jobs:
   # first tag exists there is nothing to compare against, and the job says so.
   semver:
     name: API compatibility (cargo-semver-checks)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -264,6 +271,7 @@ jobs:
   # building merman-cli takes minutes; the binary is cached by version.
   merman:
     name: merman-cli (real renderer)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     env:
       MERMAN_CLI_VERSION: "0.9.2"
