@@ -24,3 +24,8 @@ human before anything is published.
   patch version.
 * `cargo-semver-checks` compares the API against the latest tag in CI, so an accidental break in a
   minor or patch release fails the pull request.
+* Every GitHub Action in `.github/workflows` is pinned to a full commit SHA with its version in a
+  trailing comment (`uses: owner/action@<sha> # v5`), because a tag can be moved. Dependabot
+  proposes the bumps weekly; review the upstream diff before merging one, especially for the
+  release workflow. `dtolnay/rust-toolchain` is pinned at one SHA and picks the Rust version with
+  its `toolchain:` input.
